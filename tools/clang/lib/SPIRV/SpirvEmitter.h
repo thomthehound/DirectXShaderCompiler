@@ -757,6 +757,11 @@ private:
   /// Processes the NonUniformResourceIndex intrinsic function.
   SpirvInstruction *processIntrinsicNonUniformResourceIndex(const CallExpr *);
 
+  /// Processes SM 6.10 dx::linalg matrix builtins through the KHR
+  /// cooperative-matrix contract when an equivalent SPIR-V operation exists.
+  SpirvInstruction *processIntrinsicLinAlg(const CallExpr *callExpr,
+                                           hlsl::IntrinsicOp op);
+
   /// Processes the SM 6.4 dot4add_{i|u}8packed intrinsic functions.
   SpirvInstruction *processIntrinsicDP4a(const CallExpr *callExpr,
                                          hlsl::IntrinsicOp op);

@@ -403,6 +403,121 @@ const SpirvType *LowerTypeVisitor::lowerType(QualType type,
     return spvType;
   }
 
+  // SM 6.10 linear-algebra matrix handles have no ordinary HLSL scalar or
+  // aggregate representation.  When targeting SPIR-V, map Wave/ThreadGroup
+  // matrices directly to SPV_KHR_cooperative_matrix so the operation remains
+  // visible to the Vulkan driver as a cooperative-matrix/WMMA operation.
+  if (const auto *linAlgType = dyn_cast<AttributedLinAlgMatrixType>(type)) {
+    const SpirvType *componentType = nullptr;
+    using ComponentType = hlsl::DXIL::ComponentType;
+    switch (linAlgType->getComponentType()) {
+    case ComponentType::I8:
+      componentType = spvContext.getSIntType(8);
+      break;
+    case ComponentType::U8:
+      componentType = spvContext.getUIntType(8);
+      break;
+    case ComponentType::I16:
+      componentType = spvContext.getSIntType(16);
+      break;
+    case ComponentType::U16:
+      componentType = spvContext.getUIntType(16);
+      break;
+    case ComponentType::I32:
+      componentType = spvContext.getSIntType(32);
+      break;
+    case ComponentType::U32:
+      componentType = spvContext.getUIntType(32);
+      break;
+    case ComponentType::I64:
+      componentType = spvContext.getSIntType(64);
+      break;
+    case ComponentType::U64:
+      componentType = spvContext.getUIntType(64);
+      break;
+    case ComponentType::F16:
+      componentType = spvContext.getFloatType(16);
+      break;
+    case ComponentType::F32:
+      componentType = spvContext.getFloatType(32);
+      break;
+    case ComponentType::F64:
+      componentType = spvContext.getFloatType(64);
+      break;
+    case ComponentType::F8_E4M3FN:
+    case ComponentType::F8_E5M2:
+    case ComponentType::BFloat16: {
+      // Modern SPIR-V represents these formats using the optional FPEncoding
+      // operand on OpTypeFloat. Keep the encoding explicit instead of
+      // pretending they are ordinary f16/f32 values.
+      const uint32_t width =
+          linAlgType->getComponentType() == ComponentType::BFloat16 ? 16 : 8;
+      uint32_t encoding = uint32_t(spv::FPEncoding::BFloat16KHR);
+      if (linAlgType->getComponentType() == ComponentType::F8_E4M3FN)
+        encoding = uint32_t(spv::FPEncoding::Float8E4M3EXT);
+      else if (linAlgType->getComponentType() == ComponentType::F8_E5M2)
+        encoding = uint32_t(spv::FPEncoding::Float8E5M2EXT);
+
+      auto *widthLiteral = spvBuilder.getConstantInt(
+          astContext.UnsignedIntTy, llvm::APInt(32, width));
+      auto *encodingLiteral = spvBuilder.getConstantInt(
+          astContext.UnsignedIntTy, llvm::APInt(32, encoding));
+      widthLiteral->setLiteral(true);
+      encodingLiteral->setLiteral(true);
+      visitInstruction(widthLiteral);
+      visitInstruction(encodingLiteral);
+      SpvIntrinsicTypeOperand floatOperands[]{widthLiteral, encodingLiteral};
+      componentType = spvContext.getOrCreateSpirvIntrinsicType(
+          uint32_t(spv::Op::OpTypeFloat), floatOperands);
+      break;
+    }
+    default:
+      emitError("linear algebra component type %0 has no SPIR-V cooperative "
+                "matrix representation",
+                srcLoc)
+          << static_cast<uint32_t>(linAlgType->getComponentType());
+      return nullptr;
+    }
+
+    uint32_t scope = 0;
+    switch (linAlgType->getScope()) {
+    case hlsl::DXIL::MatrixScope::Wave:
+      scope = uint32_t(spv::Scope::Subgroup);
+      break;
+    case hlsl::DXIL::MatrixScope::ThreadGroup:
+      scope = uint32_t(spv::Scope::Workgroup);
+      break;
+    case hlsl::DXIL::MatrixScope::Thread:
+      // TODO(AMD-Vulkan): Wire this to a vendor-neutral/KHR cooperative-vector
+      // contract if one becomes available. Do not silently substitute a
+      // different vendor's cooperative-vector extension for AMD execution.
+      emitError("dx::linalg thread-scope matrices require cooperative-vector "
+                "semantics, but this SPIR-V target has no KHR/AMD "
+                "cooperative-vector contract; refusing to map AMD execution "
+                "to a vendor-incompatible extension",
+                srcLoc);
+      // Diagnostic recovery only: downstream type lowering assumes a non-null
+      // type even after an error. Returning a scalar here prevents a compiler
+      // crash; no SPIR-V is emitted because compilation has already failed.
+      return spvContext.getUIntType(32);
+    }
+
+    auto makeIdConstant = [this](uint32_t value) -> SpirvConstant * {
+      auto *constant = spvBuilder.getConstantInt(
+          astContext.UnsignedIntTy, llvm::APInt(32, value));
+      visitInstruction(constant);
+      return constant;
+    };
+
+    SpvIntrinsicTypeOperand operands[]{
+        componentType, makeIdConstant(scope),
+        makeIdConstant(static_cast<uint32_t>(linAlgType->getRows())),
+        makeIdConstant(static_cast<uint32_t>(linAlgType->getCols())),
+        makeIdConstant(static_cast<uint32_t>(linAlgType->getUse()))};
+    return spvContext.getOrCreateSpirvIntrinsicType(
+        uint32_t(spv::Op::OpTypeCooperativeMatrixKHR), operands);
+  }
+
   { // Primitive types
     QualType ty = {};
     if (isScalarType(type, &ty)) {

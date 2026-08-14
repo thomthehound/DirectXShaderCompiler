@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - apusr-dxc-linux-build-20260814
+      - amd-spirv-native-intrinsics
   workflow_dispatch:
 
 jobs:
@@ -15,7 +16,7 @@ jobs:
       - name: Checkout exact DXC source and submodules
         uses: actions/checkout@v4
         with:
-          ref: 672266879a72077c975dd1a86819ebf34606e229
+          ref: ${{ github.sha }}
           submodules: recursive
           fetch-depth: 1
 
@@ -70,7 +71,7 @@ jobs:
       - name: Upload Linux DXC payload
         uses: actions/upload-artifact@v4
         with:
-          name: apusr-linux-dxc-672266879a72077c975dd1a86819ebf34606e229
+          name: amd-spirv-linux-dxc-${{ github.sha }}
           path: artifact
           if-no-files-found: error
           retention-days: 1
@@ -82,7 +83,7 @@ jobs:
       - name: Checkout exact DXC source and submodules
         uses: actions/checkout@v4
         with:
-          ref: 672266879a72077c975dd1a86819ebf34606e229
+          ref: ${{ github.sha }}
           submodules: recursive
           fetch-depth: 1
 
@@ -139,7 +140,7 @@ jobs:
       - name: Upload Windows DXC payload
         uses: actions/upload-artifact@v4
         with:
-          name: apusr-windows-dxc-672266879a72077c975dd1a86819ebf34606e229
+          name: amd-spirv-windows-dxc-${{ github.sha }}
           path: artifact
           if-no-files-found: error
           retention-days: 1

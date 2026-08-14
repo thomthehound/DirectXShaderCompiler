@@ -1118,6 +1118,10 @@ int ReadDxcOpts(const OptTable *optionTable, unsigned flagsToInclude,
       Args.hasFlag(OPT_Wno_vk_ignored_features, OPT_INVALID, false);
   opts.SpirvOptions.noWarnEmulatedFeatures =
       Args.hasFlag(OPT_Wno_vk_emulated_features, OPT_INVALID, false);
+  opts.SpirvOptions.enableAmdIntrinsics =
+      Args.hasFlag(OPT_fspv_enable_amd_intrinsics, OPT_INVALID, false);
+  opts.SpirvOptions.requireNativeIntrinsics =
+      Args.hasFlag(OPT_fspv_require_native_intrinsics, OPT_INVALID, false);
   opts.SpirvOptions.flattenResourceArrays =
       Args.hasFlag(OPT_fspv_flatten_resource_arrays, OPT_INVALID, false);
   opts.SpirvOptions.reduceLoadSize =

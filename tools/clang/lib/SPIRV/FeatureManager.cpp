@@ -116,13 +116,25 @@ FeatureManager::FeatureManager(DiagnosticsEngine &de,
 }
 
 bool FeatureManager::allowExtension(llvm::StringRef name) {
-  // Special case: If we are asked to allow "SPV_KHR" extension, it indicates
-  // that we should allow using *all* KHR extensions.
+  // Family aliases deliberately enable a complete vendor/standards extension
+  // surface. This is especially useful for AMD bring-up, where accepting only
+  // a hand-maintained subset silently defeats the purpose of native-oriented
+  // code generation.
   if (getExtensionSymbol(name) == Extension::KHR) {
     bool result = true;
     for (uint32_t i = 0; i < static_cast<uint32_t>(Extension::Unknown); ++i) {
       llvm::StringRef extName(getExtensionName(static_cast<Extension>(i)));
       if (isKHRExtension(extName))
+        result = result && allowExtension(extName);
+    }
+    return result;
+  }
+
+  if (getExtensionSymbol(name) == Extension::AMD) {
+    bool result = true;
+    for (uint32_t i = 0; i < static_cast<uint32_t>(Extension::Unknown); ++i) {
+      llvm::StringRef extName(getExtensionName(static_cast<Extension>(i)));
+      if (extName.startswith("SPV_AMD") || extName.startswith("SPV_AMDX"))
         result = result && allowExtension(extName);
     }
     return result;
@@ -178,12 +190,16 @@ bool FeatureManager::requestTargetEnv(spv_target_env requestedEnv,
 Extension FeatureManager::getExtensionSymbol(llvm::StringRef name) {
   return llvm::StringSwitch<Extension>(name)
       .Case("KHR", Extension::KHR)
+      .Case("AMD", Extension::AMD)
+      .Case("SPV_AMD", Extension::AMD)
       .Case("SPV_KHR_16bit_storage", Extension::KHR_16bit_storage)
+      .Case("SPV_KHR_bfloat16", Extension::KHR_bfloat16)
       .Case("SPV_KHR_device_group", Extension::KHR_device_group)
       .Case("SPV_KHR_multiview", Extension::KHR_multiview)
       .Case("SPV_KHR_non_semantic_info", Extension::KHR_non_semantic_info)
       .Case("SPV_KHR_shader_draw_parameters",
             Extension::KHR_shader_draw_parameters)
+      .Case("SPV_KHR_cooperative_matrix", Extension::KHR_cooperative_matrix)
       .Case("SPV_KHR_ray_tracing", Extension::KHR_ray_tracing)
       .Case("SPV_EXT_demote_to_helper_invocation",
             Extension::EXT_demote_to_helper_invocation)
@@ -194,13 +210,32 @@ Extension FeatureManager::getExtensionSymbol(llvm::StringRef name) {
             Extension::EXT_fragment_invocation_density)
       .Case("SPV_EXT_fragment_shader_interlock",
             Extension::EXT_fragment_shader_interlock)
+      .Case("SPV_EXT_float8", Extension::EXT_float8)
       .Case("SPV_EXT_mesh_shader", Extension::EXT_mesh_shader)
       .Case("SPV_EXT_shader_stencil_export",
             Extension::EXT_shader_stencil_export)
       .Case("SPV_EXT_shader_viewport_index_layer",
             Extension::EXT_shader_viewport_index_layer)
+      .Case("SPV_AMD_gcn_shader", Extension::AMD_gcn_shader)
+      .Case("SPV_AMD_gpu_shader_half_float",
+            Extension::AMD_gpu_shader_half_float)
+      .Case("SPV_AMD_gpu_shader_half_float_fetch",
+            Extension::AMD_gpu_shader_half_float_fetch)
+      .Case("SPV_AMD_gpu_shader_int16", Extension::AMD_gpu_shader_int16)
+      .Case("SPV_AMD_shader_ballot", Extension::AMD_shader_ballot)
       .Case("SPV_AMD_shader_early_and_late_fragment_tests",
             Extension::AMD_shader_early_and_late_fragment_tests)
+      .Case("SPV_AMD_shader_explicit_vertex_parameter",
+            Extension::AMD_shader_explicit_vertex_parameter)
+      .Case("SPV_AMD_shader_fragment_mask",
+            Extension::AMD_shader_fragment_mask)
+      .Case("SPV_AMD_shader_image_load_store_lod",
+            Extension::AMD_shader_image_load_store_lod)
+      .Case("SPV_AMD_shader_trinary_minmax",
+            Extension::AMD_shader_trinary_minmax)
+      .Case("SPV_AMD_texture_gather_bias_lod",
+            Extension::AMD_texture_gather_bias_lod)
+      .Case("SPV_AMD_weak_linkage", Extension::AMD_weak_linkage)
       .Case("SPV_GOOGLE_hlsl_functionality1",
             Extension::GOOGLE_hlsl_functionality1)
       .Case("SPV_GOOGLE_user_type", Extension::GOOGLE_user_type)
@@ -237,8 +272,12 @@ const char *FeatureManager::getExtensionName(Extension symbol) {
   switch (symbol) {
   case Extension::KHR:
     return "KHR";
+  case Extension::AMD:
+    return "AMD";
   case Extension::KHR_16bit_storage:
     return "SPV_KHR_16bit_storage";
+  case Extension::KHR_bfloat16:
+    return "SPV_KHR_bfloat16";
   case Extension::KHR_device_group:
     return "SPV_KHR_device_group";
   case Extension::KHR_multiview:
@@ -249,6 +288,8 @@ const char *FeatureManager::getExtensionName(Extension symbol) {
     return "SPV_KHR_shader_draw_parameters";
   case Extension::KHR_post_depth_coverage:
     return "SPV_KHR_post_depth_coverage";
+  case Extension::KHR_cooperative_matrix:
+    return "SPV_KHR_cooperative_matrix";
   case Extension::KHR_ray_tracing:
     return "SPV_KHR_ray_tracing";
   case Extension::KHR_shader_clock:
@@ -263,14 +304,38 @@ const char *FeatureManager::getExtensionName(Extension symbol) {
     return "SPV_EXT_fragment_invocation_density";
   case Extension::EXT_fragment_shader_interlock:
     return "SPV_EXT_fragment_shader_interlock";
+  case Extension::EXT_float8:
+    return "SPV_EXT_float8";
   case Extension::EXT_mesh_shader:
     return "SPV_EXT_mesh_shader";
   case Extension::EXT_shader_stencil_export:
     return "SPV_EXT_shader_stencil_export";
   case Extension::EXT_shader_viewport_index_layer:
     return "SPV_EXT_shader_viewport_index_layer";
+  case Extension::AMD_gcn_shader:
+    return "SPV_AMD_gcn_shader";
+  case Extension::AMD_gpu_shader_half_float:
+    return "SPV_AMD_gpu_shader_half_float";
+  case Extension::AMD_gpu_shader_half_float_fetch:
+    return "SPV_AMD_gpu_shader_half_float_fetch";
+  case Extension::AMD_gpu_shader_int16:
+    return "SPV_AMD_gpu_shader_int16";
+  case Extension::AMD_shader_ballot:
+    return "SPV_AMD_shader_ballot";
   case Extension::AMD_shader_early_and_late_fragment_tests:
     return "SPV_AMD_shader_early_and_late_fragment_tests";
+  case Extension::AMD_shader_explicit_vertex_parameter:
+    return "SPV_AMD_shader_explicit_vertex_parameter";
+  case Extension::AMD_shader_fragment_mask:
+    return "SPV_AMD_shader_fragment_mask";
+  case Extension::AMD_shader_image_load_store_lod:
+    return "SPV_AMD_shader_image_load_store_lod";
+  case Extension::AMD_shader_trinary_minmax:
+    return "SPV_AMD_shader_trinary_minmax";
+  case Extension::AMD_texture_gather_bias_lod:
+    return "SPV_AMD_texture_gather_bias_lod";
+  case Extension::AMD_weak_linkage:
+    return "SPV_AMD_weak_linkage";
   case Extension::GOOGLE_hlsl_functionality1:
     return "SPV_GOOGLE_hlsl_functionality1";
   case Extension::GOOGLE_user_type:

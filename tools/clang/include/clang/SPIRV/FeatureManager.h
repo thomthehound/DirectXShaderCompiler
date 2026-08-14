@@ -31,13 +31,16 @@ namespace spirv {
 /// A list of SPIR-V extensions known to our CodeGen.
 enum class Extension {
   KHR = 0,
+  AMD,
   KHR_16bit_storage,
+  KHR_bfloat16,
   KHR_device_group,
   KHR_fragment_shading_rate,
   KHR_non_semantic_info,
   KHR_multiview,
   KHR_shader_draw_parameters,
   KHR_post_depth_coverage,
+  KHR_cooperative_matrix,
   KHR_ray_tracing,
   KHR_shader_clock,
   EXT_demote_to_helper_invocation,
@@ -45,11 +48,27 @@ enum class Extension {
   EXT_fragment_fully_covered,
   EXT_fragment_invocation_density,
   EXT_fragment_shader_interlock,
+  EXT_float8,
   EXT_mesh_shader,
   EXT_shader_stencil_export,
   EXT_shader_viewport_index_layer,
+  // AMD SPIR-V extensions. Keep this list in sync with registered AMD/AMDX
+  // extensions supported by Vulkan/SPIR-V. Some semantic extensions add no
+  // new grammar token and therefore do not appear in spirv.hpp. These are deliberately
+  // enumerated rather than treated as opaque strings so code generation can
+  // request them and CapabilityVisitor can infer them from emitted operations.
+  AMD_gcn_shader,
   AMD_gpu_shader_half_float,
+  AMD_gpu_shader_half_float_fetch,
+  AMD_gpu_shader_int16,
+  AMD_shader_ballot,
   AMD_shader_early_and_late_fragment_tests,
+  AMD_shader_explicit_vertex_parameter,
+  AMD_shader_fragment_mask,
+  AMD_shader_image_load_store_lod,
+  AMD_shader_trinary_minmax,
+  AMD_texture_gather_bias_lod,
+  AMD_weak_linkage,
   GOOGLE_hlsl_functionality1,
   GOOGLE_user_type,
   NV_ray_tracing,

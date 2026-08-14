@@ -1614,6 +1614,19 @@ SpirvExtInstImport *SpirvBuilder::getExtInstSet(llvm::StringRef extName) {
     // reasons. We can't pinpoint the source location for one specific function.
     set = new (context) SpirvExtInstImport(/*SourceLocation*/ {}, extName);
     mod->addExtInstSet(set);
+
+    // AMD's registered extended-instruction sets require a matching
+    // OpExtension declaration. These imports are created lazily while function
+    // bodies are translated, which can be after CapabilityVisitor has walked
+    // the module-level import list, so establish the contract at creation.
+    if (extName == "SPV_AMD_gcn_shader" ||
+        extName == "SPV_AMD_shader_ballot" ||
+        extName == "SPV_AMD_shader_explicit_vertex_parameter" ||
+        extName == "SPV_AMD_shader_trinary_minmax") {
+      requireExtension(extName, {});
+    }
+    if (extName == "SPV_AMD_shader_explicit_vertex_parameter")
+      requireCapability(spv::Capability::InterpolationFunction, {});
   }
   return set;
 }

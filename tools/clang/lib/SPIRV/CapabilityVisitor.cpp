@@ -38,6 +38,33 @@ bool CapabilityVisitor::addExtensionAndCapabilitiesIfEnabled(
 }
 
 void CapabilityVisitor::addCapability(spv::Capability cap, SourceLocation loc) {
+  // Several AMD extensions are expressed primarily by a capability or by an
+  // existing core instruction carrying an AMD-only operand. Infer the owning
+  // extension here so inline SPIR-V cannot accidentally emit an AMD capability
+  // without the required OpExtension declaration.
+  switch (cap) {
+  case spv::Capability::Float16ImageAMD:
+    addExtension(Extension::AMD_gpu_shader_half_float_fetch,
+                 "Float16ImageAMD", loc);
+    break;
+  case spv::Capability::ImageGatherBiasLodAMD:
+    addExtension(Extension::AMD_texture_gather_bias_lod,
+                 "ImageGatherBiasLodAMD", loc);
+    break;
+  case spv::Capability::FragmentMaskAMD:
+    addExtension(Extension::AMD_shader_fragment_mask, "FragmentMaskAMD", loc);
+    break;
+  case spv::Capability::ImageReadWriteLodAMD:
+    addExtension(Extension::AMD_shader_image_load_store_lod,
+                 "ImageReadWriteLodAMD", loc);
+    break;
+  case spv::Capability::WeakLinkageAMD:
+    addExtension(Extension::AMD_weak_linkage, "WeakLinkageAMD", loc);
+    break;
+  default:
+    break;
+  }
+
   if (cap != spv::Capability::Max) {
     spvBuilder.requireCapability(cap, loc);
   }
@@ -49,6 +76,57 @@ void CapabilityVisitor::addCapabilityForType(const SpirvType *type,
   // Defend against instructions that do not have a return type.
   if (!type)
     return;
+
+  // Inline/intrinsic SPIR-V types can carry capabilities that cannot be
+  // inferred from ordinary scalar/vector structure.  In particular this is
+  // how SM 6.10 dx::linalg handles are lowered to cooperative-matrix types.
+  if (const auto *intrinsicType = dyn_cast<SpirvIntrinsicType>(type)) {
+    const auto opcode = static_cast<spv::Op>(intrinsicType->getOpCode());
+    if (opcode == spv::Op::OpTypeNodePayloadArrayAMDX) {
+      featureManager.requestTargetEnv(SPV_ENV_VULKAN_1_3, "WorkGraphs", loc);
+      addCapability(spv::Capability::ShaderEnqueueAMDX, loc);
+      addExtension(Extension::AMD_shader_enqueue, "Vulkan 1.3", loc);
+      return;
+    }
+    if (opcode == spv::Op::OpTypeCooperativeMatrixKHR) {
+      addExtension(Extension::KHR_cooperative_matrix,
+                   "SM 6.10 linear algebra cooperative matrix", loc);
+      // SPV_KHR_cooperative_matrix requires VulkanMemoryModel when Shader is
+      // also declared. Request it here so the normal finalization pass upgrades
+      // OpMemoryModel to Vulkan instead of producing an invalid module.
+      if (!featureManager.isTargetEnvVulkan1p2OrAbove())
+        addExtension(Extension::KHR_vulkan_memory_model,
+                     "SPV_KHR_cooperative_matrix", loc);
+      addCapability(spv::Capability::VulkanMemoryModel, loc);
+      addCapability(spv::Capability::CooperativeMatrixKHR, loc);
+      if (!intrinsicType->getOperands().empty() &&
+          intrinsicType->getOperands()[0].isTypeOperand)
+        addCapabilityForType(
+            intrinsicType->getOperands()[0].operand_as_type, loc, sc);
+      return;
+    }
+
+    if (opcode == spv::Op::OpTypeFloat &&
+        intrinsicType->getOperands().size() >= 2 &&
+        !intrinsicType->getOperands()[1].isTypeOperand) {
+      if (const auto *encoding = dyn_cast<SpirvConstantInteger>(
+              intrinsicType->getOperands()[1].operand_as_inst)) {
+        const uint64_t value = encoding->getValue().getZExtValue();
+        if (value == uint32_t(spv::FPEncoding::BFloat16KHR)) {
+          addExtension(Extension::KHR_bfloat16, "bfloat16 matrix component",
+                       loc);
+          addCapability(spv::Capability::BFloat16TypeKHR, loc);
+        } else if (value ==
+                       uint32_t(spv::FPEncoding::Float8E4M3EXT) ||
+                   value ==
+                       uint32_t(spv::FPEncoding::Float8E5M2EXT)) {
+          addExtension(Extension::EXT_float8, "float8 matrix component", loc);
+          addCapability(spv::Capability::Float8EXT, loc);
+        }
+      }
+      return;
+    }
+  }
 
   // Integer-related capabilities
   if (const auto *intType = dyn_cast<IntegerType>(type)) {
@@ -260,6 +338,11 @@ bool CapabilityVisitor::visit(SpirvDecoration *decor) {
     addCapability(spv::Capability::FragmentBarycentricKHR);
     break;
   }
+  case spv::Decoration::ExplicitInterpAMD: {
+    addExtension(Extension::AMD_shader_explicit_vertex_parameter,
+                 "ExplicitInterpAMD", loc);
+    break;
+  }
   case spv::Decoration::NodeSharesPayloadLimitsWithAMDX:
   case spv::Decoration::NodeMaxPayloadsAMDX:
   case spv::Decoration::TrackFinishWritingAMDX:
@@ -396,6 +479,24 @@ bool CapabilityVisitor::visit(SpirvDecoration *decor) {
       addCapability(spv::Capability::FragmentBarycentricKHR);
       break;
     }
+    case spv::BuiltIn::BaryCoordNoPerspAMD:
+    case spv::BuiltIn::BaryCoordNoPerspCentroidAMD:
+    case spv::BuiltIn::BaryCoordNoPerspSampleAMD:
+    case spv::BuiltIn::BaryCoordSmoothAMD:
+    case spv::BuiltIn::BaryCoordSmoothCentroidAMD:
+    case spv::BuiltIn::BaryCoordSmoothSampleAMD:
+    case spv::BuiltIn::BaryCoordPullModelAMD: {
+      addExtension(Extension::AMD_shader_explicit_vertex_parameter,
+                   "AMD barycentric built-in", loc);
+      break;
+    }
+    case spv::BuiltIn::RemainingRecursionLevelsAMDX:
+    case spv::BuiltIn::ShaderIndexAMDX: {
+      featureManager.requestTargetEnv(SPV_ENV_VULKAN_1_3, "WorkGraphs", loc);
+      addCapability(spv::Capability::ShaderEnqueueAMDX, loc);
+      addExtension(Extension::AMD_shader_enqueue, "Vulkan 1.3", loc);
+      break;
+    }
     case spv::BuiltIn::ShadingRateKHR:
     case spv::BuiltIn::PrimitiveShadingRateKHR: {
       addExtension(Extension::KHR_fragment_shading_rate, "SV_ShadingRate", loc);
@@ -410,6 +511,10 @@ bool CapabilityVisitor::visit(SpirvDecoration *decor) {
   }
   case spv::Decoration::LinkageAttributes:
     addCapability(spv::Capability::Linkage);
+    if (!decor->getParams().empty() &&
+        decor->getParams().back() ==
+            static_cast<uint32_t>(spv::LinkageType::WeakAMD))
+      addCapability(spv::Capability::WeakLinkageAMD, loc);
     break;
   default:
     break;
@@ -494,6 +599,26 @@ bool CapabilityVisitor::visitInstruction(SpirvInstruction *instr) {
     for (const auto &ext : pSpvInst->getExtensions()) {
       spvBuilder.requireExtension(ext, loc);
     }
+
+    // Extended-instruction imports may be created lazily while translating a
+    // function body, after the module-level import list has already been
+    // visited. Infer the owning AMD extension from the actual instruction too
+    // so every used AMD extinst set is declared even when several sets appear
+    // in the same shader.
+    if (auto *set = pSpvInst->getInstructionSet()) {
+      const llvm::StringRef setName = set->getExtendedInstSetName();
+      if (setName == "SPV_AMD_gcn_shader") {
+        addExtension(Extension::AMD_gcn_shader, setName, loc);
+      } else if (setName == "SPV_AMD_shader_ballot") {
+        addExtension(Extension::AMD_shader_ballot, setName, loc);
+      } else if (setName == "SPV_AMD_shader_explicit_vertex_parameter") {
+        addExtension(Extension::AMD_shader_explicit_vertex_parameter, setName,
+                     loc);
+        addCapability(spv::Capability::InterpolationFunction, loc);
+      } else if (setName == "SPV_AMD_shader_trinary_minmax") {
+        addExtension(Extension::AMD_shader_trinary_minmax, setName, loc);
+      }
+    }
   }
 
   // Add opcode-specific capabilities
@@ -549,6 +674,22 @@ bool CapabilityVisitor::visitInstruction(SpirvInstruction *instr) {
   case spv::Op::OpGroupNonUniformQuadBroadcast:
   case spv::Op::OpGroupNonUniformQuadSwap:
     addCapability(spv::Capability::GroupNonUniformQuad);
+    break;
+  case spv::Op::OpGroupIAddNonUniformAMD:
+  case spv::Op::OpGroupFAddNonUniformAMD:
+  case spv::Op::OpGroupFMinNonUniformAMD:
+  case spv::Op::OpGroupUMinNonUniformAMD:
+  case spv::Op::OpGroupSMinNonUniformAMD:
+  case spv::Op::OpGroupFMaxNonUniformAMD:
+  case spv::Op::OpGroupUMaxNonUniformAMD:
+  case spv::Op::OpGroupSMaxNonUniformAMD:
+    addExtension(Extension::AMD_shader_ballot, "AMD subgroup arithmetic", loc);
+    addCapability(spv::Capability::Groups, loc);
+    break;
+  case spv::Op::OpFragmentMaskFetchAMD:
+  case spv::Op::OpFragmentFetchAMD:
+    addExtension(Extension::AMD_shader_fragment_mask, "AMD fragment mask", loc);
+    addCapability(spv::Capability::FragmentMaskAMD, loc);
     break;
   case spv::Op::OpVariable: {
     auto var = cast<SpirvVariable>(instr);
@@ -607,7 +748,8 @@ bool CapabilityVisitor::visitInstruction(SpirvInstruction *instr) {
   case spv::Op::OpAllocateNodePayloadsAMDX:
   case spv::Op::OpEnqueueNodePayloadsAMDX:
   case spv::Op::OpIsNodePayloadValidAMDX:
-  case spv::Op::OpFinishWritingNodePayloadAMDX: {
+  case spv::Op::OpFinishWritingNodePayloadAMDX:
+  case spv::Op::OpNodePayloadArrayLengthAMDX: {
     featureManager.requestTargetEnv(SPV_ENV_VULKAN_1_3, "WorkGraphs", loc);
     addCapability(spv::Capability::ShaderEnqueueAMDX, loc);
     addExtension(Extension::AMD_shader_enqueue, "Vulkan 1.3", loc);
@@ -694,9 +836,12 @@ bool CapabilityVisitor::visit(SpirvExecutionModeBase *execMode) {
       execMode->getEntryPoint()->getSourceLocation();
   switch (executionMode) {
   case spv::ExecutionMode::CoalescingAMDX:
+  case spv::ExecutionMode::IsApiEntryAMDX:
   case spv::ExecutionMode::MaxNodeRecursionAMDX:
   case spv::ExecutionMode::StaticNumWorkgroupsAMDX:
+  case spv::ExecutionMode::ShaderIndexAMDX:
   case spv::ExecutionMode::MaxNumWorkgroupsAMDX:
+  case spv::ExecutionMode::SharesInputWithAMDX:
     featureManager.requestTargetEnv(SPV_ENV_VULKAN_1_3, "WorkGraphs",
                                     execModeSourceLocation);
     addCapability(spv::Capability::ShaderEnqueueAMDX, execModeSourceLocation);
@@ -787,14 +932,23 @@ bool CapabilityVisitor::visit(SpirvExecutionModeBase *execMode) {
 }
 
 bool CapabilityVisitor::visit(SpirvExtInstImport *instr) {
-  if (instr->getExtendedInstSetName() == "NonSemantic.DebugPrintf") {
+  const llvm::StringRef setName = instr->getExtendedInstSetName();
+  if (setName == "SPV_AMD_gcn_shader") {
+    addExtension(Extension::AMD_gcn_shader, setName, {});
+  } else if (setName == "SPV_AMD_shader_ballot") {
+    addExtension(Extension::AMD_shader_ballot, setName, {});
+  } else if (setName == "SPV_AMD_shader_explicit_vertex_parameter") {
+    addExtension(Extension::AMD_shader_explicit_vertex_parameter, setName, {});
+    addCapability(spv::Capability::InterpolationFunction);
+  } else if (setName == "SPV_AMD_shader_trinary_minmax") {
+    addExtension(Extension::AMD_shader_trinary_minmax, setName, {});
+  } else if (setName == "NonSemantic.DebugPrintf") {
     addExtension(Extension::KHR_non_semantic_info, "DebugPrintf",
                  /*SourceLocation*/ {});
-  } else if (instr->getExtendedInstSetName() ==
-             "NonSemantic.Shader.DebugInfo.100") {
+  } else if (setName == "NonSemantic.Shader.DebugInfo.100") {
     addExtension(Extension::KHR_non_semantic_info, "Shader.DebugInfo.100",
                  /*SourceLocation*/ {});
-  } else if (instr->getExtendedInstSetName() == "NonSemantic.DebugBreak") {
+  } else if (setName == "NonSemantic.DebugBreak") {
     addExtension(Extension::KHR_non_semantic_info, "DebugBreak",
                  /*SourceLocation*/ {});
   }

@@ -57,6 +57,13 @@ struct SpirvCodeGenOptions {
   bool invertW = false; // Multiplicative inverse
   bool noWarnEmulatedFeatures = false;
   bool noWarnIgnoredFeatures = false;
+  // Prefer SPIR-V forms that preserve AMD hardware intent instead of broad
+  // compatibility emulation when Vulkan has a usable contract for them.
+  bool enableAmdIntrinsics = false;
+  // Reject specialized HLSL intrinsics when SPIR-V cannot preserve their
+  // native hardware semantics. This is an audit mode: never silently expand a
+  // hardware operation into a slow scalar sequence.
+  bool requireNativeIntrinsics = false;
   bool preserveBindings = false;
   bool preserveInterface = false;
   bool useDxLayout = false;
