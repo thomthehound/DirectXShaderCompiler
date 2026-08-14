@@ -11,9 +11,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
-      - name: Checkout exact source and submodules
+      - name: Checkout exact DXC source and submodules
         uses: actions/checkout@v4
         with:
+          ref: 672266879a72077c975dd1a86819ebf34606e229
           submodules: recursive
           fetch-depth: 1
 
@@ -37,7 +38,7 @@ jobs:
             -DHLSL_INCLUDE_TESTS=OFF
 
       - name: Build compiler payload
-        run: cmake --build build-apusr-linux --target dxc dxcompiler dxildll --parallel 2
+        run: cmake --build build-apusr-linux --target dxc dxcompiler dxildll --parallel 4
 
       - name: Smoke test DXIL and SPIR-V
         run: |
@@ -46,7 +47,7 @@ jobs:
           [numthreads(1,1,1)]
           void main(uint3 tid : SV_DispatchThreadID) { Out[0] = tid.x + 1; }
           EOF
-          export LD_LIBRARY_PATH="$PWD/build-apusr-linux/bin:${LD_LIBRARY_PATH:-}"
+          export LD_LIBRARY_PATH="$PWD/build-apusr-linux/lib:${LD_LIBRARY_PATH:-}"
           build-apusr-linux/bin/dxc -T cs_6_6 -E main -Fo /tmp/apusr_dxc_smoke.dxil /tmp/apusr_dxc_smoke.hlsl
           build-apusr-linux/bin/dxc -spirv -fspv-target-env=vulkan1.2 -T cs_6_6 -E main -Fo /tmp/apusr_dxc_smoke.spv /tmp/apusr_dxc_smoke.hlsl
           test -s /tmp/apusr_dxc_smoke.dxil
@@ -56,12 +57,13 @@ jobs:
       - name: Stage exact payload
         run: |
           mkdir -p artifact/bin artifact/licenses
-          cp build-apusr-linux/bin/dxc artifact/bin/
-          cp build-apusr-linux/bin/libdxcompiler.so artifact/bin/
-          cp build-apusr-linux/bin/libdxil.so artifact/bin/
+          cp -L build-apusr-linux/bin/dxc artifact/bin/dxc
+          cp build-apusr-linux/lib/libdxcompiler.so artifact/bin/libdxcompiler.so
+          cp build-apusr-linux/lib/libdxil.so artifact/bin/libdxil.so
           cp LICENSE.TXT artifact/licenses/LICENSE.TXT
           git rev-parse HEAD > artifact/DXC_COMMIT.txt
           git submodule status --recursive > artifact/DXC_SUBMODULES.txt
+          build-apusr-linux/bin/dxc --version > artifact/DXC_VERSION.txt
           sha256sum artifact/bin/* > artifact/SHA256SUMS.txt
 
       - name: Upload Linux DXC payload
