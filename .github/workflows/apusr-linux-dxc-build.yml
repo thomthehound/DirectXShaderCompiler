@@ -65,7 +65,7 @@ jobs:
           git rev-parse HEAD > artifact/DXC_COMMIT.txt
           git submodule status --recursive > artifact/DXC_SUBMODULES.txt
           build-apusr-linux/bin/dxc --version > artifact/DXC_VERSION.txt
-          sha256sum artifact/bin/* > artifact/SHA256SUMS.txt
+          (cd artifact && sha256sum bin/* > SHA256SUMS.txt)
 
       - name: Upload Linux DXC payload
         uses: actions/upload-artifact@v4
@@ -106,12 +106,17 @@ jobs:
           void main(uint3 tid : SV_DispatchThreadID) { Out[0] = tid.x + 1; }
           '@ | Set-Content -LiteralPath "$env:RUNNER_TEMP\apusr_dxc_smoke.hlsl" -Encoding Ascii
           $dxc = Join-Path $PWD 'build-apusr-windows\bin\dxc.exe'
-          & $dxc -T cs_6_6 -E main -Fo "$env:RUNNER_TEMP\apusr_dxc_smoke.dxil" "$env:RUNNER_TEMP\apusr_dxc_smoke.hlsl"
+          $source = "$env:RUNNER_TEMP\apusr_dxc_smoke.hlsl"
+          $dxil = "$env:RUNNER_TEMP\apusr_dxc_smoke.dxil"
+          $spirv = "$env:RUNNER_TEMP\apusr_dxc_smoke.spv"
+          $dxilArgs = @('-T', 'cs_6_6', '-E', 'main', '-Fo', $dxil, $source)
+          & $dxc @dxilArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $dxc -spirv -fspv-target-env=vulkan1.2 -T cs_6_6 -E main -Fo "$env:RUNNER_TEMP\apusr_dxc_smoke.spv" "$env:RUNNER_TEMP\apusr_dxc_smoke.hlsl"
+          $spirvArgs = @('-spirv', '-fspv-target-env=vulkan1.2', '-T', 'cs_6_6', '-E', 'main', '-Fo', $spirv, $source)
+          & $dxc @spirvArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if ((Get-Item "$env:RUNNER_TEMP\apusr_dxc_smoke.dxil").Length -eq 0) { throw 'DXIL smoke output is empty' }
-          if ((Get-Item "$env:RUNNER_TEMP\apusr_dxc_smoke.spv").Length -eq 0) { throw 'SPIR-V smoke output is empty' }
+          if ((Get-Item $dxil).Length -eq 0) { throw 'DXIL smoke output is empty' }
+          if ((Get-Item $spirv).Length -eq 0) { throw 'SPIR-V smoke output is empty' }
           & $dxc --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
