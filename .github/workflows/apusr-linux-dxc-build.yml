@@ -1,4 +1,4 @@
-name: APUSR Linux DXC Build
+name: APUSR DXC Build
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
 
 jobs:
   build-linux-dxc:
+    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[windows-only]') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -70,6 +71,70 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: apusr-linux-dxc-672266879a72077c975dd1a86819ebf34606e229
+          path: artifact
+          if-no-files-found: error
+          retention-days: 1
+
+  build-windows-dxc:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout exact DXC source and submodules
+        uses: actions/checkout@v4
+        with:
+          ref: 672266879a72077c975dd1a86819ebf34606e229
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Configure and build Release DXC with SPIR-V
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%i"
+          if not defined VSINSTALL exit /b 1
+          call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -no_logo -arch=amd64 -host_arch=amd64
+          cmake -S . -B build-apusr-windows -G Ninja -C cmake\caches\PredefinedParams.cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_SPIRV_CODEGEN=ON -DSPIRV_BUILD_TESTS=OFF -DLLVM_INCLUDE_TESTS=OFF -DLLVM_BUILD_TESTS=OFF -DCLANG_INCLUDE_TESTS=OFF -DHLSL_INCLUDE_TESTS=OFF
+          if errorlevel 1 exit /b %errorlevel%
+          cmake --build build-apusr-windows --target dxc dxcompiler dxildll --parallel 4
+          if errorlevel 1 exit /b %errorlevel%
+
+      - name: Smoke test DXIL and SPIR-V
+        shell: pwsh
+        run: |
+          @'
+          RWStructuredBuffer<uint> Out : register(u0);
+          [numthreads(1,1,1)]
+          void main(uint3 tid : SV_DispatchThreadID) { Out[0] = tid.x + 1; }
+          '@ | Set-Content -LiteralPath "$env:RUNNER_TEMP\apusr_dxc_smoke.hlsl" -Encoding Ascii
+          $dxc = Join-Path $PWD 'build-apusr-windows\bin\dxc.exe'
+          & $dxc -T cs_6_6 -E main -Fo "$env:RUNNER_TEMP\apusr_dxc_smoke.dxil" "$env:RUNNER_TEMP\apusr_dxc_smoke.hlsl"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $dxc -spirv -fspv-target-env=vulkan1.2 -T cs_6_6 -E main -Fo "$env:RUNNER_TEMP\apusr_dxc_smoke.spv" "$env:RUNNER_TEMP\apusr_dxc_smoke.hlsl"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ((Get-Item "$env:RUNNER_TEMP\apusr_dxc_smoke.dxil").Length -eq 0) { throw 'DXIL smoke output is empty' }
+          if ((Get-Item "$env:RUNNER_TEMP\apusr_dxc_smoke.spv").Length -eq 0) { throw 'SPIR-V smoke output is empty' }
+          & $dxc --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Stage exact payload
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifact\bin, artifact\licenses | Out-Null
+          Copy-Item build-apusr-windows\bin\dxc.exe artifact\bin\dxc.exe
+          Copy-Item build-apusr-windows\bin\dxcompiler.dll artifact\bin\dxcompiler.dll
+          Copy-Item build-apusr-windows\bin\dxil.dll artifact\bin\dxil.dll
+          Copy-Item LICENSE.TXT artifact\licenses\LICENSE.TXT
+          (git rev-parse HEAD) | Set-Content artifact\DXC_COMMIT.txt -Encoding Ascii
+          (git submodule status --recursive) | Set-Content artifact\DXC_SUBMODULES.txt -Encoding Ascii
+          (& build-apusr-windows\bin\dxc.exe --version 2>&1) | Set-Content artifact\DXC_VERSION.txt -Encoding Ascii
+          Get-ChildItem artifact\bin | Sort-Object Name | ForEach-Object {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
+            "$hash  bin/$($_.Name)"
+          } | Set-Content artifact\SHA256SUMS.txt -Encoding Ascii
+
+      - name: Upload Windows DXC payload
+        uses: actions/upload-artifact@v4
+        with:
+          name: apusr-windows-dxc-672266879a72077c975dd1a86819ebf34606e229
           path: artifact
           if-no-files-found: error
           retention-days: 1
