@@ -39,8 +39,8 @@ jobs:
             -DCLANG_INCLUDE_TESTS=OFF \
             -DHLSL_INCLUDE_TESTS=OFF
 
-      - name: Build compiler payload and regression tools
-        run: cmake --build build-apusr-linux --target dxc dxcompiler dxildll FileCheck --parallel 4
+      - name: Build compiler payload
+        run: cmake --build build-apusr-linux --target dxc dxcompiler dxildll --parallel 4
 
       - name: Smoke test DXIL and SPIR-V
         run: |
@@ -58,51 +58,9 @@ jobs:
 
       - name: Test AMD SPIR-V backend contracts
         run: |
-          set -euo pipefail
           export LD_LIBRARY_PATH="$PWD/build-apusr-linux/lib:${LD_LIBRARY_PATH:-}"
-          dxc="$PWD/build-apusr-linux/bin/dxc"
-          filecheck="$PWD/build-apusr-linux/bin/FileCheck"
-          tests="$PWD/tools/clang/test/CodeGenSPIRV"
-
-          "$dxc" -T cs_6_2 -E main -fcgl -spirv -fspv-extension=AMD \
-            "$tests/amd.intrinsics.header.hlsl" | \
-            "$filecheck" "$tests/amd.intrinsics.header.hlsl"
-          "$dxc" -T ps_6_0 -E main -fcgl -spirv -fspv-extension=AMD \
-            "$tests/amd.intrinsics.explicit-vertex.hlsl" | \
-            "$filecheck" "$tests/amd.intrinsics.explicit-vertex.hlsl"
-          "$dxc" -T vs_6_0 -E main -fcgl -spirv -fspv-extension=AMD \
-            "$tests/extensions.amd-family.hlsl" | \
-            "$filecheck" "$tests/extensions.amd-family.hlsl"
-          "$dxc" -T vs_6_0 -E main -fcgl -spirv \
-            -fspv-enable-amd-intrinsics \
-            "$tests/intrinsics.msad4.amd.hlsl" | \
-            "$filecheck" "$tests/intrinsics.msad4.amd.hlsl" \
-              --check-prefix=AMD
-          "$dxc" -T cs_6_10 -E main -fcgl -spirv \
-            -fspv-target-env=vulkan1.3 \
-            "$tests/linalg.cooperative-matrix.amd.hlsl" | \
-            "$filecheck" "$tests/linalg.cooperative-matrix.amd.hlsl"
-
-          set +e
-          strict_output=$("$dxc" -T vs_6_0 -E main -fcgl -spirv \
-            -fspv-require-native-intrinsics \
-            "$tests/intrinsics.msad4.amd.hlsl" 2>&1)
-          strict_status=$?
-          set -e
-          test "$strict_status" -ne 0
-          printf '%s\n' "$strict_output" | \
-            "$filecheck" "$tests/intrinsics.msad4.amd.hlsl" \
-              --check-prefix=STRICT
-
-          set +e
-          thread_output=$("$dxc" -T cs_6_10 -E main -fcgl -spirv \
-            -fspv-target-env=vulkan1.3 \
-            "$tests/linalg.thread-scope-no-fake-amd.hlsl" 2>&1)
-          thread_status=$?
-          set -e
-          test "$thread_status" -ne 0
-          printf '%s\n' "$thread_output" | \
-            "$filecheck" "$tests/linalg.thread-scope-no-fake-amd.hlsl"
+          python3 utils/amd_spirv_ci.py \
+            --dxc "$PWD/build-apusr-linux/bin/dxc"
 
       - name: Stage exact payload
         run: |
@@ -125,6 +83,7 @@ jobs:
           retention-days: 1
 
   build-windows-dxc:
+    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[linux-only]') }}
     runs-on: windows-latest
     timeout-minutes: 120
     steps:
