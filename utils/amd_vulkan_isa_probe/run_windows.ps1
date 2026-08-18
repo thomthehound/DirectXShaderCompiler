@@ -22,6 +22,7 @@ cmake --build $BuildDir
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $DriverProbe = Join-Path $BuildDir "amd_vulkan_isa_probe.exe"
+$MatrixProbe = Join-Path $BuildDir "amd_vulkan_matrix_probe.exe"
 $MathVerify = Join-Path $BuildDir "amd_vulkan_math_verify.exe"
 $CandidateVerify = Join-Path $BuildDir "amd_vulkan_candidate_verify.exe"
 $SpirvDis = Join-Path $VulkanSdk "Bin/spirv-dis.exe"
@@ -115,6 +116,16 @@ $PackingArgs = @(
     "--out-dir", (Join-Path $OutDir "packing")
 )
 python @PackingArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+Write-Host "[AMD SPIR-V] Cooperative matrix property + ISA qualification"
+$MatrixArgs = @(
+    (Join-Path $ProbeRoot "matrix_probe.py"),
+    "--dxc", $Dxc,
+    "--matrix-probe", $MatrixProbe,
+    "--out-dir", (Join-Path $OutDir "matrix")
+)
+python @MatrixArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "[AMD SPIR-V] Transcendental spelling A/B"
