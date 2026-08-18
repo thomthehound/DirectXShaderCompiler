@@ -1,0 +1,193 @@
+{
+  "schema": 1,
+  "policy": "Unknown or unpublished native semantics do not block empirical search. Every sprayable row uses source expressions with defined semantics, installed-driver ISA inspection, and a runtime or consumer-level correctness oracle before promotion.",
+  "statuses": ["sprayable", "implemented-search", "ingress-blocked", "deferred-hardware"],
+  "candidates": [
+    {
+      "id": "alignbyte-spelling-zoo",
+      "status": "implemented-search",
+      "consumer": "packed tensor windows, optical-flow rolling windows, byte repacking",
+      "target": ["v_alignbyte_b32"],
+      "search": "64-bit concatenation in both orders; 32-bit shift/or in both orders; fixed 1/2/3-byte rolling windows",
+      "probe": "candidate_zoo.py candidates 0-3 and 8-10",
+      "oracle": "amd_vulkan_candidate_verify"
+    },
+    {
+      "id": "alignbit-spelling-zoo",
+      "status": "implemented-search",
+      "consumer": "bitstream/address packing and fused shift windows",
+      "target": ["v_alignbit_b32"],
+      "search": "64-bit concatenation and 32-bit shift/or in both operand orders with dynamic 1..31-bit windows",
+      "probe": "candidate_zoo.py candidates 4-7",
+      "oracle": "amd_vulkan_candidate_verify"
+    },
+    {
+      "id": "permute-spelling-zoo",
+      "status": "implemented-search",
+      "consumer": "packed byte/nibble routing, tensor packing, optical-flow windows",
+      "target": ["v_perm_b32"],
+      "search": "byte reversal, interleaves, fixed cross-source permutations, dynamic two-source byte selection",
+      "probe": "candidate_zoo.py candidates 11-16",
+      "oracle": "amd_vulkan_candidate_verify"
+    },
+    {
+      "id": "boolean-bitop3-zoo",
+      "status": "implemented-search",
+      "consumer": "packing, masks, quantization and address manipulation",
+      "target": ["v_bfi_b32", "v_and_or_b32", "v_or3_b32", "v_bitop3_b32"],
+      "search": "masked two-source select and three-input Boolean forms; expand with truth-table variants after first hardware run",
+      "probe": "candidate_zoo.py candidates 17-18",
+      "oracle": "amd_vulkan_candidate_verify"
+    },
+    {
+      "id": "packed-byte-average-zoo",
+      "status": "implemented-search",
+      "consumer": "optical flow, filters, packed luma and future byte kernels",
+      "target": ["v_lerp_u8", "packed byte arithmetic forms"],
+      "search": "independent lane average variants with alternating rounding bits",
+      "probe": "candidate_zoo.py candidate 19 and vk::amd::LerpU8",
+      "oracle": "amd_vulkan_candidate_verify plus math semantic verifier"
+    },
+    {
+      "id": "integer-dot-shape-zoo",
+      "status": "implemented-search",
+      "consumer": "FSR4 INT8 and future INT4/INT16 quantized kernels",
+      "target": ["v_dot2_i32_i16", "v_dot2_u32_u16", "v_dot4_i32_iu8", "v_dot8_i32_i4", "v_dot8_u32_u4", "v_dot8_i32_iu4"],
+      "search": "same-sign and mixed-sign canonical extraction/multiply/add graphs for 2x16, 4x8 and 8x4",
+      "probe": "dot_probe.py",
+      "oracle": "compiler semantic tests; add runtime integer-dot oracle for any nonstandard hit before APUSR use"
+    },
+    {
+      "id": "integer-dot-saturation-zoo",
+      "status": "sprayable",
+      "consumer": "future quantized kernels with saturating accumulation",
+      "target": ["clamped/accumulating AMD dot forms"],
+      "search": "pre-clamp, post-clamp, widened-accumulate and explicit min/max saturation spellings across signed/unsigned boundaries",
+      "probe": "pending dedicated saturation zoo",
+      "oracle": "exhaustive boundary vectors around INT32/UINT32 overflow and saturation points"
+    },
+    {
+      "id": "fp16-dot-zoo",
+      "status": "implemented-search",
+      "consumer": "FSR4 FP16 model operators and mixed-precision bookends",
+      "target": ["v_dot2_f32_f16", "v_dot2acc_f32_f16", "v_dot2_f16_f16"],
+      "search": "native half inputs with separate FP32 and FP16 accumulation contracts",
+      "probe": "dot_f16_probe.py",
+      "oracle": "amd.dot.f16.hlsl plus future runtime FP16 numerical oracle"
+    },
+    {
+      "id": "bf16-dot-conversion-zoo",
+      "status": "ingress-blocked",
+      "consumer": "future BF16 model/matrix paths",
+      "target": ["BF16 dot and conversion families"],
+      "search": "requires first-class BF16 shader type/operation transport; opaque uint16 emulation is not accepted",
+      "probe": "none until ingress exists",
+      "oracle": "BF16 special-value/rounding corpus",
+      "reason": "Current HLSL surface in this DXC branch has no first-class BF16 type equivalent to the AMDGPU intrinsic contract."
+    },
+    {
+      "id": "wave-xor-butterfly-zoo",
+      "status": "implemented-search",
+      "consumer": "FSR4 FP16 reduction trees",
+      "target": ["DPP", "DPP8", "v_permlane16", "v_permlanex16", "v_permlane64", "ds_bpermute_b32", "ds_swizzle_b32"],
+      "search": "fixed XOR stages 1/2/4/8/16/32 matching imported APUSR reduction trees",
+      "probe": "crosslane_probe.py",
+      "oracle": "amd.intrinsics.lane-xor.hlsl; consumer-level active-lane comparison before replacement"
+    },
+    {
+      "id": "wave-up-down-rotate-zoo",
+      "status": "sprayable",
+      "consumer": "reductions, stencil exchange and future matrix staging",
+      "target": ["DPP row shifts/rotates", "permlane", "DS permute"],
+      "search": "lane +/- constant, row-local rotate, quad swap, neighbor exchange, masked edge variants",
+      "probe": "pending crosslane-zoo expansion",
+      "oracle": "wave32/wave64 active-mask and boundary-lane runtime corpus"
+    },
+    {
+      "id": "wave-reduction-spelling-zoo",
+      "status": "sprayable",
+      "consumer": "manual FSR4 reduction trees and auto exposure",
+      "target": ["shorter DPP/permlane reduction sequences"],
+      "search": "direct WaveActive operations versus explicit butterfly trees versus staged local reductions",
+      "probe": "pending reduction A/B ISA probe",
+      "oracle": "active-mask, NaN, signed/unsigned, wave32/wave64 differential corpus"
+    },
+    {
+      "id": "transcendental-spelling-zoo",
+      "status": "sprayable",
+      "consumer": "FSR4 post_common, import/export, exposure and color transforms",
+      "target": ["v_tanh_*", "v_log_*", "v_exp_*", "shorter native transcendental sequences"],
+      "search": "direct tanh/pow versus equivalent exp/log identities only where numerical contract permits; native frexp/ldexp recovery",
+      "probe": "math_probe.py plus pending A/B shader variants",
+      "oracle": "dense numerical sweep including NaN, Inf, subnormal, sign and ULP/error limits derived from the consumer"
+    },
+    {
+      "id": "half-pack-conversion-zoo",
+      "status": "sprayable",
+      "consumer": "FP16 bookends, tensor packing and resource IO",
+      "target": ["v_pack_b32_f16", "v_cvt_f16_f32", "v_cvt_f32_f16", "packed conversion forms"],
+      "search": "scalar adjacent conversions, vector conversion, explicit pack/unpack and store-adjacent variants",
+      "probe": "math_probe.py plus pending conversion-zoo expansion",
+      "oracle": "all half boundary classes and tie-rounding cases"
+    },
+    {
+      "id": "lds-access-pattern-zoo",
+      "status": "sprayable",
+      "consumer": "APUSR tiled INT8/FP16 kernels",
+      "target": ["fewer DS instructions", "wider DS reads/writes", "better bank/access patterns"],
+      "search": "scalar/vector groupshared accesses, reordered loads, packed writes, barrier placement variants with identical synchronization semantics",
+      "probe": "pending APUSR-derived LDS ISA microcorpus",
+      "oracle": "runtime data-integrity test plus APUSR tile numerical comparison"
+    },
+    {
+      "id": "async-global-lds",
+      "status": "ingress-blocked",
+      "consumer": "matrix/tensor tile staging",
+      "target": ["global_load_async_lds", "global_store_lds_async", "LDSDMA-family operations"],
+      "search": "none safely expressible through current shader frontend",
+      "probe": "future compiler-extension ingress probe",
+      "oracle": "tile copy and synchronization stress corpus",
+      "reason": "LLVM AMDGPU has explicit async global/LDS intrinsics, but current DXC shader-facing SPIR-V/DXIL surfaces do not preserve equivalent async-transfer semantics. Ordinary load+groupshared-store is not an equivalent candidate."
+    },
+    {
+      "id": "transposed-memory-ops",
+      "status": "ingress-blocked",
+      "consumer": "matrix tile staging and packed tensor layouts",
+      "target": ["global_load_tr_*", "DS transposed read forms"],
+      "search": "none with reliable transposed hardware identity through current DXC shader IR",
+      "probe": "future compiler-extension ingress probe",
+      "oracle": "tile-layout permutation and alignment corpus",
+      "reason": "The AMDGPU backend has explicit transposed-load intrinsics; generic vector loads are not a reliable semantic transport for them."
+    },
+    {
+      "id": "shader-prefetch",
+      "status": "ingress-blocked",
+      "consumer": "weight/tensor streaming and large tiled passes",
+      "target": ["AMD scalar/global data prefetch", "instruction prefetch where relevant"],
+      "search": "none through current HLSL shader surface",
+      "probe": "future compiler-extension ingress probe",
+      "oracle": "cache-neutral correctness plus counter/timing A/B",
+      "reason": "Current DXC shader-facing SPIR-V/DXIL has no AMD GPU prefetch contract. CPU/generic LLVM prefetch does not count."
+    },
+    {
+      "id": "scheduler-group-hints",
+      "status": "ingress-blocked",
+      "consumer": "WMMA/VALU overlap, VMEM/LDS latency hiding, transcendental-heavy passes",
+      "target": ["AMDGPU sched_barrier", "sched_group_barrier", "iglp_opt effects"],
+      "search": "requires real compiler/IR transport",
+      "probe": "future scheduling A/B compiler probe",
+      "oracle": "identical output plus stable ISA scheduling and timing improvement",
+      "reason": "These are AMDGPU scheduling directives, not arithmetic semantics. Current SPIR-V/DXIL shader contracts do not carry them."
+    },
+    {
+      "id": "fp8-bf8-fp6-bf6-fp4-zoo",
+      "status": "deferred-hardware",
+      "consumer": "future ultra-low-precision model and matrix paths",
+      "target": ["AMD low-precision conversion", "dot", "WMMA/SWMMAC families"],
+      "search": "retain source and backend inventory now; execute only on hardware that can validate the native path",
+      "probe": "deferred",
+      "oracle": "format-specific rounding/special-value/matrix numerical corpus",
+      "reason": "No suitable validation hardware in the current APUSR qualification target."
+    }
+  ]
+}
