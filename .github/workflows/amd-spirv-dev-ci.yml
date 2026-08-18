@@ -16,6 +16,20 @@ jobs:
           submodules: recursive
           fetch-depth: 1
       - run: sudo apt-get update && sudo apt-get install -y ninja-build clang lld
+      - name: Validate APUSR AMD probe inventory
+        run: |
+          python3 utils/apusr_amd_experimental_inventory.py
+          python3 -m py_compile \
+            utils/apusr_amd_qualify.py \
+            utils/apusr_amd_experimental_inventory.py \
+            utils/amd_spirv_ci.py \
+            utils/amd_math_ci.py \
+            utils/amd_vulkan_isa_probe/native_probe.py \
+            utils/amd_vulkan_isa_probe/math_probe.py \
+            utils/amd_vulkan_isa_probe/dot_probe.py \
+            utils/amd_vulkan_isa_probe/dot_f16_probe.py \
+            utils/amd_vulkan_isa_probe/crosslane_probe.py \
+            utils/amd_vulkan_isa_probe/candidate_zoo.py
       - name: Configure
         run: >-
           cmake -S . -B build-amd-spirv -G Ninja
@@ -45,6 +59,23 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 1
+      - name: Validate APUSR AMD probe inventory
+        shell: pwsh
+        run: |
+          python utils/apusr_amd_experimental_inventory.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m py_compile `
+            utils/apusr_amd_qualify.py `
+            utils/apusr_amd_experimental_inventory.py `
+            utils/amd_spirv_ci.py `
+            utils/amd_math_ci.py `
+            utils/amd_vulkan_isa_probe/native_probe.py `
+            utils/amd_vulkan_isa_probe/math_probe.py `
+            utils/amd_vulkan_isa_probe/dot_probe.py `
+            utils/amd_vulkan_isa_probe/dot_f16_probe.py `
+            utils/amd_vulkan_isa_probe/crosslane_probe.py `
+            utils/amd_vulkan_isa_probe/candidate_zoo.py
+          exit $LASTEXITCODE
       - name: Configure and build
         shell: cmd
         run: |
