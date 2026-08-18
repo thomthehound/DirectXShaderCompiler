@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "purpose": "Focused contract updates landed after amd_spirv_contracts.json schema 4.",
   "todo": "Merge these rows into amd_spirv_contracts.json before PR splitting. This addendum exists only because the connector rejected the oversized whole-file ledger replacement; it is not a second authoritative ledger.",
   "updates": [
@@ -41,9 +41,27 @@
       "reason": "The current SM 6.10 dx::linalg ComponentType enum has no I4/U4 matrix component. I8 matrices are not an equivalent substitute."
     },
     {
-      "surface": "BF16 scalar/vector dot/conversion",
-      "status": "missing-spv-ingress",
-      "note": "BF16 cooperative matrices are now first-class through SPV_KHR_bfloat16; the remaining gap is specifically general scalar/vector HLSL BF16 arithmetic, not matrix BF16."
+      "surface": "FP16 mixed-precision dot2",
+      "status": "native-contract-vulkan-candidate-dxil",
+      "amd_native": "v_dot2_f32_f16 for FP32 accumulation and v_dot2_f16_f16 for FP16 accumulation where the Radeon generation supports them",
+      "spirv": "SPV_VALVE_mixed_float_dot_product OpFDot2MixAcc32VALVE/OpFDot2MixAcc16VALVE preserve the exact mixed-precision operation.",
+      "dxil": "No equivalent first-class mixed-accumulator DXIL op identified. The DirectX corpus widens FP16 inputs before dx.op.dot2.f32 so Radeon can reconstruct v_dot2_f32_f16 without changing semantics.",
+      "test": "amd.mixed-dot.hlsl + amd_mixed_dot_ci.py + mixed_dot_probe.py + dxil-mixed-dot.hlsl"
+    },
+    {
+      "surface": "BF16 scalar/vector dot2",
+      "status": "native-contract-vulkan",
+      "amd_native": "v_dot2_f32_bf16 and v_dot2_bf16_bf16 on gfx11-class Radeon",
+      "spirv": "A genuine encoded BFloat16KHR scalar/vector type is exposed through inline SPIR-V. SPV_KHR_bfloat16 OpDot preserves BF16->BF16 dot; SPV_VALVE_mixed_float_dot_product preserves BF16 inputs with FP32 or BF16 accumulation.",
+      "dxil": "Ordinary scalar/vector HLSL/DXIL still has no first-class BF16 arithmetic type; BF16 matrix support remains separately available through SM 6.10 LinAlg.",
+      "test": "amd.mixed-dot.hlsl + amd_mixed_dot_ci.py + mixed_dot_probe.py",
+      "note": "Packed uint values are transport only and are OpBitcast to genuine BF16 SPIR-V types before arithmetic. No integer emulation is used."
+    },
+    {
+      "surface": "FP8 mixed-precision dot4",
+      "status": "deferred-hardware",
+      "spirv": "SPV_VALVE_mixed_float_dot_product OpFDot4MixAcc32VALVE is known to the pinned SPIR-V Headers/Tools.",
+      "reason": "User cannot qualify FP8 hardware; keep the exact standards path visible but do not spend qualification time or claim Radeon recovery yet."
     }
   ]
 }
