@@ -1,5 +1,5 @@
 param(
-    [Parameter(Mandatory=$true)][string]$Dxc,
+    [string]$Dxc,
     [string]$ApusrRoot,
     [ValidateSet("inventory", "compiler", "smoke", "qualify")][string]$Tier = "compiler",
     [string]$Family = "all",
@@ -9,7 +9,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$DxcPath = (Resolve-Path $Dxc).Path
+
+Write-Host "[APUSR AMD] Empirical candidate inventory"
+python (Join-Path $RepoRoot "utils/apusr_amd_experimental_inventory.py")
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $Args = @(
     (Join-Path $RepoRoot "utils/apusr_amd_qualify.py"),
@@ -18,6 +21,10 @@ $Args = @(
 )
 
 if ($Tier -ne "inventory") {
+    if (-not $Dxc) {
+        throw "-Dxc is required for compiler/smoke/qualify tiers."
+    }
+    $DxcPath = (Resolve-Path $Dxc).Path
     $Args += @("--dxc", $DxcPath)
 }
 
@@ -26,6 +33,9 @@ if ($ApusrRoot) {
 }
 
 if ($NativeProbe) {
+    if ($Tier -eq "inventory") {
+        throw "-NativeProbe requires compiler, smoke, or qualify tier."
+    }
     $Args += "--native-probe"
     if ($VulkanSdk) {
         $Args += @("--vulkan-sdk", $VulkanSdk)
