@@ -3,7 +3,6 @@
 #include <array>
 #include <bit>
 #include <cstdint>
-#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -27,9 +26,12 @@ std::vector<uint32_t> readSpirv(const char *path) {
   std::ifstream file(path, std::ios::binary | std::ios::ate);
   if (!file)
     throw std::runtime_error(std::string("cannot open SPIR-V: ") + path);
-  const auto size = file.tellg();
-  if (size <= 0 || (size % 4) != 0)
+  const auto end = file.tellg();
+  if (end <= 0)
     throw std::runtime_error("SPIR-V size is invalid");
+  const auto size = static_cast<std::streamsize>(end);
+  if ((size % 4) != 0)
+    throw std::runtime_error("SPIR-V size is not dword-aligned");
   std::vector<uint32_t> words(static_cast<size_t>(size) / 4);
   file.seekg(0);
   file.read(reinterpret_cast<char *>(words.data()), size);
@@ -83,10 +85,6 @@ uint32_t mulHiU24(uint32_t a, uint32_t b) {
   const uint64_t product = uint64_t(a & 0x00ffffffu) *
                            uint64_t(b & 0x00ffffffu);
   return static_cast<uint32_t>(product >> 32);
-}
-uint32_t mulHiI24Bits(uint32_t a, uint32_t b) {
-  const int64_t product = int64_t(sign24(a)) * int64_t(sign24(b));
-  return static_cast<uint32_t>(static_cast<uint64_t>(product) >> 32);
 }
 uint32_t lerpU8(uint32_t a, uint32_t b, uint32_t rounding) {
   uint32_t out = 0;
@@ -387,6 +385,17 @@ int main(int argc, char **argv) {
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE,
                             s.pipelineLayout, 0, 1, &descriptor, 0, nullptr);
     vkCmdDispatch(command, 1, 1, 1);
+    VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.buffer = s.buffer;
+    barrier.offset = 0;
+    barrier.size = VK_WHOLE_SIZE;
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         VK_PIPELINE_STAGE_HOST_BIT, 0, 0, nullptr, 1, &barrier,
+                         0, nullptr);
     vkCheck(vkEndCommandBuffer(command), "vkEndCommandBuffer");
     VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     submit.commandBufferCount = 1;
