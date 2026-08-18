@@ -39,6 +39,42 @@ uint2 Ballot(bool predicate) {
 bool BallotAny(bool predicate) { return WaveActiveAnyTrue(predicate); }
 bool BallotAll(bool predicate) { return WaveActiveAllTrue(predicate); }
 
+// Exact standard subgroup reductions. These exist on DXIL as Wave* operations
+// and on Vulkan as OpGroupNonUniform* operations, so APUSR can use the same
+// semantics on both backends without carrying shuffle trees solely for API
+// portability. Clustered/postfix/min-max scan forms remain separately tracked
+// because HLSL does not expose all of AMD's AGS WaveReduce/WaveScan surface.
+float ActiveSum(float value) { return WaveActiveSum(value); }
+int ActiveSum(int value) { return WaveActiveSum(value); }
+uint ActiveSum(uint value) { return WaveActiveSum(value); }
+
+float ActiveProduct(float value) { return WaveActiveProduct(value); }
+int ActiveProduct(int value) { return WaveActiveProduct(value); }
+uint ActiveProduct(uint value) { return WaveActiveProduct(value); }
+
+float ActiveMin(float value) { return WaveActiveMin(value); }
+int ActiveMin(int value) { return WaveActiveMin(value); }
+uint ActiveMin(uint value) { return WaveActiveMin(value); }
+
+float ActiveMax(float value) { return WaveActiveMax(value); }
+int ActiveMax(int value) { return WaveActiveMax(value); }
+uint ActiveMax(uint value) { return WaveActiveMax(value); }
+
+int ActiveBitAnd(int value) { return WaveActiveBitAnd(value); }
+uint ActiveBitAnd(uint value) { return WaveActiveBitAnd(value); }
+int ActiveBitOr(int value) { return WaveActiveBitOr(value); }
+uint ActiveBitOr(uint value) { return WaveActiveBitOr(value); }
+int ActiveBitXor(int value) { return WaveActiveBitXor(value); }
+uint ActiveBitXor(uint value) { return WaveActiveBitXor(value); }
+
+float PrefixSum(float value) { return WavePrefixSum(value); }
+int PrefixSum(int value) { return WavePrefixSum(value); }
+uint PrefixSum(uint value) { return WavePrefixSum(value); }
+
+float PrefixProduct(float value) { return WavePrefixProduct(value); }
+int PrefixProduct(int value) { return WavePrefixProduct(value); }
+uint PrefixProduct(uint value) { return WavePrefixProduct(value); }
+
 // SPV_AMD_shader_trinary_minmax
 template <typename T>
 [[vk::ext_extension("SPV_AMD_shader_trinary_minmax")]]
