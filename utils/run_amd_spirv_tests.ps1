@@ -19,6 +19,7 @@ $ContractChunks = @(
     @("64-bit atomics", "utils/amd_atomic_ci.py"),
     @("Packed conversions", "utils/amd_packing_ci.py"),
     @("Cooperative matrices", "utils/amd_matrix_ci.py"),
+    @("Mixed-precision dot", "utils/amd_mixed_dot_ci.py"),
     @("DXIL parity", "utils/amd_dxil_ci.py")
 )
 
