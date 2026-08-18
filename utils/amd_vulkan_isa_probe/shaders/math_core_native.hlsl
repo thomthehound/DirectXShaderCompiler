@@ -17,6 +17,12 @@ void main(uint3 tid : SV_DispatchThreadID) {
   uint mulU24 = vk::amd::MulU24(seed, seed2);
   int mulI24 = vk::amd::MulI24(signedSeed, asint(seed2));
 
+  uint sadU8 = vk::amd::SadU8(seed, seed2, tid.x + 3u);
+  uint sadHiU8 = vk::amd::SadHiU8(seed2, seed, tid.x + 5u);
+  uint sadU16 = vk::amd::SadU16(seed, seed2, tid.x + 7u);
+  uint sadU32 = vk::amd::SadU32(seed, seed2, tid.x + 11u);
+  uint msadU8 = vk::amd::MsadU8(seed, seed2 | 0x00000100u, tid.x + 13u);
+
   float x = 0.75f + float(seed & 1023u) * (1.0f / 2048.0f);
   float y = vk::amd::Rcp(x + 0.25f);
   y += vk::amd::Sqrt(x + 1.0f);
@@ -27,5 +33,5 @@ void main(uint3 tid : SV_DispatchThreadID) {
   y += vk::amd::FMed3(x, -x, y);
 
   Out[tid.x] = ubfe ^ asuint(sbfe) ^ rev ^ bits ^ mulU24 ^ asuint(mulI24) ^
-               asuint(y);
+               sadU8 ^ sadHiU8 ^ sadU16 ^ sadU32 ^ msadU8 ^ asuint(y);
 }
