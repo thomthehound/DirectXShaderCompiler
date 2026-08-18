@@ -28,6 +28,17 @@ void main(uint3 tid : SV_DispatchThreadID) {
   uint sadU32 = vk::amd::SadU32(seed, seed2, tid.x + 11u);
   uint msadU8 = vk::amd::MsadU8(seed, seed2 | 0x00000100u, tid.x + 13u);
 
+  uint64_t source64 = (uint64_t(seed3) << 32u) | uint64_t(seed);
+  uint64_t accum16 = (uint64_t((tid.x + 7u) & 0xffffu) << 48u) |
+                     (uint64_t((tid.x + 5u) & 0xffffu) << 32u) |
+                     (uint64_t((tid.x + 3u) & 0xffffu) << 16u) |
+                     uint64_t((tid.x + 1u) & 0xffffu);
+  uint64_t qsad = vk::amd::QsadPkU16U8(source64, seed2, accum16);
+  uint64_t mqsad = vk::amd::MqsadPkU16U8(source64, seed2 | 0x00010000u, accum16);
+  uint4 mqsad32 = vk::amd::MqsadU32U8(
+      source64, seed2 | 0x00000100u,
+      uint4(tid.x + 17u, tid.x + 19u, tid.x + 23u, tid.x + 29u));
+
   uint lerp = vk::amd::LerpU8(seed, seed2, seed3);
   uint bfi = vk::amd::Bfi(seed, seed2, seed3);
   uint xad = vk::amd::XadU32(seed, seed2, seed3);
@@ -49,6 +60,9 @@ void main(uint3 tid : SV_DispatchThreadID) {
 
   Out[tid.x] = ubfe ^ asuint(sbfe) ^ rev ^ bits ^ mulU24 ^ asuint(mulI24) ^
                mulHiU24 ^ asuint(mulHiI24) ^ madU24 ^ asuint(madI24) ^
-               sadU8 ^ sadHiU8 ^ sadU16 ^ sadU32 ^ msadU8 ^ lerp ^ bfi ^ xad ^
-               lshlAdd ^ addLshl ^ add3 ^ lshlOr ^ andOr ^ or3 ^ asuint(y);
+               sadU8 ^ sadHiU8 ^ sadU16 ^ sadU32 ^ msadU8 ^
+               uint(qsad) ^ uint(qsad >> 32u) ^ uint(mqsad) ^ uint(mqsad >> 32u) ^
+               mqsad32.x ^ mqsad32.y ^ mqsad32.z ^ mqsad32.w ^
+               lerp ^ bfi ^ xad ^ lshlAdd ^ addLshl ^ add3 ^ lshlOr ^ andOr ^
+               or3 ^ asuint(y);
 }
