@@ -47,7 +47,7 @@ jobs:
           python3 utils/hct/hctgen.py HLSLIntrinsicOp --output include/dxc/HlslIntrinsicOp.h
           clang-format -i include/dxc/HlslIntrinsicOp.h
 
-      - name: Finalize current metadata schema
+      - name: Finalize current compiler and metadata schema
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -77,6 +77,27 @@ jobs:
           if old_call not in text:
               raise SystemExit('generated interpolation helper call missing')
           cpp.write_text(text.replace(old_call, 'getAmdParameterInterpolation(stageVar, sourceDecl, astContext);', 1), encoding='utf-8')
+
+          # Every frontend intrinsic must occupy a slot in the DXIL lowering
+          # table even when it is intentionally Vulkan-only. Match DXC's other
+          # vk::* intrinsics: explicit rejection through UnsupportedVulkanIntrinsic.
+          lower = Path('lib/HLSL/HLOperationLower.cpp')
+          text = lower.read_text(encoding='utf-8')
+          tail = '''    {IntrinsicOp::IOP___builtin_LinAlg_VectorAccumulateToDescriptor,
+             TranslateLinAlgVectorAccumulateToDescriptor,
+             DXIL::OpCode::LinAlgVectorAccumulateToDescriptor},
+          };'''
+          replacement = '''    {IntrinsicOp::IOP___builtin_LinAlg_VectorAccumulateToDescriptor,
+             TranslateLinAlgVectorAccumulateToDescriptor,
+             DXIL::OpCode::LinAlgVectorAccumulateToDescriptor},
+              {IntrinsicOp::IOP_VkAmdVertexParameterComponent,
+               UnsupportedVulkanIntrinsic, DXIL::OpCode::NumOpCodes},
+              {IntrinsicOp::IOP_VkAmdVertexParameter, UnsupportedVulkanIntrinsic,
+               DXIL::OpCode::NumOpCodes},
+          };'''
+          if text.count(tail) != 1:
+              raise SystemExit('DXIL lowering table tail changed')
+          lower.write_text(text.replace(tail, replacement, 1), encoding='utf-8')
 
           path = Path('utils/amd_spirv_contracts.json')
           data = json.loads(path.read_text(encoding='utf-8'))
@@ -115,6 +136,8 @@ jobs:
           git diff --check
           grep -q 'IOP_VkAmdVertexParameterComponent' include/dxc/HlslIntrinsicOp.h
           grep -q 'IOP_VkAmdVertexParameter' include/dxc/HlslIntrinsicOp.h
+          grep -q 'IOP_VkAmdVertexParameterComponent' lib/HLSL/HLOperationLower.cpp
+          grep -q 'IOP_VkAmdVertexParameter, UnsupportedVulkanIntrinsic' lib/HLSL/HLOperationLower.cpp
           grep -q 'processAmdVertexParameter' tools/clang/lib/SPIRV/SpirvEmitter.cpp
           grep -q 'getAmdVertexParameterComponentPtr' tools/clang/lib/SPIRV/DeclResultIdMapper.cpp
           ! grep -q 'ags-vtxparam-raw-signature-index' utils/apusr_amd_ingress_blockers.json
