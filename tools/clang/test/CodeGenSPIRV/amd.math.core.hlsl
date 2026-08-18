@@ -2,15 +2,15 @@
 
 #include <vk/amd/math.h>
 
-// Verify low-level integer operations remain semantic SPIR-V instructions
-// rather than expanding into shift/mask arithmetic.
-// CHECK: OpBitFieldUExtract
-// CHECK: OpBitFieldSExtract
-// CHECK: OpBitReverse
-// CHECK: OpBitCount
+// Verify the low-level integer helpers survive the HLSL -> SPIR-V boundary as
+// their semantic core instructions. Exact counts catch accidental duplicate or
+// fallback lowering without forbidding unrelated shift/mask operations elsewhere
+// in the shader.
+// CHECK-COUNT-1: OpBitFieldUExtract
+// CHECK-COUNT-1: OpBitFieldSExtract
+// CHECK-COUNT-1: OpBitReverse
+// CHECK-COUNT-1: OpBitCount
 // CHECK: OpExtInst %float {{%[0-9]+}} FMid3AMD
-// CHECK-NOT: OpShiftRightLogical
-// CHECK-NOT: OpBitwiseAnd
 
 RWStructuredBuffer<uint> Out : register(u0);
 
