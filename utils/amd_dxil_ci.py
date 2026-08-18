@@ -75,6 +75,18 @@ def main() -> int:
             "vs_6_8",
             ("dx.op.startVertexLocation", "dx.op.startInstanceLocation"),
         ),
+        (
+            "atomic-u64-buffer",
+            tests / "dxil-atomic-u64.hlsl",
+            "cs_6_6",
+            ("dx.op.atomicBinOp.i64", "dx.op.atomicCompareExchange.i64"),
+        ),
+        (
+            "atomic-u64-image",
+            tests / "dxil-atomic-u64-image.hlsl",
+            "cs_6_6",
+            ("dx.op.atomicBinOp.i64", "dx.op.atomicCompareExchange.i64"),
+        ),
     )
 
     with tempfile.TemporaryDirectory(prefix="amd_dxil_ci_") as temp_name:
