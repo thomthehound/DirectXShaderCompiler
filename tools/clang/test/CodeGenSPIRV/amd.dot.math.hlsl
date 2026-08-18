@@ -2,17 +2,19 @@
 
 #include <vk/amd/dot.h>
 
-// Same-signedness 4x8 has both ordinary and exact saturating standardized
-// contracts. The 2x16, mixed-signedness, 8x4, and packed-half FP16 forms are
-// canonical recovery candidates. I4 extraction must be fully unrolled so the
-// Radeon combiner sees a fixed packed-lane graph rather than a dynamic loop.
+// Packed 4x8 now has direct same-sign, mixed-sign, and saturating standardized
+// contracts. The 2x16, 8x4, and packed-half FP16 forms remain canonical recovery
+// candidates. I4 extraction must be fully unrolled so the Radeon combiner sees
+// a fixed packed-lane graph rather than a dynamic loop.
 // CHECK: OpCapability DotProduct
 // CHECK: OpCapability DotProductInput4x8BitPacked
 // CHECK: OpExtension "SPV_KHR_integer_dot_product"
 // CHECK-COUNT-1: OpSDot
 // CHECK-COUNT-1: OpUDot
+// CHECK-COUNT-2: OpSUDot
 // CHECK-COUNT-1: OpSDotAccSat
 // CHECK-COUNT-1: OpUDotAccSat
+// CHECK-COUNT-2: OpSUDotAccSat
 // CHECK: OpBitFieldSExtract
 // CHECK: OpBitFieldUExtract
 // CHECK: OpIMul
@@ -39,8 +41,11 @@ void main(uint3 tid : SV_DispatchThreadID) {
 
   r ^= vk::amd::SDot2I16(a, b, accum);
   r ^= int(vk::amd::UDot2U16(a, b, uint(accum)));
+
   r ^= vk::amd::SUDot4I8U8(a, b, accum);
   r ^= vk::amd::USDot4U8I8(a, b, accum);
+  r ^= vk::amd::SUDot4I8U8AccSat(a ^ 0x80808080u, b, signedSatAccum);
+  r ^= vk::amd::USDot4U8I8AccSat(a, b ^ 0x80808080u, signedSatAccum);
 
   uint a4 = a ^ 0x13579bdfu;
   uint b4 = b ^ 0x2468ace0u;
