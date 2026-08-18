@@ -25,6 +25,11 @@ if ($Tier -ne "inventory") {
         throw "-Dxc is required for compiler/smoke/qualify tiers."
     }
     $DxcPath = (Resolve-Path $Dxc).Path
+
+    Write-Host "[APUSR AMD] Exact subgroup contracts"
+    python (Join-Path $RepoRoot "utils/amd_subgroup_ci.py") --dxc $DxcPath
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
     $Args += @("--dxc", $DxcPath)
 }
 
