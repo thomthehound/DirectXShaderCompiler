@@ -148,6 +148,21 @@ def main() -> int:
     )
 
     require_success(
+        "AMD MUL24 canonical recovery structure",
+        compile_shader(
+            "amd.math.candidates.hlsl",
+            "-T", "cs_6_2", "-E", "main", "-fcgl", "-spirv",
+        ),
+        required=(
+            r"\bOpIMul\b",
+            r"\bOpBitwiseAnd\b",
+            r"\bOpShiftLeftLogical\b",
+            r"\bOpShiftRightArithmetic\b",
+        ),
+        counts=((r"\bOpIMul\b", 2),),
+    )
+
+    require_success(
         "AMD explicit vertex interpolation",
         compile_shader(
             "amd.intrinsics.explicit-vertex.hlsl",
