@@ -2,8 +2,7 @@ name: Finish raw AGS VertexParameter
 
 on:
   pull_request:
-    branches:
-      - amd-spirv-native-intrinsics
+    branches: [amd-spirv-native-intrinsics]
   workflow_dispatch:
 
 permissions:
@@ -26,11 +25,9 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: Apply compiler patch
+      - name: Stage compiler implementation
         run: |
           set -euo pipefail
-          test -f utils/amd_finish_vertex_parameter.py
-          command -v clang
           command -v clang-format
           command -v ninja
           python3 - <<'PY'
@@ -40,130 +37,19 @@ jobs:
           if 'processVkReadClock' not in text:
               raise SystemExit('stale processVkReadClock anchor not found')
           text = text.replace('processVkReadClock', 'processIntrinsicReadClock')
-          text = text.replace('processIntrinsicReadClock(const CallExpr *callExpr)', 'processIntrinsicReadClock(const CallExpr *)')
+          text = text.replace('processIntrinsicReadClock(const CallExpr *callExpr)',
+                              'processIntrinsicReadClock(const CallExpr *)')
           p.write_text(text, encoding='utf-8')
           PY
           python3 utils/amd_finish_vertex_parameter.py
-
-          # HCT appends new intrinsic opcodes in lexical intrinsic-key order.
-          # Preserve that canonical order instead of hand-assigning the two new
-          # vk intrinsics in reverse order.
-          python3 - <<'PY'
-          from pathlib import Path
-          import json
-          path = Path('utils/hct/hlsl_intrinsic_opcodes.json')
-          data = json.loads(path.read_text(encoding='utf-8'))
-          ops = data['IntrinsicOpCodes']
-          ops['IOP_VkAmdVertexParameter'] = 424
-          ops['IOP_VkAmdVertexParameterComponent'] = 425
-          ops['Num_Intrinsics'] = 426
-          path.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
-          PY
-
+          python3 utils/amd_finalize_vertex_parameter.py
           python3 utils/hct/hctgen.py HLSLIntrinsicOp --output include/dxc/HlslIntrinsicOp.h
           clang-format -i include/dxc/HlslIntrinsicOp.h
 
-      - name: Finalize current compiler and metadata schema
+      - name: Validate staged source
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import json
-
-          cpp = Path('tools/clang/lib/SPIRV/DeclResultIdMapper.cpp')
-          text = cpp.read_text(encoding='utf-8')
-          old = '''hlsl::DXIL::InterpolationMode getAmdParameterInterpolation(
-              const ValueDecl *decl, ASTContext &context) {
-            hlsl::InterpolationMode mode(
-                decl->hasAttr<HLSLNoInterpolationAttr>(), decl->hasAttr<HLSLLinearAttr>(),
-                decl->hasAttr<HLSLNoPerspectiveAttr>(), decl->hasAttr<HLSLCentroidAttr>(),
-                decl->hasAttr<HLSLSampleAttr>());'''
-          new = '''hlsl::DXIL::InterpolationMode getAmdParameterInterpolation(
-              const StageVar &stageVar, const ValueDecl *decl, ASTContext &context) {
-            if (stageVar.getSpirvInstr()->isNoninterpolated())
-              return hlsl::DXIL::InterpolationMode::Constant;
-            hlsl::InterpolationMode mode(
-                decl->hasAttr<HLSLNoInterpolationAttr>(), decl->hasAttr<HLSLLinearAttr>(),
-                decl->hasAttr<HLSLNoPerspectiveAttr>(), decl->hasAttr<HLSLCentroidAttr>(),
-                decl->hasAttr<HLSLSampleAttr>());'''
-          if old not in text:
-              raise SystemExit('generated interpolation helper shape changed')
-          text = text.replace(old, new, 1)
-          old_call = 'getAmdParameterInterpolation(sourceDecl, astContext);'
-          if old_call not in text:
-              raise SystemExit('generated interpolation helper call missing')
-          cpp.write_text(text.replace(old_call, 'getAmdParameterInterpolation(stageVar, sourceDecl, astContext);', 1), encoding='utf-8')
-
-          # Every frontend intrinsic must occupy a slot in the DXIL lowering
-          # table even when it is intentionally Vulkan-only. Match DXC's other
-          # vk::* intrinsics: explicit rejection through UnsupportedVulkanIntrinsic.
-          lower = Path('lib/HLSL/HLOperationLower.cpp')
-          text = lower.read_text(encoding='utf-8')
-          marker = '''};
-          constexpr size_t NumLowerTableEntries ='''
-          entries = '''    {IntrinsicOp::IOP_VkAmdVertexParameter, UnsupportedVulkanIntrinsic,
-               DXIL::OpCode::NumOpCodes},
-              {IntrinsicOp::IOP_VkAmdVertexParameterComponent,
-               UnsupportedVulkanIntrinsic, DXIL::OpCode::NumOpCodes},
-          '''
-          if text.count(marker) != 1:
-              raise SystemExit(f'DXIL lowering table boundary count={text.count(marker)}')
-          lower.write_text(text.replace(marker, entries + marker, 1), encoding='utf-8')
-
-          # The eager vk namespace declaration builder historically only needed
-          # a handful of fixed scalar types. Raw AGS VertexParameter is the first
-          # compiler-native vk intrinsic here with fixed float / float4 result
-          # types. Use the existing aggregate-type mapper so both shapes are
-          # materialized correctly instead of falling through with an empty
-          # paramTypes vector (which crashes Release builds).
-          sema = Path('tools/clang/lib/Sema/SemaHLSL.cpp')
-          text = sema.read_text(encoding='utf-8')
-          needle = '''      switch (pArgs[i].uLegalComponentTypes) {
-              case LICOMPTYPE_UINT64:'''
-          replacement = '''      switch (pArgs[i].uLegalComponentTypes) {
-              case LICOMPTYPE_FLOAT: {
-                QualType fixedType = GetSingleQualTypeForMapping(intrinsic, i);
-                DXASSERT(!fixedType.isNull(),
-                         "fixed float intrinsic type must have one mapping");
-                paramTypes.push_back(fixedType);
-                break;
-              }
-              case LICOMPTYPE_UINT64:'''
-          if text.count(needle) != 1:
-              raise SystemExit(f'vk fixed-type switch anchor count={text.count(needle)}')
-          sema.write_text(text.replace(needle, replacement, 1), encoding='utf-8')
-
-          path = Path('utils/amd_spirv_contracts.json')
-          data = json.loads(path.read_text(encoding='utf-8'))
-          for row in data['ags_opcodes']:
-              if row.get('opcode') == '0x0e':
-                  row.update({
-                      'spirv': 'SPV_AMD_shader_explicit_vertex_parameter InterpolateAtVertexAMD, including compiler-native AGS D3D parameter-register/component index resolution independent of Vulkan Location',
-                      'status': 'native-contract',
-                      'test': 'amd.intrinsics.explicit-vertex.hlsl + amd.intrinsics.vertex-parameter-index.hlsl',
-                      'note': 'vk::AmdVertexParameter and vk::AmdVertexParameterComponent enforce AGS immediate index ranges and reproduce DXC prefix-stable D3D input-register packing before selecting the actual SPIR-V Input pointer.'
-                  })
-                  break
-          else:
-              raise SystemExit('VertexParameter contract row missing')
-          for row in data['low_level_math']:
-              if row.get('surface') == 'BF16 dot/conversion':
-                  row.update({
-                      'spirv': 'first-class BFloat16KHR scalar/vector types, exact BF16 mixed-dot contracts, and scalar/vector OpFConvert ingress',
-                      'status': 'native-contract',
-                      'test': 'amd.bfloat16.convert.hlsl + amd.mixed-dot.hlsl + BF16 compiler/ISA probes',
-                      'note': 'Specific bit-exact F32->BF16 directed/stochastic rounding guarantees remain separately tracked; basic BF16 type/conversion ingress is implemented.'
-                  })
-                  break
-          else:
-              raise SystemExit('BF16 contract row missing')
-          path.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
-          PY
-
-      - name: Validate source state
-        run: |
-          set -euo pipefail
-          python3 -m py_compile utils/amd_spirv_ci.py
+          python3 -m py_compile utils/amd_spirv_ci.py utils/amd_finalize_vertex_parameter.py
           python3 -m json.tool utils/hct/hlsl_intrinsic_opcodes.json >/dev/null
           python3 -m json.tool utils/amd_spirv_contracts.json >/dev/null
           python3 -m json.tool utils/apusr_amd_ingress_blockers.json >/dev/null
@@ -178,9 +64,8 @@ jobs:
           git diff --check
           grep -q 'IOP_VkAmdVertexParameter = 424' include/dxc/HlslIntrinsicOp.h
           grep -q 'IOP_VkAmdVertexParameterComponent = 425' include/dxc/HlslIntrinsicOp.h
-          grep -q 'IOP_VkAmdVertexParameter' lib/HLSL/HLOperationLower.cpp
-          grep -q 'IOP_VkAmdVertexParameterComponent' lib/HLSL/HLOperationLower.cpp
           grep -q 'case LICOMPTYPE_FLOAT' tools/clang/lib/Sema/SemaHLSL.cpp
+          grep -q 'IOP_VkAmdVertexParameter' lib/HLSL/HLOperationLower.cpp
           grep -q 'processAmdVertexParameter' tools/clang/lib/SPIRV/SpirvEmitter.cpp
           grep -q 'getAmdVertexParameterComponentPtr' tools/clang/lib/SPIRV/DeclResultIdMapper.cpp
           ! grep -q 'ags-vtxparam-raw-signature-index' utils/apusr_amd_ingress_blockers.json
@@ -205,14 +90,12 @@ jobs:
           set -euo pipefail
           export LD_LIBRARY_PATH="$PWD/build-amd-spirv/lib:${LD_LIBRARY_PATH:-}"
           DXC="$PWD/build-amd-spirv/bin/dxc"
-
           cat >/tmp/plain.hlsl <<'HLSL'
           RWStructuredBuffer<uint> outBuffer : register(u0);
           [numthreads(1, 1, 1)]
           void main(uint3 tid : SV_DispatchThreadID) { outBuffer[0] = tid.x; }
           HLSL
           "$DXC" -T cs_6_2 -E main -fcgl -spirv /tmp/plain.hlsl -Fo /tmp/plain.spv
-
           set +e
           "$DXC" -T cs_6_2 -E main -fcgl -spirv -fspv-extension=AMD \
             tools/clang/test/CodeGenSPIRV/amd.intrinsics.header.hlsl \
@@ -220,18 +103,12 @@ jobs:
           rc=$?
           set -e
           if [ "$rc" -ne 0 ]; then
-            echo "AMD header smoke failed with rc=$rc; collecting debugger backtrace"
-            if ! command -v gdb >/dev/null 2>&1; then
-              sudo apt-get update
-              sudo apt-get install -y gdb
-            fi
-            gdb --batch \
-              -ex 'set pagination off' \
-              -ex run \
-              -ex 'thread apply all bt full' \
+            echo "AMD header smoke failed with rc=$rc"
+            sudo apt-get update >/dev/null && sudo apt-get install -y gdb >/dev/null
+            gdb --batch -ex 'set pagination off' -ex run -ex 'thread apply all bt full' \
               --args "$DXC" -T cs_6_2 -E main -fcgl -spirv -fspv-extension=AMD \
-                tools/clang/test/CodeGenSPIRV/amd.intrinsics.header.hlsl \
-                -Fo /tmp/amd-header-gdb.spv || true
+              tools/clang/test/CodeGenSPIRV/amd.intrinsics.header.hlsl \
+              -Fo /tmp/amd-header-gdb.spv || true
             exit "$rc"
           fi
 
@@ -254,6 +131,7 @@ jobs:
         run: |
           set -euo pipefail
           rm utils/amd_finish_vertex_parameter.py
+          rm utils/amd_finalize_vertex_parameter.py
           rm .github/workflows/agent-finish-vtxparam.yml
           git config user.name 'OpenAI Codex'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -290,21 +168,12 @@ jobs:
         shell: pwsh
         run: |
           $dxc = Join-Path $PWD 'build-amd-spirv\bin\dxc.exe'
-          python utils/amd_spirv_ci.py --dxc $dxc
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python utils/amd_math_ci.py --dxc $dxc
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python utils/amd_subgroup_ci.py --dxc $dxc
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python utils/amd_atomic_ci.py --dxc $dxc
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python utils/amd_packing_ci.py --dxc $dxc
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python utils/amd_bfloat16_ci.py --dxc $dxc
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python utils/amd_matrix_ci.py --dxc $dxc
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python utils/amd_mixed_dot_ci.py --dxc $dxc
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python utils/amd_dxil_ci.py --dxc $dxc
-          exit $LASTEXITCODE
+          $tests = @(
+            'amd_spirv_ci.py','amd_math_ci.py','amd_subgroup_ci.py',
+            'amd_atomic_ci.py','amd_packing_ci.py','amd_bfloat16_ci.py',
+            'amd_matrix_ci.py','amd_mixed_dot_ci.py','amd_dxil_ci.py'
+          )
+          foreach ($test in $tests) {
+            python (Join-Path 'utils' $test) --dxc $dxc
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
