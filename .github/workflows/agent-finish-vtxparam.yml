@@ -1,0 +1,62 @@
+name: Finish raw AGS VertexParameter
+
+on:
+  push:
+    branches:
+      - amd-spirv-native-intrinsics-dev
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finish-raw-ags-vtxparam
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: ${{ hashFiles('utils/amd_finish_vertex_parameter.py') != '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout dev branch
+        uses: actions/checkout@v4
+        with:
+          ref: amd-spirv-native-intrinsics-dev
+          fetch-depth: 1
+
+      - name: Apply compiler patch
+        run: |
+          set -euo pipefail
+          python3 utils/amd_finish_vertex_parameter.py
+          python3 utils/hct/hctgen.py HLSLIntrinsicOp --output include/dxc/HlslIntrinsicOp.h
+
+      - name: Validate generated/source state
+        run: |
+          set -euo pipefail
+          python3 -m py_compile utils/amd_spirv_ci.py
+          python3 -m json.tool utils/hct/hlsl_intrinsic_opcodes.json >/dev/null
+          python3 -m json.tool utils/amd_spirv_contracts.json >/dev/null
+          python3 -m json.tool utils/apusr_amd_ingress_blockers.json >/dev/null
+          git diff --check
+          grep -q 'IOP_VkAmdVertexParameterComponent' include/dxc/HlslIntrinsicOp.h
+          grep -q 'IOP_VkAmdVertexParameter' include/dxc/HlslIntrinsicOp.h
+          grep -q 'AmdVertexParameterComponent' utils/hct/gen_intrin_main.txt
+          grep -q 'AmdVertexParameter' utils/hct/gen_intrin_main.txt
+          grep -q 'processAmdVertexParameter' tools/clang/lib/SPIRV/SpirvEmitter.cpp
+          grep -q 'getAmdVertexParameterComponentPtr' tools/clang/lib/SPIRV/DeclResultIdMapper.cpp
+
+      - name: Remove disposable machinery
+        run: |
+          rm utils/amd_finish_vertex_parameter.py
+          rm .github/workflows/agent-finish-vtxparam.yml
+
+      - name: Commit final implementation
+        run: |
+          set -euo pipefail
+          git config user.name 'OpenAI Codex'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'Finish raw AGS VertexParameter parity [full-ci]'
+          git push origin HEAD:amd-spirv-native-intrinsics-dev
