@@ -19,6 +19,31 @@ uint UDot4U8(uint a, uint b, uint accum) {
   return dot4add_u8packed(a, b, accum);
 }
 
+// Exact saturating-accumulate variants from SPV_KHR_integer_dot_product.
+// Normal HLSL dot4add is intentionally non-saturating, so these are separate
+// AMD-oriented entry points rather than a semantic change to dot4add itself.
+// PackedVectorFormat4x8BitKHR is literal value 0.
+[[vk::ext_capability(6019)]] // DotProductKHR
+[[vk::ext_capability(6018)]] // DotProductInput4x8BitPackedKHR
+[[vk::ext_extension("SPV_KHR_integer_dot_product")]]
+[[vk::ext_instruction(/* OpSDotAccSatKHR */ 4453)]] int
+SDot4I8AccSatRaw(uint a, uint b, int accum,
+                 [[vk::ext_literal]] int packedVectorFormat);
+
+[[vk::ext_capability(6019)]] // DotProductKHR
+[[vk::ext_capability(6018)]] // DotProductInput4x8BitPackedKHR
+[[vk::ext_extension("SPV_KHR_integer_dot_product")]]
+[[vk::ext_instruction(/* OpUDotAccSatKHR */ 4454)]] uint
+UDot4U8AccSatRaw(uint a, uint b, uint accum,
+                 [[vk::ext_literal]] int packedVectorFormat);
+
+int SDot4I8AccSat(uint a, uint b, int accum) {
+  return SDot4I8AccSatRaw(a, b, accum, 0);
+}
+uint UDot4U8AccSat(uint a, uint b, uint accum) {
+  return UDot4U8AccSatRaw(a, b, accum, 0);
+}
+
 // Canonical AMD 2x16 integer dot forms. These preserve exact packed-lane
 // signedness while giving Radeon a recognizable graph for v_dot2_*_i16.
 int SDot2I16(uint a, uint b, int accum) {
