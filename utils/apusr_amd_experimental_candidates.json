@@ -77,13 +77,13 @@
     },
     {
       "id": "bf16-dot-conversion-zoo",
-      "status": "ingress-blocked",
+      "status": "implemented-search",
       "consumer": "future BF16 model/matrix paths",
-      "target": ["BF16 dot and conversion families"],
-      "search": "requires first-class BF16 shader type/operation transport; opaque uint16 emulation is not accepted",
-      "probe": "none until ingress exists",
-      "oracle": "BF16 special-value/rounding corpus",
-      "reason": "Current HLSL surface in this DXC branch has no first-class BF16 type equivalent to the AMDGPU intrinsic contract."
+      "target": ["v_dot2_f32_bf16", "v_dot2_bf16_bf16", "v_cvt_pk_bf16_f32", "generation-equivalent BF16 widening"],
+      "search": "genuine BFloat16KHR scalar/vector types; exact KHR/VALVE dot contracts; scalar/vector OpFConvert with bit-preserving uint transport only at the HLSL boundary",
+      "probe": "mixed_dot_probe.py + bfloat16_conversion_probe.py",
+      "oracle": "BF16 special-value/rounding corpus; BF16->F32 is exact, while F32->BF16 narrowing must not be promoted to bit-exact parity until the required rounding behavior is pinned",
+      "reason": "First-class BF16 ingress now exists. Stochastic-rounding AMD cvt_sr forms and a Vulkan contract that pins a particular F32->BF16 narrowing result remain separately blocked."
     },
     {
       "id": "wave-xor-butterfly-zoo",
