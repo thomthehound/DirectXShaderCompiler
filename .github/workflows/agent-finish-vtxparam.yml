@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: finish-raw-ags-vtxparam
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   apply:
@@ -31,6 +31,76 @@ jobs:
           python3 utils/amd_finish_vertex_parameter.py
           python3 utils/hct/hctgen.py HLSLIntrinsicOp --output include/dxc/HlslIntrinsicOp.h
 
+      - name: Finalize exact metadata and inherited interpolation
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+
+          root = Path('.')
+
+          # StageVar remembers inherited nointerpolation on the actual SPIR-V
+          # variable even when it came from the containing input struct. Make
+          # the D3D register packer use that rather than only field-local attrs.
+          path = root / 'tools/clang/lib/SPIRV/DeclResultIdMapper.cpp'
+          text = path.read_text(encoding='utf-8')
+          old = '''hlsl::DXIL::InterpolationMode getAmdParameterInterpolation(
+              const ValueDecl *decl, ASTContext &context) {
+            hlsl::InterpolationMode mode(
+                decl->hasAttr<HLSLNoInterpolationAttr>(), decl->hasAttr<HLSLLinearAttr>(),
+                decl->hasAttr<HLSLNoPerspectiveAttr>(), decl->hasAttr<HLSLCentroidAttr>(),
+                decl->hasAttr<HLSLSampleAttr>());'''
+          new = '''hlsl::DXIL::InterpolationMode getAmdParameterInterpolation(
+              const StageVar &stageVar, const ValueDecl *decl, ASTContext &context) {
+            if (stageVar.getSpirvInstr()->isNoninterpolated())
+              return hlsl::DXIL::InterpolationMode::Constant;
+            hlsl::InterpolationMode mode(
+                decl->hasAttr<HLSLNoInterpolationAttr>(), decl->hasAttr<HLSLLinearAttr>(),
+                decl->hasAttr<HLSLNoPerspectiveAttr>(), decl->hasAttr<HLSLCentroidAttr>(),
+                decl->hasAttr<HLSLSampleAttr>());'''
+          if old not in text:
+              raise SystemExit('generated interpolation helper shape changed')
+          text = text.replace(old, new, 1)
+          old_call = 'getAmdParameterInterpolation(sourceDecl, astContext);'
+          new_call = 'getAmdParameterInterpolation(stageVar, sourceDecl, astContext);'
+          if old_call not in text:
+              raise SystemExit('generated interpolation helper call missing')
+          path.write_text(text.replace(old_call, new_call, 1), encoding='utf-8')
+
+          # The live contract schema uses ags_opcodes/low_level_math. The
+          # disposable patch script intentionally tolerates older schemas, so
+          # finalize the current schema explicitly here.
+          path = root / 'utils/amd_spirv_contracts.json'
+          data = json.loads(path.read_text(encoding='utf-8'))
+          found_vtx = False
+          for row in data['ags_opcodes']:
+              if row.get('opcode') == '0x0e':
+                  found_vtx = True
+                  row.update({
+                      'spirv': 'SPV_AMD_shader_explicit_vertex_parameter InterpolateAtVertexAMD, including compiler-native AGS D3D parameter-register/component index resolution independent of Vulkan Location',
+                      'status': 'native-contract',
+                      'test': 'amd.intrinsics.explicit-vertex.hlsl + amd.intrinsics.vertex-parameter-index.hlsl',
+                      'note': 'vk::AmdVertexParameter and vk::AmdVertexParameterComponent enforce AGS immediate index ranges and reproduce DXC prefix-stable D3D input-register packing before selecting the actual SPIR-V Input pointer.'
+                  })
+          if not found_vtx:
+              raise SystemExit('VertexParameter contract row missing')
+
+          found_bf16 = False
+          for row in data['low_level_math']:
+              if row.get('surface') == 'BF16 dot/conversion':
+                  found_bf16 = True
+                  row.update({
+                      'spirv': 'first-class BFloat16KHR scalar/vector types, exact BF16 mixed-dot contracts, and scalar/vector OpFConvert ingress',
+                      'status': 'native-contract',
+                      'test': 'amd.bfloat16.convert.hlsl + amd.mixed-dot.hlsl + BF16 compiler/ISA probes',
+                      'note': 'Specific bit-exact F32->BF16 directed/stochastic rounding guarantees remain separately tracked; basic BF16 type/conversion ingress is implemented.'
+                  })
+          if not found_bf16:
+              raise SystemExit('BF16 contract row missing')
+          path.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+          PY
+
       - name: Validate generated/source state
         run: |
           set -euo pipefail
@@ -45,6 +115,9 @@ jobs:
           grep -q 'AmdVertexParameter' utils/hct/gen_intrin_main.txt
           grep -q 'processAmdVertexParameter' tools/clang/lib/SPIRV/SpirvEmitter.cpp
           grep -q 'getAmdVertexParameterComponentPtr' tools/clang/lib/SPIRV/DeclResultIdMapper.cpp
+          grep -q '"opcode": "0x0e"' utils/amd_spirv_contracts.json
+          grep -q '"status": "native-contract"' utils/amd_spirv_contracts.json
+          ! grep -q 'ags-vtxparam-raw-signature-index' utils/apusr_amd_ingress_blockers.json
 
       - name: Remove disposable machinery
         run: |
