@@ -15,7 +15,6 @@ concurrency:
 
 jobs:
   apply:
-    if: ${{ hashFiles('utils/amd_finish_vertex_parameter.py') != '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -28,6 +27,7 @@ jobs:
       - name: Apply compiler patch
         run: |
           set -euo pipefail
+          test -f utils/amd_finish_vertex_parameter.py
           python3 utils/amd_finish_vertex_parameter.py
           python3 utils/hct/hctgen.py HLSLIntrinsicOp --output include/dxc/HlslIntrinsicOp.h
 
