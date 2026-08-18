@@ -24,9 +24,17 @@ void main(uint3 tid : SV_DispatchThreadID) {
   int dot8su = vk::amd::SUDot8I4U4(a ^ 0x88888888u, b, si + 15);
   int dot8us = vk::amd::USDot8U4I4(a, b ^ 0x99999999u, si + 17);
 
+  // Mask each half away from exponent-all-ones so the candidate remains finite
+  // if it is later promoted into an execution oracle. The source still carries
+  // arbitrary sign/mantissa data and remains fully data-dependent.
+  uint packedHalfA = a & 0xfbfffbffu;
+  uint packedHalfB = b & 0xfbfffbffu;
+  float dot2f16 = vk::amd::FDot2F32F16Bits(
+      packedHalfA, packedHalfB, float(si) * 0.0009765625f);
+
   Out[tid.x] = uint4(
       asuint(dot4s) ^ dot4u,
       asuint(dot2s) ^ dot2u,
       asuint(dot4su) ^ asuint(dot4us),
-      asuint(dot8s) ^ dot8u ^ asuint(dot8su) ^ asuint(dot8us));
+      asuint(dot8s) ^ dot8u ^ asuint(dot8su) ^ asuint(dot8us) ^ asuint(dot2f16));
 }
