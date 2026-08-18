@@ -19,6 +19,7 @@ class Case:
     forbidden: tuple[str, ...] = ()
     counts: tuple[tuple[str, int], ...] = ()
     flags: tuple[str, ...] = ()
+    target: str = "cs_6_2"
 
 
 def run(argv: list[str]) -> subprocess.CompletedProcess[str]:
@@ -105,10 +106,23 @@ def main() -> int:
                 r"\bOpShiftLeftLogical\b", r"\bOpIAdd\b", r"\bOpIMul\b",
             ),
         ),
+        Case(
+            "packed integer dot surface",
+            "amd.dot.math.hlsl",
+            required=(
+                r"OpCapability DotProduct",
+                r"OpCapability DotProductInput4x8BitPacked",
+                r'OpExtension "SPV_KHR_integer_dot_product"',
+                r"\bOpBitFieldSExtract\b", r"\bOpBitFieldUExtract\b",
+                r"\bOpIMul\b",
+            ),
+            counts=((r"\bOpSDot\b", 1), (r"\bOpUDot\b", 1)),
+            target="cs_6_4",
+        ),
     )
 
-    common = ("-T", "cs_6_2", "-E", "main", "-fcgl", "-spirv")
     for case in cases:
+        common = ("-T", case.target, "-E", "main", "-fcgl", "-spirv")
         proc = run([dxc, *common, *case.flags, str(tests / case.shader)])
         if proc.returncode != 0:
             fail(case, proc, "compilation failed")
