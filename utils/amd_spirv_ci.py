@@ -35,8 +35,8 @@ def run(argv: list[str]) -> Result:
 def fail(name: str, result: Result, reason: str) -> None:
     command = " ".join(result.argv)
     output = (result.stdout + "\n" + result.stderr).strip()
-    if len(output) > 6000:
-        output = output[-6000:]
+    if len(output) > 8000:
+        output = output[-8000:]
     raise RuntimeError(
         f"{name}: {reason}\ncommand: {command}\nreturn code: "
         f"{result.returncode}\n{output}"
@@ -151,6 +151,43 @@ def main() -> int:
     )
 
     require_success(
+        "AMD full scalar/vector wave scan parity",
+        compile_shader(
+            "amd.intrinsics.wave-scan-full.hlsl",
+            "-T", "cs_6_0", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-target-env=vulkan1.1",
+        ),
+        required=(
+            r"\bOpGroupNonUniformFAdd\b.*\bInclusiveScan\b",
+            r"\bOpGroupNonUniformIAdd\b.*\bInclusiveScan\b",
+            r"\bOpGroupNonUniformFMul\b.*\bExclusiveScan\b",
+            r"\bOpGroupNonUniformIMul\b.*\bExclusiveScan\b",
+            r"\bOpGroupNonUniformFMin\b.*\bInclusiveScan\b",
+            r"\bOpGroupNonUniformSMin\b.*\bExclusiveScan\b",
+            r"\bOpGroupNonUniformUMin\b.*\bInclusiveScan\b",
+            r"\bOpGroupNonUniformFMax\b.*\bExclusiveScan\b",
+            r"\bOpGroupNonUniformSMax\b.*\bInclusiveScan\b",
+            r"\bOpGroupNonUniformUMax\b.*\bExclusiveScan\b",
+            r"\bOpGroupNonUniformBitwiseAnd\b.*\bReduce\b",
+            r"\bOpGroupNonUniformBitwiseOr\b.*\bReduce\b",
+            r"\bOpGroupNonUniformBitwiseXor\b.*\bReduce\b",
+        ),
+    )
+
+    require_success(
+        "AMD swizzle immediate parity",
+        compile_shader(
+            "amd.intrinsics.swizzle-parity.hlsl",
+            "-T", "cs_6_0", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-extension=AMD",
+        ),
+        required=(
+            r'OpExtension "SPV_AMD_shader_ballot"',
+            r"\bOpExtInst\b.*\bSwizzleInvocationsMaskedAMD\b",
+        ),
+    )
+
+    require_success(
         "AMD exact core math contracts",
         compile_shader(
             "amd.math.core.hlsl",
@@ -200,6 +237,44 @@ def main() -> int:
         ),
     )
 
+    barycentric_modes = (
+        (0, "perspective-center", r"BuiltIn BaryCoordKHR", ()),
+        (1, "perspective-centroid", r"BuiltIn BaryCoordKHR", (r"OpDecorate .* Centroid",)),
+        (2, "perspective-sample", r"BuiltIn BaryCoordKHR", (r"OpDecorate .* Sample",)),
+        (3, "linear-center", r"BuiltIn BaryCoordNoPerspKHR", ()),
+        (4, "linear-centroid", r"BuiltIn BaryCoordNoPerspKHR", (r"OpDecorate .* Centroid",)),
+        (5, "linear-sample", r"BuiltIn BaryCoordNoPerspKHR", (r"OpDecorate .* Sample",)),
+    )
+    for mode, label, builtin, extra in barycentric_modes:
+        require_success(
+            f"AMD barycentric {label}",
+            compile_shader(
+                "amd.intrinsics.barycentric.hlsl",
+                "-T", "ps_6_1", "-E", "main", "-fcgl", "-spirv",
+                "-fspv-target-env=vulkan1.1",
+                "-fspv-extension=SPV_KHR_fragment_shader_barycentric",
+                f"-DMODE={mode}",
+            ),
+            required=(
+                r'OpExtension "SPV_KHR_fragment_shader_barycentric"',
+                builtin,
+                *extra,
+            ),
+        )
+
+    require_success(
+        "AMD pull-model barycentric parity",
+        compile_shader(
+            "amd.intrinsics.pull-model-barycentric.hlsl",
+            "-T", "ps_6_1", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-extension=AMD",
+        ),
+        required=(
+            r'OpExtension "SPV_AMD_shader_explicit_vertex_parameter"',
+            r"BuiltIn BaryCoordPullModelAMD",
+        ),
+    )
+
     require_success(
         "AMD draw parameter Vulkan parity",
         compile_shader(
@@ -212,6 +287,56 @@ def main() -> int:
             r"BuiltIn BaseVertex",
             r"BuiltIn BaseInstance",
             r"BuiltIn DrawIndex",
+        ),
+    )
+
+    require_success(
+        "AMD shader clock parity",
+        compile_shader(
+            "amd.intrinsics.shader-clock.hlsl",
+            "-T", "cs_6_2", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-target-env=vulkan1.1",
+            "-fspv-extension=SPV_KHR_shader_clock",
+        ),
+        required=(
+            r"OpCapability ShaderClockKHR",
+            r'OpExtension "SPV_KHR_shader_clock"',
+            r"\bOpReadClockKHR\b",
+        ),
+    )
+
+    atomic_required = (
+        r"OpCapability Int64",
+        r"OpCapability Int64Atomics",
+        r"\bOpAtomicIAdd\b",
+        r"\bOpAtomicAnd\b",
+        r"\bOpAtomicOr\b",
+        r"\bOpAtomicXor\b",
+        r"\bOpAtomicUMin\b",
+        r"\bOpAtomicUMax\b",
+        r"\bOpAtomicExchange\b",
+        r"\bOpAtomicCompareExchange\b",
+    )
+    require_success(
+        "AMD 64-bit buffer atomic parity",
+        compile_shader(
+            "amd.intrinsics.atomic-u64.hlsl",
+            "-T", "cs_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-target-env=vulkan1.2",
+        ),
+        required=atomic_required + (r"\bOpAtomicSMin\b", r"\bOpAtomicSMax\b"),
+    )
+    require_success(
+        "AMD 64-bit image atomic parity",
+        compile_shader(
+            "amd.intrinsics.atomic-u64-image.hlsl",
+            "-T", "cs_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-target-env=vulkan1.2",
+            "-fspv-extension=SPV_EXT_shader_image_int64",
+        ),
+        required=atomic_required + (
+            r'OpExtension "SPV_EXT_shader_image_int64"',
+            r"OpCapability Int64ImageEXT",
         ),
     )
 
