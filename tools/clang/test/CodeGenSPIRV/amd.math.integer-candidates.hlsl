@@ -4,15 +4,15 @@
 
 // Keep the packed and fused integer candidates recognizable at the SPIR-V
 // boundary. This is a shape test, not an ISA claim; Radeon recovery is checked
-// by math_probe.py.
-// CHECK: OpUMulExtended
-// CHECK: OpSMulExtended
+// by math_probe.py. Do not require a particular legal high-product encoding:
+// DXC may use 64-bit multiply+shift rather than Op*MulExtended.
 // CHECK: OpBitFieldUExtract
 // CHECK: OpBitwiseAnd
 // CHECK: OpBitwiseOr
 // CHECK: OpBitwiseXor
 // CHECK: OpNot
 // CHECK: OpShiftRightLogical
+// CHECK: OpShiftRightArithmetic
 // CHECK: OpShiftLeftLogical
 // CHECK: OpIAdd
 // CHECK: OpIMul
