@@ -7,11 +7,37 @@
 
 #include <vk/spirv.h>
 
-// Direct HLSL spellings for the extended-instruction sets registered by AMD.
-// These declarations do not emulate the operations. They deliberately preserve
-// the SPV_AMD_* instruction-set identity in emitted SPIR-V.
+// Direct HLSL spellings for registered AMD extended-instruction sets and
+// zero-overhead Vulkan equivalents for AMD's D3D shader-intrinsic surface.
+// Do not emulate hardware-specific operations here when SPIR-V cannot carry
+// equivalent semantics; those remain explicit contract gaps.
 namespace vk {
 namespace amd {
+
+// Core/KHR subgroup equivalents for AMD's D3D wave intrinsics.
+float ReadFirstLane(float value) { return WaveReadLaneFirst(value); }
+uint ReadFirstLane(uint value) { return WaveReadLaneFirst(value); }
+int ReadFirstLane(int value) { return WaveReadLaneFirst(value); }
+
+float ReadLane(float value, uint lane) { return WaveReadLaneAt(value, lane); }
+uint ReadLane(uint value, uint lane) { return WaveReadLaneAt(value, lane); }
+int ReadLane(int value, uint lane) { return WaveReadLaneAt(value, lane); }
+
+// Unlike the legacy D3D Readlane transport, ReadlaneAt permits a non-uniform
+// lane index. DXC lowers WaveReadLaneAt to OpGroupNonUniformShuffle.
+float ReadLaneAt(float value, uint lane) { return WaveReadLaneAt(value, lane); }
+uint ReadLaneAt(uint value, uint lane) { return WaveReadLaneAt(value, lane); }
+int ReadLaneAt(int value, uint lane) { return WaveReadLaneAt(value, lane); }
+
+uint LaneId() { return WaveGetLaneIndex(); }
+uint WaveSize() { return WaveGetLaneCount(); }
+
+uint2 Ballot(bool predicate) {
+  uint4 mask = WaveActiveBallot(predicate);
+  return mask.xy;
+}
+bool BallotAny(bool predicate) { return WaveActiveAnyTrue(predicate); }
+bool BallotAll(bool predicate) { return WaveActiveAllTrue(predicate); }
 
 // SPV_AMD_shader_trinary_minmax
 template <typename T>
@@ -75,7 +101,7 @@ template <typename T>
 [[vk::ext_instruction(3, "SPV_AMD_shader_ballot")]] T
 WriteInvocation(T inputValue, T writeValue, uint invocationIndex);
 [[vk::ext_extension("SPV_AMD_shader_ballot")]]
-[[vk::ext_instruction(4, "SPV_AMD_shader_ballot")]] uint Mbcnt(uint mask);
+[[vk::ext_instruction(4, "SPV_AMD_shader_ballot")]] uint Mbcnt(uint64_t mask);
 
 // SPV_AMD_shader_explicit_vertex_parameter. The source operand must remain a
 // pointer to fragment input storage, hence ext_reference.
