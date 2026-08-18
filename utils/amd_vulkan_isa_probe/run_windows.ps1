@@ -23,6 +23,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $DriverProbe = Join-Path $BuildDir "amd_vulkan_isa_probe.exe"
 $MathVerify = Join-Path $BuildDir "amd_vulkan_math_verify.exe"
+$CandidateVerify = Join-Path $BuildDir "amd_vulkan_candidate_verify.exe"
 $SpirvDis = Join-Path $VulkanSdk "Bin/spirv-dis.exe"
 
 Write-Host "[AMD SPIR-V] Runtime math semantic verification"
@@ -80,11 +81,12 @@ $CrosslaneArgs = @(
 python @CrosslaneArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host "[AMD SPIR-V] Empirical candidate zoo"
+Write-Host "[AMD SPIR-V] Empirical candidate zoo + runtime oracle"
 $ZooArgs = @(
     (Join-Path $ProbeRoot "candidate_zoo.py"),
     "--dxc", $Dxc,
     "--driver-probe", $DriverProbe,
+    "--runtime-verifier", $CandidateVerify,
     "--out-dir", (Join-Path $OutDir "candidate-zoo")
 )
 python @ZooArgs
