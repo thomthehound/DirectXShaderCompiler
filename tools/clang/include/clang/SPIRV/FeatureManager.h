@@ -1,8 +1,12 @@
 //===------ FeatureManager.h - SPIR-V Version/Extension Manager -*- C++ -*-===//
 //
-//                     The LLVM Infrastructure
+//                     The LLVM Compiler Infrastructure
 //
-// This file defines a SPIR-V version and extension manager.
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
+//===----------------------------------------------------------------------===//
+//
+//  This file defines a SPIR-V version and extension manager.
 //
 //===----------------------------------------------------------------------===//
 
@@ -83,7 +87,6 @@ enum class Extension {
   KHR_quad_control,
   EXT_descriptor_heap,
   KHR_untyped_pointers,
-  VALVE_mixed_float_dot_product,
   Unknown,
 };
 
