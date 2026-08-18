@@ -16,7 +16,7 @@
 // CHECK-COUNT-2: OpFDot2MixAcc16VALVE
 // CHECK: OpDot [[BF16]]
 
-RWStructuredBuffer<uint2> InBits : register(t0);
+StructuredBuffer<uint2> InBits : register(t0);
 RWStructuredBuffer<uint4> Out : register(u0);
 
 [numthreads(64, 1, 1)]
