@@ -14,6 +14,14 @@ void main(uint3 tid : SV_DispatchThreadID) {
 
   int dot4s = vk::amd::SDot4I8(a, b, si);
   uint dot4u = vk::amd::UDot4U8(a ^ 0x11111111u, b, ui);
+
+  // Accumulators deliberately live near the output boundaries so the clamp
+  // modifier is semantically live and cannot be discarded as redundant.
+  int satSAccum = (tid.x & 1u) != 0u ? 0x7ffffff0 : asint(0x80000010u);
+  uint satUAccum = 0xfffffff0u - (tid.x & 7u);
+  int dot4sSat = vk::amd::SDot4I8AccSat(a ^ 0x80808080u, b, satSAccum);
+  uint dot4uSat = vk::amd::UDot4U8AccSat(a, b ^ 0xffffffffu, satUAccum);
+
   int dot2s = vk::amd::SDot2I16(a ^ 0x22222222u, b, si + 3);
   uint dot2u = vk::amd::UDot2U16(a, b ^ 0x33333333u, ui + 5u);
   int dot4su = vk::amd::SUDot4I8U8(a ^ 0x44444444u, b, si + 7);
@@ -33,7 +41,7 @@ void main(uint3 tid : SV_DispatchThreadID) {
       packedHalfA, packedHalfB, float(si) * 0.0009765625f);
 
   Out[tid.x] = uint4(
-      asuint(dot4s) ^ dot4u,
+      asuint(dot4s) ^ dot4u ^ asuint(dot4sSat) ^ dot4uSat,
       asuint(dot2s) ^ dot2u,
       asuint(dot4su) ^ asuint(dot4us),
       asuint(dot8s) ^ dot8u ^ asuint(dot8su) ^ asuint(dot8us) ^ asuint(dot2f16));
