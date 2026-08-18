@@ -64,19 +64,10 @@
       "id": "bf16-first-class-dot-conversion",
       "amd_intrinsics": ["llvm.amdgcn.fdot2.f32.bf16", "llvm.amdgcn.fdot2.bf16.bf16", "BF16 conversion/packing families"],
       "apusr_relevance": ["future BF16 model kernels", "mixed-precision matrix paths"],
-      "dxil": "Current HLSL surface used by this branch does not provide a first-class BF16 scalar/vector type with the exact AMD dot/conversion contracts needed here.",
-      "spirv": "BF16 support is evolving and must use a real typed capability/extension path; opaque uint16_t bitcasts would not preserve arithmetic semantics.",
+      "dxil": "The branch does not yet expose a general shader arithmetic BF16 surface matching the AMD dot/conversion contracts; LinAlg component-type support alone is not treated as scalar/vector BF16 ingress.",
+      "spirv": "BF16 support must use a real typed capability/extension path; opaque uint16_t bitcasts would not preserve arithmetic semantics.",
       "status": "blocked-ingress",
-      "required_fix": "Add/consume a first-class BF16 type and exact SPIR-V/DXIL lowering before exposing AMD BF16 dot/conversion helpers."
-    },
-    {
-      "id": "alignbit-alignbyte-direct",
-      "amd_intrinsics": ["llvm.amdgcn.alignbit", "llvm.amdgcn.alignbyte", "v_alignbit_b32", "v_alignbyte_b32"],
-      "apusr_relevance": ["rolling byte windows", "packed tensor routing", "optical-flow byte windows"],
-      "dxil": "Canonical shifts/funnel forms are possible, but a direct AMD shader intrinsic is not yet wired in this branch.",
-      "spirv": "No direct opcode. A canonical funnel-shift graph is viable only after operand concatenation/order and shift-boundary semantics are covered by an adversarial test.",
-      "status": "blocked-semantic-proof",
-      "required_fix": "Pin the exact AMD operand concatenation convention from authoritative ISA/backend definitions, add boundary tests, then promote a canonical recovery candidate and ISA probe."
+      "required_fix": "Add or consume a first-class BF16 arithmetic type and exact SPIR-V/DXIL lowering before exposing AMD BF16 dot/conversion helpers."
     },
     {
       "id": "legacy-fp-assists",
