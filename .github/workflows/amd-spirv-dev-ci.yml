@@ -48,6 +48,7 @@ jobs:
             utils/amd_vulkan_isa_probe/conversion_probe.py \
             utils/amd_vulkan_isa_probe/transcendental_probe.py \
             utils/amd_vulkan_isa_probe/lds_probe.py \
+            utils/amd_vulkan_isa_probe/cube_probe.py \
             utils/amd_vulkan_isa_probe/candidate_zoo.py
 
   build-linux:
