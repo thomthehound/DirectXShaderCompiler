@@ -23,6 +23,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $DriverProbe = Join-Path $BuildDir "amd_vulkan_isa_probe.exe"
 $MatrixProbe = Join-Path $BuildDir "amd_vulkan_matrix_probe.exe"
+$MixedDotProbe = Join-Path $BuildDir "amd_vulkan_mixed_dot_probe.exe"
 $MathVerify = Join-Path $BuildDir "amd_vulkan_math_verify.exe"
 $CandidateVerify = Join-Path $BuildDir "amd_vulkan_candidate_verify.exe"
 $SpirvDis = Join-Path $VulkanSdk "Bin/spirv-dis.exe"
@@ -72,11 +73,19 @@ $DotSatArgs = @(
 python @DotSatArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-# dot_f16_probe.py intentionally remains a separate manual probe. It uses
-# first-class Float16 SPIR-V arithmetic, which requires a device-creation path
-# that explicitly enables shaderFloat16. The default qualification path instead
-# probes the same v_dot2_f32_f16 recovery opportunity from packed half bits via
-# f16tof32, so it does not carry a hidden Vulkan feature prerequisite.
+Write-Host "[AMD SPIR-V] Exact FP16/BF16 mixed-dot qualification"
+$MixedDotArgs = @(
+    (Join-Path $ProbeRoot "mixed_dot_probe.py"),
+    "--dxc", $Dxc,
+    "--mixed-dot-probe", $MixedDotProbe,
+    "--out-dir", (Join-Path $OutDir "mixed-dot")
+)
+python @MixedDotArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+# dot_f16_probe.py intentionally remains a separate manual probe. The mixed-dot
+# qualification above is now the stronger exact SPV_VALVE path when supported;
+# this older probe remains useful as a canonical-recovery control.
 
 Write-Host "[AMD SPIR-V] APUSR cross-lane native recovery"
 $CrosslaneArgs = @(
