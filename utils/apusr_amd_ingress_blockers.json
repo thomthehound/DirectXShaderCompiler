@@ -1,0 +1,91 @@
+{
+  "schema": 1,
+  "policy": {
+    "purpose": "Record AMD hardware acceleration opportunities that were actively investigated for APUSR but cannot currently be represented faithfully through the shader-facing DXC/DXIL/SPIR-V contracts used by the project.",
+    "rule": "A blocker is not an implementation. Do not replace it with generic arithmetic, ordinary loads/stores, or synchronization that loses the native operation's semantics or performance intent merely to mark the row complete.",
+    "qualification": "A blocker counts as attempted for integration-branch readiness only when the missing ingress and the required real fix are explicit."
+  },
+  "blockers": [
+    {
+      "id": "async-global-to-lds",
+      "amd_intrinsics": ["llvm.amdgcn.global.load.lds", "llvm.amdgcn.global.load.lds.dwordx4", "generation-equivalent async global-to-LDS forms"],
+      "apusr_relevance": ["FSR4 tiled INT8 staging", "FSR4 pre/post groupshared staging", "future matrix/WMMA staging"],
+      "dxil": "No shader-facing HLSL/DXIL intrinsic in this DXC fork that preserves AMD async global-to-LDS intent.",
+      "spirv": "No currently used core/KHR/AMD SPIR-V instruction in the branch that carries the AMD async global-to-LDS operation as such.",
+      "status": "blocked-ingress",
+      "required_fix": "Add a real shader/IR contract that can preserve the asynchronous transfer and synchronization semantics through the backend; do not substitute an ordinary load plus groupshared store."
+    },
+    {
+      "id": "async-lds-to-global",
+      "amd_intrinsics": ["AMDGPU async LDS-to-global/store families"],
+      "apusr_relevance": ["tiled output staging", "future tensor/matrix output kernels"],
+      "dxil": "No shader-facing AMD async LDS-to-global contract identified.",
+      "spirv": "No exact SPIR-V ingress identified for the AMD async store operation.",
+      "status": "blocked-ingress",
+      "required_fix": "Expose an exact asynchronous transfer contract or an AMD SPIR-V extension/backend-recognition path; ordinary workgroup load plus global store is not equivalent."
+    },
+    {
+      "id": "transposed-memory-loads",
+      "amd_intrinsics": ["AMDGPU transposed global/LDS load families"],
+      "apusr_relevance": ["matrix tiles", "convolution tensor staging", "future WMMA/SWMMAC layouts"],
+      "dxil": "No direct shader-facing DXIL contract identified for AMD transposed-load intent.",
+      "spirv": "Generic vector/scalar loads express values but not the hardware transposed-load operation or layout intent.",
+      "status": "blocked-ingress",
+      "required_fix": "Add a layout-aware intrinsic/IR contract or prove a canonical load graph is reliably recognized by the Radeon backend before calling this supported."
+    },
+    {
+      "id": "shader-prefetch",
+      "amd_intrinsics": ["llvm.amdgcn.s.prefetch.data", "llvm.amdgcn.global.prefetch", "generation-equivalent prefetch hints"],
+      "apusr_relevance": ["weights", "model constants", "tiled input windows", "future persistent kernels"],
+      "dxil": "DXC has generic LLVM prefetch machinery for CPU-oriented targets but no HLSL/DXIL shader contract that preserves AMD GPU prefetch intent.",
+      "spirv": "No exact shader prefetch operation is available in the branch's Vulkan contract surface.",
+      "status": "blocked-ingress",
+      "required_fix": "Introduce a shader-visible prefetch contract with defined cache/scope semantics or an AMD-specific extension; do not model prefetch as a value-producing load."
+    },
+    {
+      "id": "async-wait-markers",
+      "amd_intrinsics": ["AMDGPU async wait/fence marker families"],
+      "apusr_relevance": ["async LDS/global transfer pipelines", "future overlapped tensor staging"],
+      "dxil": "No shader-facing contract identified that denotes the AMD async transaction group being waited on.",
+      "spirv": "Ordinary memory barriers do not identify or preserve the AMD async transfer dependency represented by these intrinsics.",
+      "status": "blocked-ingress",
+      "required_fix": "Pair a first-class async-transfer ingress with a matching wait/dependency primitive."
+    },
+    {
+      "id": "scheduler-group-hints",
+      "amd_intrinsics": ["llvm.amdgcn.sched.group.barrier", "AMDGPU scheduling-group/dependency hints"],
+      "apusr_relevance": ["long generated INT8 kernels", "FP16 convolution kernels", "future WMMA staging and overlap"],
+      "dxil": "No HLSL/DXIL contract identified for AMD scheduler grouping hints.",
+      "spirv": "No portable SPIR-V semantic operation corresponds to an AMD backend scheduling hint.",
+      "status": "blocked-ingress",
+      "required_fix": "Use an AMD-specific compiler option/metadata/intrinsic path that survives to the Radeon backend; this is not representable as a memory barrier."
+    },
+    {
+      "id": "bf16-first-class-dot-conversion",
+      "amd_intrinsics": ["llvm.amdgcn.fdot2.f32.bf16", "llvm.amdgcn.fdot2.bf16.bf16", "BF16 conversion/packing families"],
+      "apusr_relevance": ["future BF16 model kernels", "mixed-precision matrix paths"],
+      "dxil": "Current HLSL surface used by this branch does not provide a first-class BF16 scalar/vector type with the exact AMD dot/conversion contracts needed here.",
+      "spirv": "BF16 support is evolving and must use a real typed capability/extension path; opaque uint16_t bitcasts would not preserve arithmetic semantics.",
+      "status": "blocked-ingress",
+      "required_fix": "Add/consume a first-class BF16 type and exact SPIR-V/DXIL lowering before exposing AMD BF16 dot/conversion helpers."
+    },
+    {
+      "id": "alignbit-alignbyte-direct",
+      "amd_intrinsics": ["llvm.amdgcn.alignbit", "llvm.amdgcn.alignbyte", "v_alignbit_b32", "v_alignbyte_b32"],
+      "apusr_relevance": ["rolling byte windows", "packed tensor routing", "optical-flow byte windows"],
+      "dxil": "Canonical shifts/funnel forms are possible, but a direct AMD shader intrinsic is not yet wired in this branch.",
+      "spirv": "No direct opcode. A canonical funnel-shift graph is viable only after operand concatenation/order and shift-boundary semantics are covered by an adversarial test.",
+      "status": "blocked-semantic-proof",
+      "required_fix": "Pin the exact AMD operand concatenation convention from authoritative ISA/backend definitions, add boundary tests, then promote a canonical recovery candidate and ISA probe."
+    },
+    {
+      "id": "legacy-fp-assists",
+      "amd_intrinsics": ["rcp_legacy", "rsq_legacy", "fmul_legacy", "fma_legacy", "div_scale", "div_fmas", "div_fixup", "trig_preop"],
+      "apusr_relevance": ["low priority; modern APUSR math paths do not require legacy behavior"],
+      "dxil": "Ordinary HLSL arithmetic is not semantically equivalent to the legacy/assist operations.",
+      "spirv": "No exact ingress established for the AMD legacy/assist semantics.",
+      "status": "blocked-ingress-low-priority",
+      "required_fix": "Only add if a real APUSR consumer appears or a native AMD extension/contract is introduced; do not relabel standard arithmetic as the legacy operation."
+    }
+  ]
+}
