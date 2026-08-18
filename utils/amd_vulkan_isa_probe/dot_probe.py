@@ -19,6 +19,7 @@ EXPECTED = {
     "dot8_i4": re.compile(r"\bv_dot8(?:c)?_i32_i4\b", re.I),
     "dot8_u4": re.compile(r"\bv_dot8_u32_u4\b", re.I),
     "dot8_mixed_i4_u4": re.compile(r"\bv_dot8_i32_iu4\b", re.I),
+    "dot2_f32_f16_bits": re.compile(r"\bv_dot2(?:acc|c)?_f32_f16(?:_e32)?\b", re.I),
 }
 
 
@@ -82,7 +83,10 @@ def main() -> int:
         "native_recovery": results,
         "note": (
             "Instruction availability is GPU-generation dependent. Missing i4, mixed-sign, "
-            "or legacy dot variants is evidence about this driver/GPU, not a harness failure."
+            "legacy integer-dot, or packed-half FP16-dot variants is evidence about this "
+            "driver/GPU, not a harness failure. The packed-half FP16 candidate deliberately "
+            "uses uint input bits plus f16tof32 so the device does not need shaderFloat16 "
+            "enabled merely to test v_dot2_f32_f16 recovery."
         ),
     }
     (out_dir / "dot_report.json").write_text(
