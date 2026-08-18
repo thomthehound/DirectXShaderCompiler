@@ -40,6 +40,7 @@ jobs:
             utils/amd_dxil_ci.py \
             utils/amd_atomic_ci.py \
             utils/amd_packing_ci.py \
+            utils/amd_bfloat16_ci.py \
             utils/amd_matrix_ci.py \
             utils/amd_mixed_dot_ci.py \
             utils/amd_vulkan_isa_probe/native_probe.py \
@@ -117,6 +118,7 @@ jobs:
           python3 utils/amd_subgroup_ci.py --dxc "$DXC"
           python3 utils/amd_atomic_ci.py --dxc "$DXC"
           python3 utils/amd_packing_ci.py --dxc "$DXC"
+          python3 utils/amd_bfloat16_ci.py --dxc "$DXC"
           python3 utils/amd_matrix_ci.py --dxc "$DXC"
           python3 utils/amd_mixed_dot_ci.py --dxc "$DXC"
           python3 utils/amd_dxil_ci.py --dxc "$DXC"
@@ -177,6 +179,8 @@ jobs:
           python utils/amd_atomic_ci.py --dxc $dxc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python utils/amd_packing_ci.py --dxc $dxc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python utils/amd_bfloat16_ci.py --dxc $dxc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python utils/amd_matrix_ci.py --dxc $dxc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
