@@ -4,7 +4,8 @@
 
 // CHECK: OpCapability GroupNonUniformShuffle
 // CHECK: OpGroupNonUniformShuffle
-// CHECK: OpIEqual
+// CHECK: OpUGreaterThanEqual
+// CHECK: OpULessThan
 // CHECK: OpSelect
 
 RWStructuredBuffer<uint4> Out : register(u0);
