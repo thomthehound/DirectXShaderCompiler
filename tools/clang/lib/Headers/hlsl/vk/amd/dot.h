@@ -36,6 +36,19 @@ uint UDot2U16(uint a, uint b, uint accum) {
   return accum + a0 * b0 + a1 * b1;
 }
 
+// Packed half inputs without first-class Float16 SPIR-V arithmetic. This maps
+// directly onto the representation APUSR frequently has at resource boundaries:
+// two IEEE binary16 values in each uint. f16tof32 defines the conversion; both
+// products and the accumulator are FP32. Radeon can therefore attempt to recover
+// v_dot2_f32_f16 without the probe device needing shaderFloat16 enabled.
+float FDot2F32F16Bits(uint packedA, uint packedB, float accum) {
+  float a0 = f16tof32(packedA & 0xffffu);
+  float a1 = f16tof32(packedA >> 16u);
+  float b0 = f16tof32(packedB & 0xffffu);
+  float b1 = f16tof32(packedB >> 16u);
+  return accum + a0 * b0 + a1 * b1;
+}
+
 // GFX11's v_dot4_i32_iu8 supports signedness independently for both packed
 // byte operands. SPIR-V has mixed-signed integer dot semantics, but this DXC
 // path is kept canonical until direct capability/operand handling is proven.
