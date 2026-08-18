@@ -1,0 +1,61 @@
+name: AMD SPIR-V Dev CI
+
+on:
+  push:
+    branches:
+      - amd-spirv-native-intrinsics-dev
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build clang lld
+      - name: Configure
+        run: >-
+          cmake -S . -B build-amd-spirv -G Ninja
+          -C cmake/caches/PredefinedParams.cmake
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER=clang
+          -DCMAKE_CXX_COMPILER=clang++
+          -DLLVM_USE_LINKER=lld
+          -DENABLE_SPIRV_CODEGEN=ON
+          -DSPIRV_BUILD_TESTS=OFF
+          -DLLVM_INCLUDE_TESTS=OFF
+          -DCLANG_INCLUDE_TESTS=OFF
+          -DHLSL_INCLUDE_TESTS=OFF
+      - name: Build DXC
+        run: cmake --build build-amd-spirv --target dxc dxcompiler dxildll --parallel 4
+      - name: AMD SPIR-V contracts
+        run: |
+          export LD_LIBRARY_PATH="$PWD/build-amd-spirv/lib:${LD_LIBRARY_PATH:-}"
+          python3 utils/amd_spirv_ci.py --dxc "$PWD/build-amd-spirv/bin/dxc"
+
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+      - name: Configure and build
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%i"
+          if not defined VSINSTALL exit /b 1
+          call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -no_logo -arch=amd64 -host_arch=amd64
+          cmake -S . -B build-amd-spirv -G Ninja -C cmake\caches\PredefinedParams.cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_SPIRV_CODEGEN=ON -DSPIRV_BUILD_TESTS=OFF -DLLVM_INCLUDE_TESTS=OFF -DLLVM_BUILD_TESTS=OFF -DCLANG_INCLUDE_TESTS=OFF -DHLSL_INCLUDE_TESTS=OFF
+          if errorlevel 1 exit /b %errorlevel%
+          cmake --build build-amd-spirv --target dxc dxcompiler dxildll --parallel 4
+          if errorlevel 1 exit /b %errorlevel%
+      - name: AMD SPIR-V contracts
+        shell: pwsh
+        run: |
+          python utils/amd_spirv_ci.py --dxc "$PWD\build-amd-spirv\bin\dxc.exe"
+          exit $LASTEXITCODE
