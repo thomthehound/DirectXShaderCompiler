@@ -32,6 +32,38 @@ int ReadLaneAt(int value, uint lane) { return WaveReadLaneAt(value, lane); }
 uint LaneId() { return WaveGetLaneIndex(); }
 uint WaveSize() { return WaveGetLaneCount(); }
 
+// Exact XOR-butterfly exchange used by APUSR's generated FSR4 FP16 reduction
+// trees. The source lane is current_lane XOR mask. This is intentionally kept
+// as a subgroup shuffle contract: Radeon may select DPP/permlane/DS exchange,
+// but we do not claim one until installed-driver ISA proves the choice.
+float LaneXor(float value, uint mask) {
+  return WaveReadLaneAt(value, WaveGetLaneIndex() ^ mask);
+}
+uint LaneXor(uint value, uint mask) {
+  return WaveReadLaneAt(value, WaveGetLaneIndex() ^ mask);
+}
+int LaneXor(int value, uint mask) {
+  return WaveReadLaneAt(value, WaveGetLaneIndex() ^ mask);
+}
+
+// Fixed masks match the butterfly stages emitted by the imported FSR4 kernels
+// and give the backend compile-time lane-routing information that DPP/permlane
+// selection normally needs. Mask 32 is meaningful for wave64 and is still a
+// valid subgroup shuffle expression on wave32 only when the caller does not
+// execute that stage.
+float LaneXor1(float v) { return LaneXor(v, 1u); }
+float LaneXor2(float v) { return LaneXor(v, 2u); }
+float LaneXor4(float v) { return LaneXor(v, 4u); }
+float LaneXor8(float v) { return LaneXor(v, 8u); }
+float LaneXor16(float v) { return LaneXor(v, 16u); }
+float LaneXor32(float v) { return LaneXor(v, 32u); }
+uint LaneXor1(uint v) { return LaneXor(v, 1u); }
+uint LaneXor2(uint v) { return LaneXor(v, 2u); }
+uint LaneXor4(uint v) { return LaneXor(v, 4u); }
+uint LaneXor8(uint v) { return LaneXor(v, 8u); }
+uint LaneXor16(uint v) { return LaneXor(v, 16u); }
+uint LaneXor32(uint v) { return LaneXor(v, 32u); }
+
 uint2 Ballot(bool predicate) {
   uint4 mask = WaveActiveBallot(predicate);
   return mask.xy;
