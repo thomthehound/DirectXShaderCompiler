@@ -56,6 +56,47 @@ int USDot4U8I8(uint unsignedA, uint signedB, int accum) {
   return sum;
 }
 
+// AMD's packed 8x4 integer dot family. SPIR-V has no established packed-i4
+// contract equivalent to the AMD instruction surface, so preserve the exact
+// nibble semantics as a canonical recovery candidate. The installed-driver ISA
+// probe decides whether Radeon combines this graph into v_dot8_*_i4.
+int SDot8I4(uint a, uint b, int accum) {
+  int sum = accum;
+  [unroll]
+  for (uint lane = 0u; lane < 8u; ++lane) {
+    uint shift = lane * 4u;
+    sum += SBfe(asint(a), shift, 4u) * SBfe(asint(b), shift, 4u);
+  }
+  return sum;
+}
+uint UDot8U4(uint a, uint b, uint accum) {
+  uint sum = accum;
+  [unroll]
+  for (uint lane = 0u; lane < 8u; ++lane) {
+    uint shift = lane * 4u;
+    sum += UBfe(a, shift, 4u) * UBfe(b, shift, 4u);
+  }
+  return sum;
+}
+int SUDot8I4U4(uint signedA, uint unsignedB, int accum) {
+  int sum = accum;
+  [unroll]
+  for (uint lane = 0u; lane < 8u; ++lane) {
+    uint shift = lane * 4u;
+    sum += SBfe(asint(signedA), shift, 4u) * int(UBfe(unsignedB, shift, 4u));
+  }
+  return sum;
+}
+int USDot8U4I4(uint unsignedA, uint signedB, int accum) {
+  int sum = accum;
+  [unroll]
+  for (uint lane = 0u; lane < 8u; ++lane) {
+    uint shift = lane * 4u;
+    sum += int(UBfe(unsignedA, shift, 4u)) * SBfe(asint(signedB), shift, 4u);
+  }
+  return sum;
+}
+
 } // namespace amd
 } // namespace vk
 
