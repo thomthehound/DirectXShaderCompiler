@@ -60,6 +60,16 @@ $DotArgs = @(
 python @DotArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+Write-Host "[AMD SPIR-V] APUSR cross-lane native recovery"
+$CrosslaneArgs = @(
+    (Join-Path $ProbeRoot "crosslane_probe.py"),
+    "--dxc", $Dxc,
+    "--driver-probe", $DriverProbe,
+    "--out-dir", (Join-Path $OutDir "crosslane")
+)
+python @CrosslaneArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 Write-Host "[AMD SPIR-V] Core math native recovery"
 $MathArgs = @(
     (Join-Path $ProbeRoot "math_probe.py"),
