@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -14,6 +13,8 @@ from pathlib import Path
 EXPECTED = {
     "bfe_u32": re.compile(r"\bv_bfe_u32\b", re.I),
     "bfe_i32": re.compile(r"\bv_bfe_i32\b", re.I),
+    "mul_u32_u24": re.compile(r"\bv_mul_u32_u24\b", re.I),
+    "mul_i32_i24": re.compile(r"\bv_mul_i32_i24\b", re.I),
     "rcp_f32": re.compile(r"\bv_rcp_f32\b", re.I),
     "sqrt_f32": re.compile(r"\bv_sqrt_f32\b", re.I),
     "rsq_f32": re.compile(r"\bv_rsq_f32\b", re.I),
