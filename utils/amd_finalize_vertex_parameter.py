@@ -173,6 +173,29 @@ float_case = (
 segment = segment.replace(case, float_case + case, 1)
 sema_path.write_text(text[:start] + segment + text[end:], encoding="utf-8")
 
+# Generic vk::ext_instruction operands are normally emitted as value IDs.
+# Constant enum expressions used for ID-typed SPIR-V operands (notably Scope)
+# must remain OpConstant IDs; treating them as vk::ext_literal would instead
+# encode a literal word and is invalid for those operands. Preserve evaluatable
+# enum arguments as constants while leaving genuinely dynamic enum values alone.
+replace_once(
+    "tools/clang/lib/SPIRV/SpirvEmitter.cpp",
+    "    } else {\n"
+    "      spvArgs.push_back(loadIfGLValue(arg, argInst));\n"
+    "    }\n",
+    "    } else {\n"
+    "      if (arg->getType()->isEnumeralType()) {\n"
+    "        if (auto *constArg =\n"
+    "                constEvaluator.tryToEvaluateAsConst(arg, isSpecConstantMode)) {\n"
+    "          constArg->setRValue();\n"
+    "          spvArgs.push_back(constArg);\n"
+    "          continue;\n"
+    "        }\n"
+    "      }\n"
+    "      spvArgs.push_back(loadIfGLValue(arg, argInst));\n"
+    "    }\n",
+)
+
 # The HLSL WaveActiveBit* builtins expose uint here. Preserve signed wrapper bit
 # patterns explicitly so the exhaustive AMD header contract can compile after
 # the registration crash is fixed.
