@@ -36,7 +36,9 @@ jobs:
           text = p.read_text(encoding='utf-8')
           if 'processVkReadClock' not in text:
               raise SystemExit('stale processVkReadClock anchor not found')
-          p.write_text(text.replace('processVkReadClock', 'processIntrinsicReadClock'), encoding='utf-8')
+          text = text.replace('processVkReadClock', 'processIntrinsicReadClock')
+          text = text.replace('processIntrinsicReadClock(const CallExpr *callExpr)', 'processIntrinsicReadClock(const CallExpr *)')
+          p.write_text(text, encoding='utf-8')
           PY
           python3 utils/amd_finish_vertex_parameter.py
           python3 utils/hct/hctgen.py HLSLIntrinsicOp --output include/dxc/HlslIntrinsicOp.h
