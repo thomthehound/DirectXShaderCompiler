@@ -1,0 +1,138 @@
+{
+  "schema": 1,
+  "status_values": [
+    "native-contract",
+    "legal-specialized-candidate",
+    "missing-spv-ingress",
+    "semantic-review",
+    "not-vulkan-applicable"
+  ],
+  "contracts": [
+    {
+      "surface": "HLSL msad4 / DXIL IMsad",
+      "amd_native": "v_mqsad_u32_u8",
+      "spirv": "4 x OpUDot over packed 4x8 byte reductions",
+      "status": "legal-specialized-candidate",
+      "strict_native": false,
+      "test": "intrinsics.msad4.amd.hlsl + amd_vulkan_isa_probe",
+      "note": "Exact native recovery is not claimed until installed-driver ISA contains v_mqsad_u32_u8."
+    },
+    {
+      "surface": "dot4add_u8packed",
+      "amd_native": "packed integer dot-product family",
+      "spirv": "OpUDot + SPV_KHR_integer_dot_product",
+      "status": "native-contract",
+      "strict_native": true,
+      "test": "existing integer dot-product CodeGenSPIRV coverage",
+      "note": "Audit operand packing and accumulator semantics; do not scalarize in AMD mode."
+    },
+    {
+      "surface": "dot4add_i8packed",
+      "amd_native": "packed integer dot-product family",
+      "spirv": "OpSDot + SPV_KHR_integer_dot_product",
+      "status": "native-contract",
+      "strict_native": true,
+      "test": "existing integer dot-product CodeGenSPIRV coverage",
+      "note": "Signedness is part of the contract."
+    },
+    {
+      "surface": "vk::amd::FMin3/FMax3/FMid3",
+      "amd_native": "AMD trinary min/max family",
+      "spirv": "SPV_AMD_shader_trinary_minmax extinst",
+      "status": "native-contract",
+      "strict_native": true,
+      "test": "amd.intrinsics.header.hlsl",
+      "note": "Preserve AMD extinst identity at the DXC boundary."
+    },
+    {
+      "surface": "vk::amd::UMin3/UMax3/UMid3",
+      "amd_native": "AMD trinary unsigned min/max family",
+      "spirv": "SPV_AMD_shader_trinary_minmax extinst",
+      "status": "native-contract",
+      "strict_native": true,
+      "test": "amd.intrinsics.header.hlsl",
+      "note": "Unsigned semantics must remain explicit."
+    },
+    {
+      "surface": "vk::amd::SMin3/SMax3/SMid3",
+      "amd_native": "AMD trinary signed min/max family",
+      "spirv": "SPV_AMD_shader_trinary_minmax extinst",
+      "status": "native-contract",
+      "strict_native": true,
+      "test": "amd.intrinsics.header.hlsl",
+      "note": "Signed semantics must remain explicit."
+    },
+    {
+      "surface": "vk::amd::CubeFaceIndex/CubeFaceCoord/Time",
+      "amd_native": "AMD GCN shader extinst family",
+      "spirv": "SPV_AMD_gcn_shader extinst",
+      "status": "native-contract",
+      "strict_native": true,
+      "test": "amd.intrinsics.header.hlsl",
+      "note": "Direct registered AMD SPIR-V contract."
+    },
+    {
+      "surface": "vk::amd::SwizzleInvocations/SwizzleInvocationsMasked/WriteInvocation/Mbcnt",
+      "amd_native": "AMD cross-lane/ballot family",
+      "spirv": "SPV_AMD_shader_ballot extinst",
+      "status": "native-contract",
+      "strict_native": true,
+      "test": "amd.intrinsics.header.hlsl",
+      "note": "Registered AMD extinsts; later audit overlap with core subgroup operations operation-by-operation."
+    },
+    {
+      "surface": "vk::amd::InterpolateAtVertex",
+      "amd_native": "AMD explicit vertex interpolation",
+      "spirv": "SPV_AMD_shader_explicit_vertex_parameter extinst",
+      "status": "native-contract",
+      "strict_native": true,
+      "test": "amd.intrinsics.explicit-vertex.hlsl",
+      "note": "The interpolant operand must remain a fragment-input pointer."
+    },
+    {
+      "surface": "SM 6.10 Wave/ThreadGroup cooperative matrix multiply-accumulate",
+      "amd_native": "WMMA/SWMMAC candidate family",
+      "spirv": "OpCooperativeMatrixMulAddKHR",
+      "status": "semantic-review",
+      "strict_native": false,
+      "test": "linalg.cooperative-matrix.amd.hlsl",
+      "note": "KHR cooperative-matrix semantics are useful ingress but are not a blanket one-to-one AMD WMMA contract."
+    },
+    {
+      "surface": "SM 6.10 Thread-scope cooperative-vector-style operations",
+      "amd_native": "AMD vector/matrix hardware family",
+      "spirv": null,
+      "status": "missing-spv-ingress",
+      "strict_native": false,
+      "test": "linalg.thread-scope-no-fake-amd.hlsl",
+      "note": "Reject rather than mapping to a non-equivalent vendor contract."
+    },
+    {
+      "surface": "SAD/QSAD/MSAD/MQSAD family beyond msad4",
+      "amd_native": "v_sad*/v_qsad*/v_msad*/v_mqsad*",
+      "spirv": null,
+      "status": "missing-spv-ingress",
+      "strict_native": false,
+      "test": "extend amd_vulkan_isa_probe per exact operation",
+      "note": "Classify each operation separately; canonical arithmetic may still be worth probing."
+    },
+    {
+      "surface": "DPP/permlane/cross-lane AMDGPU intrinsics not already covered by SPV_AMD_shader_ballot",
+      "amd_native": "DPP/permlane family",
+      "spirv": null,
+      "status": "semantic-review",
+      "strict_native": false,
+      "test": "pending adversarial lane-routing corpus",
+      "note": "Compare exact lane ownership, inactive-lane behavior, masks and wave-size semantics against subgroup/core/AMD contracts."
+    },
+    {
+      "surface": "FP8/BF8/FP6/BF6/FP4 conversion and packing families",
+      "amd_native": "AMDGPU packed low-precision conversion family",
+      "spirv": null,
+      "status": "semantic-review",
+      "strict_native": false,
+      "test": "pending edge-value/rounding/packing corpus",
+      "note": "Rounding, saturation, NaN handling and lane packing are contract fields, not implementation details."
+    }
+  ]
+}
