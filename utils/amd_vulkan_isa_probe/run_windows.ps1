@@ -51,7 +51,7 @@ if ($RgaLive) { $SadArgs += "--rga-live" }
 python @SadArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host "[AMD SPIR-V] Packed integer dot native recovery"
+Write-Host "[AMD SPIR-V] Packed integer + packed-half FP16 dot native recovery"
 $DotArgs = @(
     (Join-Path $ProbeRoot "dot_probe.py"),
     "--dxc", $Dxc,
@@ -61,15 +61,11 @@ $DotArgs = @(
 python @DotArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host "[AMD SPIR-V] FP16 dot native recovery"
-$DotF16Args = @(
-    (Join-Path $ProbeRoot "dot_f16_probe.py"),
-    "--dxc", $Dxc,
-    "--driver-probe", $DriverProbe,
-    "--out-dir", (Join-Path $OutDir "dot-f16")
-)
-python @DotF16Args
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+# dot_f16_probe.py intentionally remains a separate manual probe. It uses
+# first-class Float16 SPIR-V arithmetic, which requires a device-creation path
+# that explicitly enables shaderFloat16. The default qualification path instead
+# probes the same v_dot2_f32_f16 recovery opportunity from packed half bits via
+# f16tof32, so it does not carry a hidden Vulkan feature prerequisite.
 
 Write-Host "[AMD SPIR-V] APUSR cross-lane native recovery"
 $CrosslaneArgs = @(
