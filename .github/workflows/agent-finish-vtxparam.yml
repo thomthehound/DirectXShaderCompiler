@@ -110,6 +110,29 @@ jobs:
               raise SystemExit(f'DXIL lowering table boundary count={text.count(marker)}')
           lower.write_text(text.replace(marker, entries + marker, 1), encoding='utf-8')
 
+          # The eager vk namespace declaration builder historically only needed
+          # a handful of fixed scalar types. Raw AGS VertexParameter is the first
+          # compiler-native vk intrinsic here with fixed float / float4 result
+          # types. Use the existing aggregate-type mapper so both shapes are
+          # materialized correctly instead of falling through with an empty
+          # paramTypes vector (which crashes Release builds).
+          sema = Path('tools/clang/lib/Sema/SemaHLSL.cpp')
+          text = sema.read_text(encoding='utf-8')
+          needle = '''      switch (pArgs[i].uLegalComponentTypes) {
+              case LICOMPTYPE_UINT64:'''
+          replacement = '''      switch (pArgs[i].uLegalComponentTypes) {
+              case LICOMPTYPE_FLOAT: {
+                QualType fixedType = GetSingleQualTypeForMapping(intrinsic, i);
+                DXASSERT(!fixedType.isNull(),
+                         "fixed float intrinsic type must have one mapping");
+                paramTypes.push_back(fixedType);
+                break;
+              }
+              case LICOMPTYPE_UINT64:'''
+          if text.count(needle) != 1:
+              raise SystemExit(f'vk fixed-type switch anchor count={text.count(needle)}')
+          sema.write_text(text.replace(needle, replacement, 1), encoding='utf-8')
+
           path = Path('utils/amd_spirv_contracts.json')
           data = json.loads(path.read_text(encoding='utf-8'))
           for row in data['ags_opcodes']:
@@ -157,6 +180,7 @@ jobs:
           grep -q 'IOP_VkAmdVertexParameterComponent = 425' include/dxc/HlslIntrinsicOp.h
           grep -q 'IOP_VkAmdVertexParameter' lib/HLSL/HLOperationLower.cpp
           grep -q 'IOP_VkAmdVertexParameterComponent' lib/HLSL/HLOperationLower.cpp
+          grep -q 'case LICOMPTYPE_FLOAT' tools/clang/lib/Sema/SemaHLSL.cpp
           grep -q 'processAmdVertexParameter' tools/clang/lib/SPIRV/SpirvEmitter.cpp
           grep -q 'getAmdVertexParameterComponentPtr' tools/clang/lib/SPIRV/DeclResultIdMapper.cpp
           ! grep -q 'ags-vtxparam-raw-signature-index' utils/apusr_amd_ingress_blockers.json
