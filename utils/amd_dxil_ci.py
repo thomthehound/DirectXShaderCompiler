@@ -17,11 +17,12 @@ def compile_listing(
     required: tuple[str, ...],
     temp: Path,
     stem: str,
+    extra_flags: tuple[str, ...] = (),
 ) -> int:
     blob = temp / f"{stem}.dxil"
     listing = temp / f"{stem}.ll"
     proc = subprocess.run(
-        [dxc, "-E", "main", "-T", target, str(shader),
+        [dxc, "-E", "main", "-T", target, *extra_flags, str(shader),
          "-Fo", str(blob), "-Fc", str(listing)],
         text=True,
         encoding="utf-8",
@@ -69,23 +70,34 @@ def main() -> int:
                 "dx.op.waveReadLaneAt",
                 "dx.op.waveActiveOp",
             ),
+            (),
         ),
         (
             "draw-parameters",
             tests / "dxil-draw-parameters.hlsl",
             "vs_6_8",
             ("dx.op.startVertexLocation", "dx.op.startInstanceLocation"),
+            (),
         ),
-        ("atomic-u64-structured", tests / "dxil-atomic-u64.hlsl", "cs_6_6", i64_atomic),
-        ("atomic-u64-byteaddress", tests / "dxil-atomic-u64-byteaddress.hlsl", "cs_6_6", i64_atomic),
-        ("atomic-u64-image-ops", tests / "dxil-atomic-u64-image.hlsl", "cs_6_6", i64_atomic),
-        ("atomic-u64-image-shapes", tests / "dxil-atomic-u64-image-shapes.hlsl", "cs_6_6", i64_atomic),
+        (
+            "mixed-dot-fp16",
+            tests / "dxil-mixed-dot.hlsl",
+            "cs_6_2",
+            ("dx.op.dot2.f16", "dx.op.dot2.f32", "fpext half"),
+            ("-enable-16bit-types",),
+        ),
+        ("atomic-u64-structured", tests / "dxil-atomic-u64.hlsl", "cs_6_6", i64_atomic, ()),
+        ("atomic-u64-byteaddress", tests / "dxil-atomic-u64-byteaddress.hlsl", "cs_6_6", i64_atomic, ()),
+        ("atomic-u64-image-ops", tests / "dxil-atomic-u64-image.hlsl", "cs_6_6", i64_atomic, ()),
+        ("atomic-u64-image-shapes", tests / "dxil-atomic-u64-image-shapes.hlsl", "cs_6_6", i64_atomic, ()),
     )
 
     with tempfile.TemporaryDirectory(prefix="amd_dxil_ci_") as temp_name:
         temp = Path(temp_name)
-        for stem, shader, target, required in cases:
-            result = compile_listing(dxc, shader, target, required, temp, stem)
+        for stem, shader, target, required, extra_flags in cases:
+            result = compile_listing(
+                dxc, shader, target, required, temp, stem, extra_flags
+            )
             if result != 0:
                 return result
 
