@@ -59,12 +59,12 @@
     },
     {
       "id": "integer-dot-saturation-zoo",
-      "status": "sprayable",
+      "status": "implemented-search",
       "consumer": "future quantized kernels with saturating accumulation",
       "target": ["clamped/accumulating AMD dot forms"],
-      "search": "pre-clamp, post-clamp, widened-accumulate and explicit min/max saturation spellings across signed/unsigned boundaries",
-      "probe": "pending dedicated saturation zoo",
-      "oracle": "exhaustive boundary vectors around INT32/UINT32 overflow and saturation points"
+      "search": "direct SPV_KHR *DotAccSat versus independently widened 64-bit accumulation plus explicit signed/unsigned clamp",
+      "probe": "dot_saturation_probe.py",
+      "oracle": "qualification boundary vectors around INT32/UINT32 overflow and saturation points before canonical promotion"
     },
     {
       "id": "fp16-dot-zoo",
@@ -96,48 +96,48 @@
     },
     {
       "id": "wave-up-down-rotate-zoo",
-      "status": "sprayable",
+      "status": "implemented-search",
       "consumer": "reductions, stencil exchange and future matrix staging",
       "target": ["DPP row shifts/rotates", "permlane", "DS permute"],
-      "search": "lane +/- constant, row-local rotate, quad swap, neighbor exchange, masked edge variants",
-      "probe": "pending crosslane-zoo expansion",
-      "oracle": "wave32/wave64 active-mask and boundary-lane runtime corpus"
+      "search": "lane +/- fixed constants with explicit self-fill boundaries plus 16-lane row-local rotates with wrap",
+      "probe": "crosslane_probe.py neighbor_row scenario",
+      "oracle": "amd.crosslane.neighbor.hlsl structural semantics; wave32/wave64 boundary-lane runtime corpus during qualification"
     },
     {
       "id": "wave-reduction-spelling-zoo",
-      "status": "sprayable",
+      "status": "implemented-search",
       "consumer": "manual FSR4 reduction trees and auto exposure",
       "target": ["shorter DPP/permlane reduction sequences"],
-      "search": "direct WaveActive operations versus explicit butterfly trees versus staged local reductions",
-      "probe": "pending reduction A/B ISA probe",
-      "oracle": "active-mask, NaN, signed/unsigned, wave32/wave64 differential corpus"
+      "search": "direct WaveActive sum/min/max versus explicit XOR butterfly trees matching APUSR generated reductions",
+      "probe": "reduction_probe.py",
+      "oracle": "fully active integer equivalence in probe inputs; active-mask, NaN, signed/unsigned and wave32/wave64 differential corpus during qualification"
     },
     {
       "id": "transcendental-spelling-zoo",
-      "status": "sprayable",
+      "status": "implemented-search",
       "consumer": "FSR4 post_common, import/export, exposure and color transforms",
       "target": ["v_tanh_*", "v_log_*", "v_exp_*", "shorter native transcendental sequences"],
-      "search": "direct tanh/pow versus equivalent exp/log identities only where numerical contract permits; native frexp/ldexp recovery",
-      "probe": "math_probe.py plus pending A/B shader variants",
-      "oracle": "dense numerical sweep including NaN, Inf, subnormal, sign and ULP/error limits derived from the consumer"
+      "search": "direct tanh/pow versus exp/log identities over a constrained positive finite domain; native frexp/ldexp recovery retained in both variants",
+      "probe": "transcendental_probe.py",
+      "oracle": "dense numerical sweep including NaN, Inf, subnormal, sign and consumer-derived ULP/error limits before promotion"
     },
     {
       "id": "half-pack-conversion-zoo",
-      "status": "sprayable",
+      "status": "implemented-search",
       "consumer": "FP16 bookends, tensor packing and resource IO",
       "target": ["v_pack_b32_f16", "v_cvt_f16_f32", "v_cvt_f32_f16", "packed conversion forms"],
-      "search": "scalar adjacent conversions, vector conversion, explicit pack/unpack and store-adjacent variants",
-      "probe": "math_probe.py plus pending conversion-zoo expansion",
-      "oracle": "all half boundary classes and tie-rounding cases"
+      "search": "independent scalar FP32<->FP16 conversions versus paired PackF16x2/UnpackF16x2 spelling",
+      "probe": "conversion_probe.py plus math_probe.py",
+      "oracle": "all half boundary classes and tie-rounding cases during qualification"
     },
     {
       "id": "lds-access-pattern-zoo",
-      "status": "sprayable",
+      "status": "implemented-search",
       "consumer": "APUSR tiled INT8/FP16 kernels",
       "target": ["fewer DS instructions", "wider DS reads/writes", "better bank/access patterns"],
-      "search": "scalar/vector groupshared accesses, reordered loads, packed writes, barrier placement variants with identical synchronization semantics",
-      "probe": "pending APUSR-derived LDS ISA microcorpus",
-      "oracle": "runtime data-integrity test plus APUSR tile numerical comparison"
+      "search": "four scalar groupshared words versus one uint4 groupshared transaction with identical barrier and per-lane data",
+      "probe": "lds_probe.py",
+      "oracle": "runtime data-integrity test plus APUSR tile numerical comparison before consumer rewrite"
     },
     {
       "id": "async-global-lds",
