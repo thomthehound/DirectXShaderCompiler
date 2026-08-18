@@ -24,6 +24,7 @@ jobs:
             utils/apusr_amd_experimental_inventory.py \
             utils/amd_spirv_ci.py \
             utils/amd_math_ci.py \
+            utils/amd_subgroup_ci.py \
             utils/amd_vulkan_isa_probe/native_probe.py \
             utils/amd_vulkan_isa_probe/math_probe.py \
             utils/amd_vulkan_isa_probe/dot_probe.py \
@@ -50,6 +51,7 @@ jobs:
           export LD_LIBRARY_PATH="$PWD/build-amd-spirv/lib:${LD_LIBRARY_PATH:-}"
           python3 utils/amd_spirv_ci.py --dxc "$PWD/build-amd-spirv/bin/dxc"
           python3 utils/amd_math_ci.py --dxc "$PWD/build-amd-spirv/bin/dxc"
+          python3 utils/amd_subgroup_ci.py --dxc "$PWD/build-amd-spirv/bin/dxc"
 
   build-windows:
     runs-on: windows-latest
@@ -69,6 +71,7 @@ jobs:
             utils/apusr_amd_experimental_inventory.py `
             utils/amd_spirv_ci.py `
             utils/amd_math_ci.py `
+            utils/amd_subgroup_ci.py `
             utils/amd_vulkan_isa_probe/native_probe.py `
             utils/amd_vulkan_isa_probe/math_probe.py `
             utils/amd_vulkan_isa_probe/dot_probe.py `
@@ -92,4 +95,6 @@ jobs:
           python utils/amd_spirv_ci.py --dxc "$PWD\build-amd-spirv\bin\dxc.exe"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python utils/amd_math_ci.py --dxc "$PWD\build-amd-spirv\bin\dxc.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python utils/amd_subgroup_ci.py --dxc "$PWD\build-amd-spirv\bin\dxc.exe"
           exit $LASTEXITCODE
