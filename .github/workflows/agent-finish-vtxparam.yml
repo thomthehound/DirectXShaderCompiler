@@ -1,9 +1,6 @@
 name: Finish raw AGS VertexParameter
 
 on:
-  push:
-    branches:
-      - amd-spirv-native-intrinsics-dev
   pull_request:
     branches:
       - amd-spirv-native-intrinsics
@@ -37,25 +34,22 @@ jobs:
           from pathlib import Path
           p = Path('utils/amd_finish_vertex_parameter.py')
           text = p.read_text(encoding='utf-8')
-          count = text.count('processVkReadClock')
-          if count != 2:
-              raise SystemExit(f'expected two stale processVkReadClock anchors, got {count}')
+          if 'processVkReadClock' not in text:
+              raise SystemExit('stale processVkReadClock anchor not found')
           p.write_text(text.replace('processVkReadClock', 'processIntrinsicReadClock'), encoding='utf-8')
           PY
           python3 utils/amd_finish_vertex_parameter.py
           python3 utils/hct/hctgen.py HLSLIntrinsicOp --output include/dxc/HlslIntrinsicOp.h
 
-      - name: Finalize exact metadata and inherited interpolation
+      - name: Finalize current metadata schema
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
           import json
 
-          root = Path('.')
-
-          path = root / 'tools/clang/lib/SPIRV/DeclResultIdMapper.cpp'
-          text = path.read_text(encoding='utf-8')
+          cpp = Path('tools/clang/lib/SPIRV/DeclResultIdMapper.cpp')
+          text = cpp.read_text(encoding='utf-8')
           old = '''hlsl::DXIL::InterpolationMode getAmdParameterInterpolation(
               const ValueDecl *decl, ASTContext &context) {
             hlsl::InterpolationMode mode(
@@ -74,42 +68,38 @@ jobs:
               raise SystemExit('generated interpolation helper shape changed')
           text = text.replace(old, new, 1)
           old_call = 'getAmdParameterInterpolation(sourceDecl, astContext);'
-          new_call = 'getAmdParameterInterpolation(stageVar, sourceDecl, astContext);'
           if old_call not in text:
               raise SystemExit('generated interpolation helper call missing')
-          path.write_text(text.replace(old_call, new_call, 1), encoding='utf-8')
+          cpp.write_text(text.replace(old_call, 'getAmdParameterInterpolation(stageVar, sourceDecl, astContext);', 1), encoding='utf-8')
 
-          path = root / 'utils/amd_spirv_contracts.json'
+          path = Path('utils/amd_spirv_contracts.json')
           data = json.loads(path.read_text(encoding='utf-8'))
-          found_vtx = False
           for row in data['ags_opcodes']:
               if row.get('opcode') == '0x0e':
-                  found_vtx = True
                   row.update({
                       'spirv': 'SPV_AMD_shader_explicit_vertex_parameter InterpolateAtVertexAMD, including compiler-native AGS D3D parameter-register/component index resolution independent of Vulkan Location',
                       'status': 'native-contract',
                       'test': 'amd.intrinsics.explicit-vertex.hlsl + amd.intrinsics.vertex-parameter-index.hlsl',
                       'note': 'vk::AmdVertexParameter and vk::AmdVertexParameterComponent enforce AGS immediate index ranges and reproduce DXC prefix-stable D3D input-register packing before selecting the actual SPIR-V Input pointer.'
                   })
-          if not found_vtx:
+                  break
+          else:
               raise SystemExit('VertexParameter contract row missing')
-
-          found_bf16 = False
           for row in data['low_level_math']:
               if row.get('surface') == 'BF16 dot/conversion':
-                  found_bf16 = True
                   row.update({
                       'spirv': 'first-class BFloat16KHR scalar/vector types, exact BF16 mixed-dot contracts, and scalar/vector OpFConvert ingress',
                       'status': 'native-contract',
                       'test': 'amd.bfloat16.convert.hlsl + amd.mixed-dot.hlsl + BF16 compiler/ISA probes',
                       'note': 'Specific bit-exact F32->BF16 directed/stochastic rounding guarantees remain separately tracked; basic BF16 type/conversion ingress is implemented.'
                   })
-          if not found_bf16:
+                  break
+          else:
               raise SystemExit('BF16 contract row missing')
           path.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
           PY
 
-      - name: Validate generated/source state
+      - name: Validate source state
         run: |
           set -euo pipefail
           python3 -m py_compile utils/amd_spirv_ci.py
@@ -128,8 +118,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ninja-build clang lld
 
-      - name: Configure Linux DXC
+      - name: Configure and build Linux DXC
         run: |
+          set -euo pipefail
           cmake -S . -B build-amd-spirv -G Ninja \
             -C cmake/caches/PredefinedParams.cmake \
             -DCMAKE_BUILD_TYPE=Release \
@@ -141,9 +132,7 @@ jobs:
             -DLLVM_INCLUDE_TESTS=OFF \
             -DCLANG_INCLUDE_TESTS=OFF \
             -DHLSL_INCLUDE_TESTS=OFF
-
-      - name: Build Linux DXC
-        run: cmake --build build-amd-spirv --target dxc dxcompiler dxildll --parallel 4
+          cmake --build build-amd-spirv --target dxc dxcompiler dxildll --parallel 4
 
       - name: Run Linux AMD compiler contracts
         run: |
@@ -160,14 +149,11 @@ jobs:
           python3 utils/amd_mixed_dot_ci.py --dxc "$DXC"
           python3 utils/amd_dxil_ci.py --dxc "$DXC"
 
-      - name: Remove disposable machinery
-        run: |
-          rm utils/amd_finish_vertex_parameter.py
-          rm .github/workflows/agent-finish-vtxparam.yml
-
       - name: Commit final implementation
         run: |
           set -euo pipefail
+          rm utils/amd_finish_vertex_parameter.py
+          rm .github/workflows/agent-finish-vtxparam.yml
           git config user.name 'OpenAI Codex'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
