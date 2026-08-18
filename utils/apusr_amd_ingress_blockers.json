@@ -61,13 +61,13 @@
       "required_fix": "Use an AMD-specific compiler option/metadata/intrinsic path that survives to the Radeon backend; this is not representable as a memory barrier."
     },
     {
-      "id": "bf16-first-class-dot-conversion",
-      "amd_intrinsics": ["llvm.amdgcn.fdot2.f32.bf16", "llvm.amdgcn.fdot2.bf16.bf16", "BF16 conversion/packing families"],
-      "apusr_relevance": ["future BF16 model kernels", "mixed-precision matrix paths"],
-      "dxil": "The branch does not yet expose a general shader arithmetic BF16 surface matching the AMD dot/conversion contracts; LinAlg component-type support alone is not treated as scalar/vector BF16 ingress.",
-      "spirv": "BF16 support must use a real typed capability/extension path; opaque uint16_t bitcasts would not preserve arithmetic semantics.",
-      "status": "blocked-ingress",
-      "required_fix": "Add or consume a first-class BF16 arithmetic type and exact SPIR-V/DXIL lowering before exposing AMD BF16 dot/conversion helpers."
+      "id": "bf16-narrowing-rounding-and-stochastic",
+      "amd_intrinsics": ["v_cvt_pk_bf16_f32", "llvm.amdgcn.cvt.sr.pk.bf16.f32", "llvm.amdgcn.cvt.sr.bf16.f32"],
+      "apusr_relevance": ["future BF16 model kernels", "mixed-precision tensor packing"],
+      "dxil": "Ordinary scalar/vector DXIL still has no first-class BF16 arithmetic type. SM 6.10 LinAlg BF16 is a separate matrix contract.",
+      "spirv": "The branch now has genuine BFloat16KHR scalar/vector types and OpFConvert conversion ingress. BF16->F32 is exact. Vulkan does not define one universal F32->BF16 narrowing result, and SPIR-V has no seed-carrying stochastic-rounding BF16 conversion equivalent to AMD's cvt_sr forms.",
+      "status": "blocked-ingress-partial",
+      "required_fix": "Use a Vulkan/SPIR-V contract that pins the required F32->BF16 rounding mode when bit-exact narrowing matters, and add a real seed-carrying intrinsic/extension for AMD stochastic-rounding conversion. Do not implement either as integer bit arithmetic and call it native."
     },
     {
       "id": "ags-vtxparam-raw-signature-index",
