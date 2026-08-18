@@ -14,12 +14,14 @@ $DxcPath = (Resolve-Path $Dxc).Path
 
 Write-Host "[AMD SPIR-V] Contract regressions"
 python (Join-Path $RepoRoot "utils/amd_spirv_ci.py") --dxc $DxcPath
-if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
-}
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+Write-Host "[AMD SPIR-V] Low-level math regressions"
+python (Join-Path $RepoRoot "utils/amd_math_ci.py") --dxc $DxcPath
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 if (-not $NativeProbe) {
-    Write-Host "[AMD SPIR-V] PASS contract regressions"
+    Write-Host "[AMD SPIR-V] PASS contract + low-level math regressions"
     Write-Host "[AMD SPIR-V] Hardware ISA probe skipped (pass -NativeProbe when native recovery matters)."
     exit 0
 }
