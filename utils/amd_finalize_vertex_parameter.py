@@ -55,9 +55,19 @@ with tempfile.TemporaryDirectory() as tempdir:
 
     vertex_key = "IOP_VkAmdVertexParameter"
     component_key = "IOP_VkAmdVertexParameterComponent"
-    if generated.count(vertex_key) != 1 or generated.count(component_key) != 1:
-        raise RuntimeError("generated Vk intrinsic table does not contain exactly one VertexParameter row")
-    if generated.index(vertex_key) >= generated.index(component_key):
+    vertex_rows = list(
+        re.finditer(r"\(UINT\)IntrinsicOp::IOP_VkAmdVertexParameter,", generated)
+    )
+    component_rows = list(
+        re.finditer(
+            r"\(UINT\)IntrinsicOp::IOP_VkAmdVertexParameterComponent,", generated
+        )
+    )
+    if len(vertex_rows) != 1 or len(component_rows) != 1:
+        raise RuntimeError(
+            "generated Vk intrinsic table does not contain exactly one row for each VertexParameter intrinsic"
+        )
+    if vertex_rows[0].start() >= component_rows[0].start():
         raise RuntimeError("generated Vk intrinsic table is not in canonical intrinsic-key order")
 
     def get_arg_block(opcode):
