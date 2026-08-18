@@ -1,14 +1,16 @@
 {
-  "schema": 2,
+  "schema": 3,
   "scope": {
     "primary": "Exhaustive Vulkan parity for every current non-reserved AMD AGS D3D shader intrinsic opcode.",
-    "secondary": "Exhaustive review of additional HLSL/DXIL-to-AMDGPU native opportunities not exposed by AGS, including SAD/MSAD, WMMA/SWMMAC, DPP/permlane and packed low-precision conversion families."
+    "secondary": "Exhaustive review and implementation of additional non-low-precision AMDGPU math/native opportunities not exposed by AGS.",
+    "deferred_by_hardware": "FP8/BF8/FP6/BF6/FP4 format conversion, packing and dot families are tracked but deferred until suitable test hardware is available. FP16/BF16 remain in scope."
   },
   "status_values": [
     "native-contract",
     "legal-specialized-candidate",
     "missing-spv-ingress",
     "semantic-review",
+    "deferred-hardware",
     "not-vulkan-applicable"
   ],
   "ags_opcodes": [
@@ -36,16 +38,30 @@
     {"opcode":"0x1b","surface":"BaseVertex","spirv":"BaseVertex builtin where stage/environment permits","status":"semantic-review","test":"pending draw-parameter corpus"},
     {"opcode":"0x1c","surface":"FloatConversion F32->F16 nearest/-inf/+inf","spirv":"conversion plus exact rounding-mode contract review","status":"semantic-review","test":"pending rounding-boundary corpus"},
     {"opcode":"0x1d","surface":"ReadlaneAt with non-uniform index","spirv":"OpGroupNonUniformShuffle","status":"native-contract","test":"amd.intrinsics.wave-parity.hlsl"},
-    {"opcode":"0x1f","surface":"ShaderClock","spirv":"shader-clock extension/core contract review","status":"semantic-review","test":"pending clock corpus"},
+    {"opcode":"0x1f","surface":"ShaderClock","spirv":"OpReadClockKHR / ShaderClockKHR","status":"semantic-review","test":"pending clock corpus"},
     {"opcode":"0x20","surface":"ShaderRealtimeClock","spirv":"globally coherent realtime clock semantics not yet proven equivalent","status":"semantic-review","test":"pending clock/coherence corpus"}
   ],
-  "additional_native_opportunities": [
-    {"surface":"HLSL msad4 / DXIL IMsad","amd_native":"v_mqsad_u32_u8","spirv":"4 x OpUDot over packed 4x8 byte reductions","status":"legal-specialized-candidate","strict_native":false,"test":"intrinsics.msad4.amd.hlsl + amd_vulkan_isa_probe"},
-    {"surface":"SAD/QSAD/MSAD/MQSAD family beyond msad4","amd_native":"v_sad*/v_qsad*/v_msad*/v_mqsad*","spirv":null,"status":"missing-spv-ingress","strict_native":false,"test":"extend amd_vulkan_isa_probe per exact operation"},
-    {"surface":"dot4add_u8packed / dot4add_i8packed","amd_native":"packed integer dot-product family","spirv":"OpUDot/OpSDot + SPV_KHR_integer_dot_product","status":"native-contract","strict_native":true,"test":"intrinsics.dot4add.packed.amd.hlsl"},
-    {"surface":"SM 6.10 Wave/ThreadGroup cooperative matrix operations","amd_native":"WMMA/SWMMAC candidate family","spirv":"SPV_KHR_cooperative_matrix where exact semantics match","status":"semantic-review","strict_native":false,"test":"linalg.cooperative-matrix.amd.hlsl + shape/type expansion"},
-    {"surface":"SM 6.10 Thread-scope cooperative-vector-style operations","amd_native":"AMD vector/matrix hardware family","spirv":null,"status":"missing-spv-ingress","strict_native":false,"test":"linalg.thread-scope-no-fake-amd.hlsl"},
-    {"surface":"DPP/permlane/cross-lane AMDGPU intrinsics beyond AGS mappings","amd_native":"DPP/permlane family","spirv":null,"status":"semantic-review","strict_native":false,"test":"pending adversarial lane-routing corpus"},
-    {"surface":"FP8/BF8/FP6/BF6/FP4 conversion and packing families","amd_native":"AMDGPU packed low-precision conversion family","spirv":null,"status":"semantic-review","strict_native":false,"test":"pending edge-value/rounding/packing corpus"}
+  "low_level_math": [
+    {"surface":"ubfe / sbfe","amd_native":"v_bfe_u32 / v_bfe_i32 family","spirv":"OpBitFieldUExtract / OpBitFieldSExtract","status":"native-contract","strict_native":true,"test":"amd.math.core.hlsl + math ISA probe"},
+    {"surface":"bitreverse / bitcount","amd_native":"AMD bit-manipulation VALU family","spirv":"OpBitReverse / OpBitCount","status":"native-contract","strict_native":true,"test":"amd.math.core.hlsl + math ISA probe"},
+    {"surface":"fmed3","amd_native":"v_med3_f16/f32 family","spirv":"SPV_AMD_shader_trinary_minmax FMid3AMD","status":"native-contract","strict_native":true,"test":"amd.math.core.hlsl + AMD extinst tests"},
+    {"surface":"rcp / sqrt / rsq / sin / cos / log2 / exp2 / fract (non-legacy)","amd_native":"v_rcp/v_sqrt/v_rsq/v_sin/v_cos/v_log/v_exp/v_fract families","spirv":"standard mathematical SPIR-V/GLSL.std.450 semantics","status":"legal-specialized-candidate","strict_native":false,"test":"amd.math.core.hlsl + math ISA probe","note":"Promote individual operations only after installed-driver ISA confirms native recovery."},
+    {"surface":"rcp_legacy / rsq_legacy / fmul_legacy / fma_legacy / fmad_ftz","amd_native":"legacy/FTZ AMD VALU operations","spirv":null,"status":"missing-spv-ingress","strict_native":false,"test":"semantic edge corpus required","note":"Ordinary reciprocal/multiply/FMA is not equivalent; do not emulate or relabel."},
+    {"surface":"rsq_clamp / log_clamp","amd_native":"AMD clamped transcendental family","spirv":null,"status":"semantic-review","strict_native":false,"test":"NaN/Inf/denorm/clamp edge corpus + ISA probe"},
+    {"surface":"div_scale / div_fmas / div_fixup / trig_preop","amd_native":"AMD division/trig assist instructions","spirv":null,"status":"missing-spv-ingress","strict_native":false,"test":"special-value semantic corpus + ISA probe"},
+    {"surface":"frexp_mant / frexp_exp / ldexp / class / tanh","amd_native":"AMD decomposition/classification/transcendental family","spirv":"core or GLSL.std.450 candidates exist for portions of the family","status":"semantic-review","strict_native":false,"test":"pending exact-special-value corpus + ISA probe"},
+    {"surface":"cubeid / cubema / cubesc / cubetc","amd_native":"AMD cube helper instructions","spirv":"SPV_AMD_gcn_shader exposes CubeFaceIndexAMD and CubeFaceCoordAMD, not every raw helper independently","status":"semantic-review","strict_native":false,"test":"pending face/tie/sign corpus + ISA probe"},
+    {"surface":"alignbit / alignbyte","amd_native":"v_alignbit_b32 / v_alignbyte_b32 family","spirv":"canonical shift/or/extract graph only; no direct opcode","status":"legal-specialized-candidate","strict_native":false,"test":"pending byte/bit-boundary corpus + ISA probe"},
+    {"surface":"mul_i24 / mul_u24 / mulhi_i24 / mulhi_u24","amd_native":"24-bit multiply family","spirv":"masked/sign-extended integer arithmetic candidate","status":"legal-specialized-candidate","strict_native":false,"test":"pending 24-bit boundary corpus + ISA probe"},
+    {"surface":"lerp_u8","amd_native":"v_lerp_u8","spirv":"canonical packed U8 interpolation graph; no direct opcode","status":"legal-specialized-candidate","strict_native":false,"test":"pending packed-lane interpolation corpus + ISA probe"},
+    {"surface":"sad_u8 / sad_hi_u8 / sad_u16 / msad_u8 / qsad_pk_u16_u8 / mqsad_pk_u16_u8 / mqsad_u32_u8","amd_native":"v_sad*/v_msad*/v_qsad*/v_mqsad*","spirv":"no direct SAD-family opcode; canonical arithmetic/dot candidates only","status":"legal-specialized-candidate","strict_native":false,"test":"expanded amd_vulkan_isa_probe","note":"No family member is called native until installed-driver ISA proves the intended instruction."},
+    {"surface":"sdot2/4, udot2/4, sudot4 and accumulated/saturating variants","amd_native":"AMD packed dot family","spirv":"OpSDot/OpUDot/OpSUDot and *AccSat where widths/packing match","status":"semantic-review","strict_native":false,"test":"expand signedness/width/clamp corpus"},
+    {"surface":"sdot8 / udot8 / sudot8 packed i4/u4","amd_native":"AMD 8x4-bit dot family","spirv":"requires exact packed-4-bit contract review; do not infer from 4x8 dot support","status":"semantic-review","strict_native":false,"test":"pending i4/u4 packing corpus"},
+    {"surface":"fdot2 f16 and BF16 dot variants","amd_native":"AMD packed FP16/BF16 dot family","spirv":"standard/KHR dot and BF16 capabilities may cover subsets","status":"semantic-review","strict_native":false,"test":"pending FP16/BF16 accumulation/clamp corpus + ISA probe"},
+    {"surface":"cvt_pkrtz / cvt_pknorm_i16/u16 / cvt_pk_i16/u16 / cvt_pk_u8_f32","amd_native":"AMD packed conversion family","spirv":"vector conversion/packing plus rounding/saturation semantics require exact review","status":"semantic-review","strict_native":false,"test":"pending rounding/saturation/packing corpus + ISA probe"},
+    {"surface":"sffbh and other bit-scan forms","amd_native":"AMD find-first-bit family","spirv":"core bit operations can express semantics; native recovery requires proof","status":"semantic-review","strict_native":false,"test":"pending zero/sign boundary corpus + ISA probe"},
+    {"surface":"DPP / DPP8 / permlane16 / permlanex16 / permlane64 / perm / DS swizzle-permute","amd_native":"AMD cross-lane/permutation families","spirv":"subgroup and registered AMD contracts cover subsets only","status":"semantic-review","strict_native":false,"test":"pending adversarial lane-routing corpus + ISA probe"},
+    {"surface":"WMMA/SWMMAC FP16/BF16 and IU8/IU4 operations","amd_native":"AMD WMMA/SWMMAC family","spirv":"SPV_KHR_cooperative_matrix where shape/type/accumulation semantics match","status":"semantic-review","strict_native":false,"test":"linalg.cooperative-matrix.amd.hlsl + per-shape ISA probes"},
+    {"surface":"FP8/BF8/FP6/BF6/FP4 format conversion, packing and dot operations","amd_native":"new low-precision AMDGPU families","spirv":"evolving EXT/KHR low-precision contracts","status":"deferred-hardware","strict_native":false,"test":"deferred until suitable test hardware is available"}
   ]
 }
