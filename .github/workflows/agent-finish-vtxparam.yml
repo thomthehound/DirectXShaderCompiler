@@ -33,6 +33,15 @@ jobs:
         run: |
           set -euo pipefail
           test -f utils/amd_finish_vertex_parameter.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('utils/amd_finish_vertex_parameter.py')
+          text = p.read_text(encoding='utf-8')
+          count = text.count('processVkReadClock')
+          if count != 2:
+              raise SystemExit(f'expected two stale processVkReadClock anchors, got {count}')
+          p.write_text(text.replace('processVkReadClock', 'processIntrinsicReadClock'), encoding='utf-8')
+          PY
           python3 utils/amd_finish_vertex_parameter.py
           python3 utils/hct/hctgen.py HLSLIntrinsicOp --output include/dxc/HlslIntrinsicOp.h
 
