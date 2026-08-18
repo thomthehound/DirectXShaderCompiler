@@ -37,6 +37,7 @@ jobs:
             utils/amd_math_ci.py \
             utils/amd_subgroup_ci.py \
             utils/amd_dxil_ci.py \
+            utils/amd_atomic_ci.py \
             utils/amd_vulkan_isa_probe/native_probe.py \
             utils/amd_vulkan_isa_probe/math_probe.py \
             utils/amd_vulkan_isa_probe/dot_probe.py \
@@ -106,6 +107,7 @@ jobs:
           python3 utils/amd_spirv_ci.py --dxc "$DXC"
           python3 utils/amd_math_ci.py --dxc "$DXC"
           python3 utils/amd_subgroup_ci.py --dxc "$DXC"
+          python3 utils/amd_atomic_ci.py --dxc "$DXC"
           python3 utils/amd_dxil_ci.py --dxc "$DXC"
 
   build-windows:
@@ -160,6 +162,8 @@ jobs:
           python utils/amd_math_ci.py --dxc $dxc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python utils/amd_subgroup_ci.py --dxc $dxc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python utils/amd_atomic_ci.py --dxc $dxc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python utils/amd_dxil_ci.py --dxc $dxc
           exit $LASTEXITCODE
