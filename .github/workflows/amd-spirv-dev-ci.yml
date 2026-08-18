@@ -30,6 +30,7 @@ jobs:
           python3 -m json.tool utils/apusr_amd_acceleration_matrix.json >/dev/null
           python3 -m json.tool utils/apusr_amd_experimental_candidates.json >/dev/null
           python3 -m json.tool utils/apusr_amd_ingress_blockers.json >/dev/null
+          python3 -m json.tool utils/amd_contract_addendum_matrix_packing.json >/dev/null
           python3 -m py_compile \
             utils/apusr_amd_qualify.py \
             utils/apusr_amd_experimental_inventory.py \
@@ -40,11 +41,13 @@ jobs:
             utils/amd_atomic_ci.py \
             utils/amd_packing_ci.py \
             utils/amd_matrix_ci.py \
+            utils/amd_mixed_dot_ci.py \
             utils/amd_vulkan_isa_probe/native_probe.py \
             utils/amd_vulkan_isa_probe/math_probe.py \
             utils/amd_vulkan_isa_probe/dot_probe.py \
             utils/amd_vulkan_isa_probe/dot_f16_probe.py \
             utils/amd_vulkan_isa_probe/dot_saturation_probe.py \
+            utils/amd_vulkan_isa_probe/mixed_dot_probe.py \
             utils/amd_vulkan_isa_probe/crosslane_probe.py \
             utils/amd_vulkan_isa_probe/reduction_probe.py \
             utils/amd_vulkan_isa_probe/conversion_probe.py \
@@ -115,6 +118,7 @@ jobs:
           python3 utils/amd_atomic_ci.py --dxc "$DXC"
           python3 utils/amd_packing_ci.py --dxc "$DXC"
           python3 utils/amd_matrix_ci.py --dxc "$DXC"
+          python3 utils/amd_mixed_dot_ci.py --dxc "$DXC"
           python3 utils/amd_dxil_ci.py --dxc "$DXC"
 
   build-windows:
@@ -175,6 +179,8 @@ jobs:
           python utils/amd_packing_ci.py --dxc $dxc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python utils/amd_matrix_ci.py --dxc $dxc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python utils/amd_mixed_dot_ci.py --dxc $dxc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python utils/amd_dxil_ci.py --dxc $dxc
           exit $LASTEXITCODE
