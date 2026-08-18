@@ -73,6 +73,24 @@ def main() -> int:
             flags=("-fspv-extension=AMD",),
         ),
         Case(
+            "APUSR FP/bit semantic surface",
+            "amd.math.apusr-fp-bit.hlsl",
+            required=(
+                r"\bOpExtInst\b.*\bFindILsb\b",
+                r"\bOpExtInst\b.*\bFindUMsb\b",
+                r"\bOpExtInst\b.*\bFindSMsb\b",
+                r"\bOpExtInst\b.*\bPackHalf2x16\b",
+                r"\bOpExtInst\b.*\bUnpackHalf2x16\b",
+                r"\bOpExtInst\b.*\bLog\b",
+                r"\bOpExtInst\b.*\bExp\b",
+                r"\bOpExtInst\b.*\bTanh\b",
+                r"\bOpExtInst\b.*\bPow\b",
+                r"\bOpExtInst\b.*\bFrexpStruct\b",
+                r"\bOpExtInst\b.*\bExp2\b",
+                r"\bOpFMul\b",
+            ),
+        ),
+        Case(
             "MUL24 canonical structure",
             "amd.math.candidates.hlsl",
             required=(
