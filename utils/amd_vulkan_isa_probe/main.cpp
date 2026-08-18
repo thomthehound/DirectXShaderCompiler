@@ -23,17 +23,20 @@ struct Options {
   uint32_t descriptor_set = 0;
   uint32_t descriptor_binding = 0;
   uint32_t push_constant_bytes = 32;
+  bool enable_bfloat16 = false;
 };
 
 [[noreturn]] void usage(const char* exe) {
   std::cerr
       << "Usage: " << exe
       << " <shader.spv> <disassembly.txt> [--device N] [--entry NAME]"
-         " [--set N] [--binding N] [--push-constant-bytes N]\n\n"
+         " [--set N] [--binding N] [--push-constant-bytes N]"
+         " [--enable-bfloat16]\n\n"
          "Creates a compute pipeline and asks VK_AMD_shader_info for the AMD"
          " driver's own disassembly. The default layout matches the shaders"
          " shipped with this probe (set 0, binding 0 storage buffer, 32-byte"
-         " compute push-constant range).\n";
+         " compute push-constant range). --enable-bfloat16 additionally"
+         " requires and enables VK_KHR_shader_bfloat16 shaderBFloat16Type.\n";
   std::exit(2);
 }
 
@@ -78,6 +81,8 @@ Options parse_args(int argc, char** argv) {
       result.descriptor_binding = parse_u32(next(), "descriptor binding");
     else if (arg == "--push-constant-bytes")
       result.push_constant_bytes = parse_u32(next(), "push-constant size");
+    else if (arg == "--enable-bfloat16")
+      result.enable_bfloat16 = true;
     else
       usage(argv[0]);
   }
@@ -243,6 +248,30 @@ int main(int argc, char** argv) {
       return 3;
     }
 
+#if !defined(VK_KHR_shader_bfloat16)
+    if (options.enable_bfloat16) {
+      std::cerr << "UNSUPPORTED: Vulkan SDK lacks VK_KHR_shader_bfloat16\n";
+      return 5;
+    }
+#else
+    VkPhysicalDeviceShaderBfloat16FeaturesKHR bfloat16_features{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR};
+    if (options.enable_bfloat16) {
+      if (!has_extension(physical_device, VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME)) {
+        std::cerr << "UNSUPPORTED: VK_KHR_shader_bfloat16\n";
+        return 5;
+      }
+      VkPhysicalDeviceFeatures2 features2{
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+      features2.pNext = &bfloat16_features;
+      vkGetPhysicalDeviceFeatures2(physical_device, &features2);
+      if (!bfloat16_features.shaderBFloat16Type) {
+        std::cerr << "UNSUPPORTED_FEATURE: shaderBFloat16Type\n";
+        return 6;
+      }
+    }
+#endif
+
     const auto queue_family = find_compute_queue(physical_device);
     if (!queue_family)
       throw std::runtime_error("selected device has no compute-capable queue");
@@ -253,12 +282,24 @@ int main(int argc, char** argv) {
     queue_ci.queueCount = 1;
     queue_ci.pQueuePriorities = &queue_priority;
 
-    const char* extensions[] = {VK_AMD_SHADER_INFO_EXTENSION_NAME};
+    std::vector<const char*> extensions = {VK_AMD_SHADER_INFO_EXTENSION_NAME};
+    void* device_features = nullptr;
+#if defined(VK_KHR_shader_bfloat16)
+    VkPhysicalDeviceShaderBfloat16FeaturesKHR enabled_bfloat16{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR};
+    if (options.enable_bfloat16) {
+      enabled_bfloat16.shaderBFloat16Type = VK_TRUE;
+      device_features = &enabled_bfloat16;
+      extensions.push_back(VK_KHR_SHADER_BFLOAT16_EXTENSION_NAME);
+    }
+#endif
+
     VkDeviceCreateInfo device_ci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+    device_ci.pNext = device_features;
     device_ci.queueCreateInfoCount = 1;
     device_ci.pQueueCreateInfos = &queue_ci;
-    device_ci.enabledExtensionCount = 1;
-    device_ci.ppEnabledExtensionNames = extensions;
+    device_ci.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+    device_ci.ppEnabledExtensionNames = extensions.data();
 
     VkDevice device = VK_NULL_HANDLE;
     check(vkCreateDevice(physical_device, &device_ci, nullptr, &device),
