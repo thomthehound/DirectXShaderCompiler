@@ -50,6 +50,7 @@ if (ENABLE_SPIRV_CODEGEN)
   list(APPEND hlsl_embedded_inputs
        vk/khr/cooperative_matrix.h
        vk/amd/intrinsics.h
+       vk/amd/wave.h
        vk/khr/cooperative_matrix.impl
        vk/opcode_selector.h
        vk/spirv.h
