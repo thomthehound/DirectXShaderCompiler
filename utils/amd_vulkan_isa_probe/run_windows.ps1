@@ -127,6 +127,16 @@ $LdsArgs = @(
 python @LdsArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+Write-Host "[AMD SPIR-V] Cube helper native recovery"
+$CubeArgs = @(
+    (Join-Path $ProbeRoot "cube_probe.py"),
+    "--dxc", $Dxc,
+    "--driver-probe", $DriverProbe,
+    "--out-dir", (Join-Path $OutDir "cube")
+)
+python @CubeArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 Write-Host "[AMD SPIR-V] Empirical candidate zoo + runtime oracle"
 $ZooArgs = @(
     (Join-Path $ProbeRoot "candidate_zoo.py"),
