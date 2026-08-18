@@ -1,12 +1,8 @@
 //===------ FeatureManager.h - SPIR-V Version/Extension Manager -*- C++ -*-===//
 //
-//                     The LLVM Compiler Infrastructure
+//                     The LLVM Infrastructure
 //
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
-//===----------------------------------------------------------------------===//
-//
-//  This file defines a SPIR-V version and extension manager.
+// This file defines a SPIR-V version and extension manager.
 //
 //===----------------------------------------------------------------------===//
 
@@ -87,6 +83,7 @@ enum class Extension {
   KHR_quad_control,
   EXT_descriptor_heap,
   KHR_untyped_pointers,
+  VALVE_mixed_float_dot_product,
   Unknown,
 };
 
@@ -134,7 +131,7 @@ public:
   bool isExtensionRequiredForTargetEnv(Extension) const;
 
   /// Returns true if the given extension is set in allowedExtensions
-  bool isExtensionEnabled(Extension) const;
+  bool isExtensionEnabled(Extension ext) const;
 
   /// Returns true if the target environment is Vulkan 1.1 or above.
   /// Returns false otherwise.
@@ -162,7 +159,7 @@ public:
   /// Returns the spv_target_env matching the input string if possible.
   /// This functions matches the spv_target_env with the command-line version
   /// of the name ('vulkan1.1', not 'Vulkan 1.1').
-  /// Returns an empty Optional if no matching env is found.
+  /// Returns an empty Optional if the name cannot be matched.
   static llvm::Optional<spv_target_env>
   stringToSpvEnvironment(const std::string &target_env);
 
