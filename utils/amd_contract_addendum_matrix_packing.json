@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "purpose": "Focused contract updates landed after amd_spirv_contracts.json schema 4.",
+  "todo": "Merge these rows into amd_spirv_contracts.json before PR splitting. This addendum exists only because the connector rejected the oversized whole-file ledger replacement; it is not a second authoritative ledger.",
+  "updates": [
+    {
+      "surface": "rsq_clamp / log_clamp",
+      "status": "not-vulkan-applicable",
+      "reason": "Current LLVM retains the legacy intrinsic/instruction definitions but explicitly lists the corresponding ISA forms as unsupported on gfx11. Do not spend modern APUSR qualification time on them."
+    },
+    {
+      "surface": "cubeid / cubema / cubesc / cubetc",
+      "status": "legal-specialized-candidate",
+      "spirv": "SPV_AMD_gcn_shader CubeFaceIndexAMD/CubeFaceCoordAMD preserve the higher-level cube operation.",
+      "test": "cube_probe.py",
+      "qualification": "Record v_cubeid/v_cubema/v_cubesc/v_cubetc recovery without requiring a particular low-level decomposition."
+    },
+    {
+      "surface": "normalized/integer packed conversions",
+      "status": "legal-specialized-candidate",
+      "amd_native": "v_cvt_pknorm_i16_f32 / v_cvt_pknorm_u16_f32 / v_cvt_pk_i16_i32 / v_cvt_pk_u16_u32; packed-U8 recovery remains a higher-level candidate",
+      "spirv": "Direct GLSL.std.450 PackSnorm2x16/PackUnorm2x16 plus exact clamp-and-pack I16/U16 graphs.",
+      "test": "amd.math.packing.hlsl + amd_packing_ci.py + packing_probe.py"
+    },
+    {
+      "surface": "cvt_pkrtz f32->f16x2",
+      "status": "missing-spv-ingress",
+      "reason": "Nearest-even PackHalf2x16 is not equivalent to AMD round-toward-zero packing; Vulkan FPRoundingMode use restrictions do not provide the returned packed-value contract."
+    },
+    {
+      "surface": "WMMA FP16/BF16/IU8 16x16x16",
+      "status": "legal-specialized-candidate",
+      "spirv": "SPV_KHR_cooperative_matrix with explicit F16/BF16/I8/U8 component types and per-operand signedness flags.",
+      "test": "linalg.cooperative-matrix-shapes.amd.hlsl + amd_matrix_ci.py + matrix_probe.py",
+      "qualification": "Require an exact advertised VkCooperativeMatrixPropertiesKHR match before pipeline creation, then record WMMA/SWMMAC/MFMA ISA."
+    },
+    {
+      "surface": "WMMA IU4",
+      "status": "missing-spv-ingress",
+      "amd_native": "gfx11 v_wmma_i32_16x16x16_iu4",
+      "reason": "The current SM 6.10 dx::linalg ComponentType enum has no I4/U4 matrix component. I8 matrices are not an equivalent substitute."
+    },
+    {
+      "surface": "BF16 scalar/vector dot/conversion",
+      "status": "missing-spv-ingress",
+      "note": "BF16 cooperative matrices are now first-class through SPV_KHR_bfloat16; the remaining gap is specifically general scalar/vector HLSL BF16 arithmetic, not matrix BF16."
+    }
+  ]
+}
