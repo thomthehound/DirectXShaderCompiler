@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -13,6 +14,9 @@
 #include <vector>
 
 namespace {
+
+constexpr const char *kMixedFloatDotExtension =
+    "VK_VALVE_shader_mixed_float_dot_product";
 
 struct Options {
   std::filesystem::path spirv;
@@ -171,17 +175,10 @@ int main(int argc, char **argv) {
       std::cout << "UNSUPPORTED: VK_AMD_shader_info\n";
       return 30;
     }
-
-#if !defined(VK_VALVE_SHADER_MIXED_FLOAT_DOT_PRODUCT_EXTENSION_NAME)
-    std::cout << "UNSUPPORTED: Vulkan SDK lacks VK_VALVE_shader_mixed_float_dot_product\n";
-    return 31;
-#else
-    if (!has_extension(physical,
-                       VK_VALVE_SHADER_MIXED_FLOAT_DOT_PRODUCT_EXTENSION_NAME)) {
-      std::cout << "UNSUPPORTED: VK_VALVE_shader_mixed_float_dot_product\n";
+    if (!has_extension(physical, kMixedFloatDotExtension)) {
+      std::cout << "UNSUPPORTED: " << kMixedFloatDotExtension << "\n";
       return 32;
     }
-#endif
 
 #if !defined(VK_KHR_shader_bfloat16)
     if (o.kind == "bf16") {
@@ -232,9 +229,7 @@ int main(int argc, char **argv) {
 
     std::vector<const char *> extensions = {
         VK_AMD_SHADER_INFO_EXTENSION_NAME,
-#if defined(VK_VALVE_SHADER_MIXED_FLOAT_DOT_PRODUCT_EXTENSION_NAME)
-        VK_VALVE_SHADER_MIXED_FLOAT_DOT_PRODUCT_EXTENSION_NAME,
-#endif
+        kMixedFloatDotExtension,
     };
 #if defined(VK_KHR_shader_bfloat16)
     if (o.kind == "bf16")
