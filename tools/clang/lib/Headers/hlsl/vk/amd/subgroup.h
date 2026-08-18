@@ -57,15 +57,22 @@ int Rotate(int value, uint delta) {
   return SubgroupRotateRaw(vk::ScopeSubgroup, value, delta);
 }
 
-float RotateClustered(float value, uint delta, uint clusterSize) {
+// ClusterSize must be a constant instruction, at least 1, and a power of two.
+// Make it a template argument so invalid runtime cluster sizes cannot leak
+// through this convenience surface. The branch's SPIR-V validator remains the
+// final authority for the requested constant.
+template <uint clusterSize>
+float RotateClustered(float value, uint delta) {
   return SubgroupRotateClusteredRaw(vk::ScopeSubgroup, value, delta,
                                     clusterSize);
 }
-uint RotateClustered(uint value, uint delta, uint clusterSize) {
+template <uint clusterSize>
+uint RotateClustered(uint value, uint delta) {
   return SubgroupRotateClusteredRaw(vk::ScopeSubgroup, value, delta,
                                     clusterSize);
 }
-int RotateClustered(int value, uint delta, uint clusterSize) {
+template <uint clusterSize>
+int RotateClustered(int value, uint delta) {
   return SubgroupRotateClusteredRaw(vk::ScopeSubgroup, value, delta,
                                     clusterSize);
 }
