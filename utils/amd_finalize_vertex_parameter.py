@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import json
+import re
+import subprocess
+import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -30,6 +34,64 @@ ops["IOP_VkAmdVertexParameter"] = 424
 ops["IOP_VkAmdVertexParameterComponent"] = 425
 ops["Num_Intrinsics"] = 426
 opcode_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+# Verify the generated HCT table rather than assuming declaration order and
+# opcode allocation are coupled. The table is key-sorted but stores each
+# intrinsic's explicit enum opcode and its own argument-descriptor array.
+with tempfile.TemporaryDirectory() as tempdir:
+    generated_tables = Path(tempdir) / "gen_intrin_main_tables_15.h"
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "utils/hct/hctgen.py"),
+            "DxilIntrinsicTables",
+            "--output",
+            str(generated_tables),
+        ],
+        cwd=ROOT,
+        check=True,
+    )
+    generated = generated_tables.read_text(encoding="utf-8")
+
+    vertex_key = "IOP_VkAmdVertexParameter"
+    component_key = "IOP_VkAmdVertexParameterComponent"
+    if generated.count(vertex_key) != 1 or generated.count(component_key) != 1:
+        raise RuntimeError("generated Vk intrinsic table does not contain exactly one VertexParameter row")
+    if generated.index(vertex_key) >= generated.index(component_key):
+        raise RuntimeError("generated Vk intrinsic table is not in canonical intrinsic-key order")
+
+    def get_arg_block(opcode):
+        row = re.search(
+            rf"\{{\(UINT\)IntrinsicOp::{opcode},[^\n]*g_VkIntrinsics_Args(\d+)\}},",
+            generated,
+        )
+        if not row:
+            raise RuntimeError(f"generated Vk intrinsic row missing for {opcode}")
+        arg_id = row.group(1)
+        block = re.search(
+            rf"static const HLSL_INTRINSIC_ARGUMENT g_VkIntrinsics_Args{arg_id}\[\] =\n"
+            rf"\{{\n(.*?)\n\}};",
+            generated,
+            re.DOTALL,
+        )
+        if not block:
+            raise RuntimeError(f"generated argument block missing for {opcode}")
+        return block.group(1)
+
+    vertex_args = get_arg_block(vertex_key)
+    component_args = get_arg_block(component_key)
+    if not re.search(
+        r'\{"AmdVertexParameter",[^\n]*LICOMPTYPE_FLOAT[^\n]*, 1, 4\},',
+        vertex_args,
+    ):
+        raise RuntimeError("AmdVertexParameter did not generate a fixed float4 return descriptor")
+    if not re.search(
+        r'\{"AmdVertexParameterComponent",[^\n]*LICOMPTYPE_FLOAT[^\n]*, 1, 1\},',
+        component_args,
+    ):
+        raise RuntimeError(
+            "AmdVertexParameterComponent did not generate a fixed float return descriptor"
+        )
 
 # Preserve Constant interpolation for nointerpolation stage variables when
 # reconstructing D3D input-register packing.
@@ -100,6 +162,56 @@ float_case = (
 )
 segment = segment.replace(case, float_case + case, 1)
 sema_path.write_text(text[:start] + segment + text[end:], encoding="utf-8")
+
+# The HLSL WaveActiveBit* builtins expose uint here. Preserve signed wrapper bit
+# patterns explicitly so the exhaustive AMD header contract can compile after
+# the registration crash is fixed.
+replace_once(
+    "tools/clang/lib/Headers/hlsl/vk/amd/intrinsics.h",
+    "int ActiveBitAnd(int value) { return WaveActiveBitAnd(value); }",
+    "int ActiveBitAnd(int value) { return asint(WaveActiveBitAnd(asuint(value))); }",
+)
+replace_once(
+    "tools/clang/lib/Headers/hlsl/vk/amd/intrinsics.h",
+    "int ActiveBitOr(int value) { return WaveActiveBitOr(value); }",
+    "int ActiveBitOr(int value) { return asint(WaveActiveBitOr(asuint(value))); }",
+)
+replace_once(
+    "tools/clang/lib/Headers/hlsl/vk/amd/intrinsics.h",
+    "int ActiveBitXor(int value) { return WaveActiveBitXor(value); }",
+    "int ActiveBitXor(int value) { return asint(WaveActiveBitXor(asuint(value))); }",
+)
+
+# Narrow crash regression: include the public AMD header in SPIR-V mode without
+# invoking any wrapper. This specifically exercises eager vk intrinsic-table
+# materialization, the path that crashed Release DXC before shader emission.
+registration_test = """// RUN: %dxc -T cs_6_2 -E main -spirv -fspv-extension=AMD %s -Fo %t.spv
+
+#include <vk/amd/intrinsics.h>
+
+[numthreads(1, 1, 1)]
+void main() {}
+"""
+write(
+    "tools/clang/test/CodeGenSPIRV/amd.intrinsics.header-registration.hlsl",
+    registration_test,
+)
+
+# Run the same narrow regression in the standalone AMD contract suite used by
+# the integration workflow, before the exhaustive header/codegen contract.
+ci_path = "utils/amd_spirv_ci.py"
+ci_marker = "    extinst_ops = (\n"
+ci_block = (
+    "    require_success(\n"
+    "        \"AMD header registration only\",\n"
+    "        compile_shader(\n"
+    "            \"amd.intrinsics.header-registration.hlsl\",\n"
+    "            \"-T\", \"cs_6_2\", \"-E\", \"main\", \"-spirv\",\n"
+    "            \"-fspv-extension=AMD\",\n"
+    "        ),\n"
+    "    )\n\n"
+)
+replace_once(ci_path, ci_marker, ci_block + ci_marker)
 
 # Promote the real contracts and remove the old raw-signature ingress blocker.
 contracts_path = ROOT / "utils/amd_spirv_contracts.json"
