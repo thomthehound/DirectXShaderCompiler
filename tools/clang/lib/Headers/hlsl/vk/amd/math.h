@@ -9,16 +9,14 @@
 
 // AMD-oriented low-level math surface for Vulkan.
 //
-// Every function in this header is either a direct SPIR-V operation or an HLSL
-// operation with equivalent mathematical semantics. Hardware-specific AMD
-// operations whose semantics cannot be carried directly through SPIR-V are not
-// emulated here: they stay in the native-recovery probe until ISA evidence
-// justifies promoting a canonical representation.
+// Direct contracts preserve an operation explicitly in SPIR-V. Canonical
+// recovery candidates preserve exact source semantics while exposing a graph
+// that an AMD Vulkan compiler can potentially combine back to native ISA.
+// Candidates are not called native until the installed-driver probe proves it.
 namespace vk {
 namespace amd {
 
-// Direct core SPIR-V integer/bit contracts. These preserve the operation as a
-// single semantic instruction at the DXC -> SPIR-V boundary.
+// Direct core SPIR-V integer/bit contracts.
 [[vk::ext_instruction(/* OpBitFieldUExtract */ 203)]] uint
 UBfe(uint base, uint offset, uint count);
 
@@ -27,6 +25,19 @@ SBfe(int base, uint offset, uint count);
 
 [[vk::ext_instruction(/* OpBitReverse */ 204)]] uint BitReverse(uint value);
 [[vk::ext_instruction(/* OpBitCount */ 205)]] uint BitCount(uint value);
+
+// Canonical recovery candidates for AMD 24-bit multiply. The native operations
+// consume the low 24 bits of each input as unsigned or signed 24-bit integers.
+// Keeping the range restriction explicit gives the Vulkan backend the proof it
+// needs to select v_mul_{u32_u24,i32_i24} if its combiner recognizes the form.
+uint MulU24(uint a, uint b) {
+  return (a & 0x00ffffffu) * (b & 0x00ffffffu);
+}
+int MulI24(int a, int b) {
+  int a24 = (a << 8) >> 8;
+  int b24 = (b << 8) >> 8;
+  return a24 * b24;
+}
 
 // Non-legacy VALU math. These spell the standard HLSL operation deliberately:
 // Vulkan carries equivalent mathematical semantics and the AMD Vulkan backend
