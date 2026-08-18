@@ -13,6 +13,9 @@ from pathlib import Path
 EXPECTED = {
     "bfe_u32": re.compile(r"\bv_bfe_u32\b", re.I),
     "bfe_i32": re.compile(r"\bv_bfe_i32\b", re.I),
+    "ffbl_b32": re.compile(r"\bv_ffbl_b32\b", re.I),
+    "ffbh_u32": re.compile(r"\bv_ffbh_u32\b", re.I),
+    "ffbh_i32": re.compile(r"\bv_ffbh_i32\b", re.I),
     "mul_u32_u24": re.compile(r"\bv_mul_u32_u24\b", re.I),
     "mul_i32_i24": re.compile(r"\bv_mul_i32_i24\b", re.I),
     "mul_hi_u32_u24": re.compile(r"\bv_mul_hi_u32_u24\b", re.I),
@@ -36,6 +39,9 @@ EXPECTED = {
     "qsad_pk_u16_u8": re.compile(r"\bv_qsad_pk_u16_u8\b", re.I),
     "mqsad_pk_u16_u8": re.compile(r"\bv_mqsad_pk_u16_u8\b", re.I),
     "mqsad_u32_u8": re.compile(r"\bv_mqsad_u32_u8\b", re.I),
+    "cvt_f16_f32": re.compile(r"\bv_cvt_f16_f32\b", re.I),
+    "cvt_f32_f16": re.compile(r"\bv_cvt_f32_f16\b", re.I),
+    "pack_b32_f16": re.compile(r"\bv_pack_b32_f16\b", re.I),
     "rcp_f32": re.compile(r"\bv_rcp_f32\b", re.I),
     "sqrt_f32": re.compile(r"\bv_sqrt_f32\b", re.I),
     "rsq_f32": re.compile(r"\bv_rsq_f32\b", re.I),
@@ -43,6 +49,10 @@ EXPECTED = {
     "cos_f32": re.compile(r"\bv_cos_f32\b", re.I),
     "log_f32": re.compile(r"\bv_log_f32\b", re.I),
     "exp_f32": re.compile(r"\bv_exp_f32\b", re.I),
+    "tanh_f32": re.compile(r"\bv_tanh_f32\b", re.I),
+    "frexp_mant_f32": re.compile(r"\bv_frexp_mant_f32\b", re.I),
+    "frexp_exp_i32_f32": re.compile(r"\bv_frexp_exp_i32_f32\b", re.I),
+    "ldexp_f32": re.compile(r"\bv_ldexp_f32\b", re.I),
     "med3_f32": re.compile(r"\bv_med3_f32\b", re.I),
 }
 
@@ -103,6 +113,11 @@ def main() -> int:
         "isa": str(isa),
         "native_recovery": results,
         "all_expected_recovered": all(results.values()),
+        "note": (
+            "A not-found result is evidence about the selected Radeon driver/GPU, "
+            "not a semantic failure. Some instructions (for example v_tanh_f32 or "
+            "v_pack_b32_f16) are generation-dependent."
+        ),
     }
     (out_dir / "math_report.json").write_text(
         json.dumps(report, indent=2) + "\n", encoding="utf-8"
