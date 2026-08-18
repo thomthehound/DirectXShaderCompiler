@@ -26,6 +26,12 @@ SBfe(int base, uint offset, uint count);
 [[vk::ext_instruction(/* OpBitReverse */ 204)]] uint BitReverse(uint value);
 [[vk::ext_instruction(/* OpBitCount */ 205)]] uint BitCount(uint value);
 
+// Standard HLSL bit-scan semantics. Radeon can recover the native FFBL/FFBH
+// family without APUSR spelling a target-specific operation in shader source.
+int FirstBitLow(uint value) { return firstbitlow(value); }
+int FirstBitHigh(uint value) { return firstbithigh(value); }
+int FirstBitHigh(int value) { return firstbithigh(value); }
+
 uint AbsDiffU32(uint a, uint b) { return a > b ? a - b : b - a; }
 
 // Exact semantic graphs for the scalar SAD family. These are intentionally
@@ -166,11 +172,22 @@ uint LshlOrB32(uint a, uint shift, uint c) { return (a << (shift & 31u)) | c; }
 uint AndOrB32(uint a, uint b, uint c) { return (a & b) | c; }
 uint Or3B32(uint a, uint b, uint c) { return a | b | c; }
 
-// Non-legacy VALU math. These spell the standard HLSL operation deliberately:
-// Vulkan carries equivalent mathematical semantics and the AMD Vulkan backend
-// remains free to select the native v_* operation. Native ISA recovery is
-// checked separately; these are not substitutes for the legacy-behaviour AMD
-// intrinsics (rcp_legacy, rsq_legacy, fma_legacy, fmul_legacy, etc.).
+// Standard half conversion semantics. Keep single and paired forms available so
+// the ISA probe can tell us whether Radeon combines adjacent conversions into a
+// packed instruction without changing HLSL rounding semantics.
+uint F32ToF16Bits(float value) { return f32tof16(value); }
+float F16BitsToF32(uint value) { return f16tof32(value); }
+uint PackF16x2(float2 value) {
+  return (f32tof16(value.x) & 0xffffu) |
+         ((f32tof16(value.y) & 0xffffu) << 16u);
+}
+float2 UnpackF16x2(uint value) {
+  return float2(f16tof32(value & 0xffffu), f16tof32(value >> 16u));
+}
+
+// Non-legacy VALU math. These spell standard HLSL semantics deliberately.
+// Vulkan/DXIL remain free to select the corresponding Radeon instructions;
+// native recovery is checked separately and never inferred from the wrapper.
 float Rcp(float value) { return rcp(value); }
 float Sqrt(float value) { return sqrt(value); }
 float Rsq(float value) { return rsqrt(value); }
@@ -178,7 +195,17 @@ float Sin(float value) { return sin(value); }
 float Cos(float value) { return cos(value); }
 float Log2(float value) { return log2(value); }
 float Exp2(float value) { return exp2(value); }
+float Log(float value) { return log(value); }
+float Exp(float value) { return exp(value); }
+float Tanh(float value) { return tanh(value); }
+float Pow(float value, float exponent) { return pow(value, exponent); }
 float Fract(float value) { return frac(value); }
+
+// Decomposition/scaling candidates. DXC already preserves frexp as a structured
+// GLSL.std.450 operation in SPIR-V; ldexp currently has a generic Exp2*value
+// representation, making it useful to test for Radeon native recovery.
+float Frexp(float value, out float exponent) { return frexp(value, exponent); }
+float Ldexp(float value, float exponent) { return ldexp(value, exponent); }
 
 // AMD's v_med3 path has a registered SPIR-V AMD extended instruction. Keep the
 // AMD identity instead of rebuilding it from min/max arithmetic.
