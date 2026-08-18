@@ -83,21 +83,16 @@ jobs:
           # vk::* intrinsics: explicit rejection through UnsupportedVulkanIntrinsic.
           lower = Path('lib/HLSL/HLOperationLower.cpp')
           text = lower.read_text(encoding='utf-8')
-          tail = '''    {IntrinsicOp::IOP___builtin_LinAlg_VectorAccumulateToDescriptor,
-             TranslateLinAlgVectorAccumulateToDescriptor,
-             DXIL::OpCode::LinAlgVectorAccumulateToDescriptor},
-          };'''
-          replacement = '''    {IntrinsicOp::IOP___builtin_LinAlg_VectorAccumulateToDescriptor,
-             TranslateLinAlgVectorAccumulateToDescriptor,
-             DXIL::OpCode::LinAlgVectorAccumulateToDescriptor},
-              {IntrinsicOp::IOP_VkAmdVertexParameterComponent,
+          marker = '''};
+          constexpr size_t NumLowerTableEntries ='''
+          entries = '''    {IntrinsicOp::IOP_VkAmdVertexParameterComponent,
                UnsupportedVulkanIntrinsic, DXIL::OpCode::NumOpCodes},
               {IntrinsicOp::IOP_VkAmdVertexParameter, UnsupportedVulkanIntrinsic,
                DXIL::OpCode::NumOpCodes},
-          };'''
-          if text.count(tail) != 1:
-              raise SystemExit('DXIL lowering table tail changed')
-          lower.write_text(text.replace(tail, replacement, 1), encoding='utf-8')
+          '''
+          if text.count(marker) != 1:
+              raise SystemExit(f'DXIL lowering table boundary count={text.count(marker)}')
+          lower.write_text(text.replace(marker, entries + marker, 1), encoding='utf-8')
 
           path = Path('utils/amd_spirv_contracts.json')
           data = json.loads(path.read_text(encoding='utf-8'))
