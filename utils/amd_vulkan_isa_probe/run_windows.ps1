@@ -3,7 +3,7 @@ param(
     [string]$Rga,
     [string]$RgaTarget,
     [string]$VulkanSdk = $env:VULKAN_SDK,
-    [string]$OutDir = "out/amd-sad-native-probe",
+    [string]$OutDir = "out/amd-native-probe",
     [switch]$RgaLive
 )
 
@@ -16,21 +16,34 @@ if (-not $VulkanSdk) {
 }
 
 cmake -G Ninja -S $ProbeRoot -B $BuildDir -DCMAKE_BUILD_TYPE=Release -DVulkan_ROOT="$VulkanSdk"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 cmake --build $BuildDir
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $DriverProbe = Join-Path $BuildDir "amd_vulkan_isa_probe.exe"
 $SpirvDis = Join-Path $VulkanSdk "Bin/spirv-dis.exe"
 
-$Args = @(
+Write-Host "[AMD SPIR-V] SAD/MSAD native recovery"
+$SadArgs = @(
     (Join-Path $ProbeRoot "native_probe.py"),
     "--dxc", $Dxc,
     "--driver-probe", $DriverProbe,
     "--spirv-dis", $SpirvDis,
-    "--out-dir", $OutDir
+    "--out-dir", (Join-Path $OutDir "sad-msad")
 )
-if ($Rga) { $Args += @("--rga", $Rga) }
-if ($RgaTarget) { $Args += @("--rga-target", $RgaTarget) }
-if ($RgaLive) { $Args += "--rga-live" }
+if ($Rga) { $SadArgs += @("--rga", $Rga) }
+if ($RgaTarget) { $SadArgs += @("--rga-target", $RgaTarget) }
+if ($RgaLive) { $SadArgs += "--rga-live" }
+python @SadArgs
+$SadStatus = $LASTEXITCODE
+if ($SadStatus -ne 0) { exit $SadStatus }
 
-python @Args
+Write-Host "[AMD SPIR-V] Core math native recovery"
+$MathArgs = @(
+    (Join-Path $ProbeRoot "math_probe.py"),
+    "--dxc", $Dxc,
+    "--driver-probe", $DriverProbe,
+    "--out-dir", (Join-Path $OutDir "math")
+)
+python @MathArgs
 exit $LASTEXITCODE
