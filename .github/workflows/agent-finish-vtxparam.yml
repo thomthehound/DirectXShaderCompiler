@@ -1,6 +1,8 @@
 name: Finish raw AGS VertexParameter
 
 on:
+  push:
+    branches: [amd-spirv-native-intrinsics-dev]
   pull_request:
     branches: [amd-spirv-native-intrinsics]
   workflow_dispatch:
