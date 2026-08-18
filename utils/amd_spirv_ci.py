@@ -131,6 +131,34 @@ def main() -> int:
         required=(r'OpExtension "SPV_AMD_shader_trinary_minmax"',),
     )
 
+    packed_dot_required = (
+        r"OpCapability DotProduct",
+        r"OpCapability DotProductInput4x8BitPacked",
+        r'OpExtension "SPV_KHR_integer_dot_product"',
+    )
+    packed_dot_counts = ((r"\bOpSDot\b", 1), (r"\bOpUDot\b", 1))
+    require_success(
+        "packed signed/unsigned dot contracts",
+        compile_shader(
+            "intrinsics.dot4add.packed.amd.hlsl",
+            "-T", "vs_6_4", "-E", "main", "-fcgl", "-spirv",
+        ),
+        required=packed_dot_required,
+        forbidden=(r"\bOpIMul\b",),
+        counts=packed_dot_counts,
+    )
+    require_success(
+        "strict-native packed dot contracts",
+        compile_shader(
+            "intrinsics.dot4add.packed.amd.hlsl",
+            "-T", "vs_6_4", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-require-native-intrinsics",
+        ),
+        required=packed_dot_required,
+        forbidden=(r"\bOpIMul\b",),
+        counts=packed_dot_counts,
+    )
+
     require_success(
         "AMD msad4 candidate",
         compile_shader(
