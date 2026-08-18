@@ -6,79 +6,114 @@ on:
       - amd-spirv-native-intrinsics-dev
   workflow_dispatch:
 
+# This is an integration branch with frequent incremental commits. Do not burn
+# runners proving an obsolete commit after a newer commit has already landed.
+concurrency:
+  group: amd-spirv-dev-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build-linux:
+  preflight:
+    name: Preflight
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout source only
+        uses: actions/checkout@v4
         with:
-          submodules: recursive
           fetch-depth: 1
-      - run: sudo apt-get update && sudo apt-get install -y ninja-build clang lld
-      - name: Validate APUSR AMD probe inventory
+
+      - name: Validate inventories and Python runners
         run: |
+          set -euo pipefail
           python3 utils/apusr_amd_experimental_inventory.py
+          python3 -m json.tool utils/apusr_amd_acceleration_matrix.json >/dev/null
+          python3 -m json.tool utils/apusr_amd_experimental_candidates.json >/dev/null
+          python3 -m json.tool utils/apusr_amd_ingress_blockers.json >/dev/null
           python3 -m py_compile \
             utils/apusr_amd_qualify.py \
             utils/apusr_amd_experimental_inventory.py \
             utils/amd_spirv_ci.py \
             utils/amd_math_ci.py \
             utils/amd_subgroup_ci.py \
+            utils/amd_dxil_ci.py \
             utils/amd_vulkan_isa_probe/native_probe.py \
             utils/amd_vulkan_isa_probe/math_probe.py \
             utils/amd_vulkan_isa_probe/dot_probe.py \
             utils/amd_vulkan_isa_probe/dot_f16_probe.py \
             utils/amd_vulkan_isa_probe/crosslane_probe.py \
             utils/amd_vulkan_isa_probe/candidate_zoo.py
-      - name: Configure
-        run: >-
-          cmake -S . -B build-amd-spirv -G Ninja
-          -C cmake/caches/PredefinedParams.cmake
-          -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_C_COMPILER=clang
-          -DCMAKE_CXX_COMPILER=clang++
-          -DLLVM_USE_LINKER=lld
-          -DENABLE_SPIRV_CODEGEN=ON
-          -DSPIRV_BUILD_TESTS=OFF
-          -DLLVM_INCLUDE_TESTS=OFF
-          -DCLANG_INCLUDE_TESTS=OFF
-          -DHLSL_INCLUDE_TESTS=OFF
-      - name: Build DXC
-        run: cmake --build build-amd-spirv --target dxc dxcompiler dxildll --parallel 4
-      - name: AMD SPIR-V contracts and math
-        run: |
-          export LD_LIBRARY_PATH="$PWD/build-amd-spirv/lib:${LD_LIBRARY_PATH:-}"
-          python3 utils/amd_spirv_ci.py --dxc "$PWD/build-amd-spirv/bin/dxc"
-          python3 utils/amd_math_ci.py --dxc "$PWD/build-amd-spirv/bin/dxc"
-          python3 utils/amd_subgroup_ci.py --dxc "$PWD/build-amd-spirv/bin/dxc"
 
-  build-windows:
-    runs-on: windows-latest
+  build-linux:
+    name: Linux compiler + contracts
+    needs: preflight
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout source and submodules
+        uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 1
-      - name: Validate APUSR AMD probe inventory
-        shell: pwsh
+
+      - name: Install build tools
         run: |
-          python utils/apusr_amd_experimental_inventory.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m py_compile `
-            utils/apusr_amd_qualify.py `
-            utils/apusr_amd_experimental_inventory.py `
-            utils/amd_spirv_ci.py `
-            utils/amd_math_ci.py `
-            utils/amd_subgroup_ci.py `
-            utils/amd_vulkan_isa_probe/native_probe.py `
-            utils/amd_vulkan_isa_probe/math_probe.py `
-            utils/amd_vulkan_isa_probe/dot_probe.py `
-            utils/amd_vulkan_isa_probe/dot_f16_probe.py `
-            utils/amd_vulkan_isa_probe/crosslane_probe.py `
-            utils/amd_vulkan_isa_probe/candidate_zoo.py
-          exit $LASTEXITCODE
+          sudo apt-get update
+          sudo apt-get install -y ninja-build clang lld
+
+      - name: Configure
+        run: |
+          cmake -S . -B build-amd-spirv -G Ninja \
+            -C cmake/caches/PredefinedParams.cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DLLVM_USE_LINKER=lld \
+            -DENABLE_SPIRV_CODEGEN=ON \
+            -DSPIRV_BUILD_TESTS=OFF \
+            -DLLVM_INCLUDE_TESTS=OFF \
+            -DCLANG_INCLUDE_TESTS=OFF \
+            -DHLSL_INCLUDE_TESTS=OFF
+
+      - name: Build DXC
+        run: cmake --build build-amd-spirv --target dxc dxcompiler dxildll --parallel 4
+
+      - name: Smoke DXIL and SPIR-V
+        run: |
+          set -euo pipefail
+          export LD_LIBRARY_PATH="$PWD/build-amd-spirv/lib:${LD_LIBRARY_PATH:-}"
+          cat > "$RUNNER_TEMP/amd_dxc_smoke.hlsl" <<'EOF'
+          RWStructuredBuffer<uint> Out : register(u0);
+          [numthreads(1,1,1)]
+          void main(uint3 tid : SV_DispatchThreadID) { Out[0] = tid.x + 1; }
+          EOF
+          build-amd-spirv/bin/dxc -T cs_6_6 -E main -Fo "$RUNNER_TEMP/amd_dxc_smoke.dxil" "$RUNNER_TEMP/amd_dxc_smoke.hlsl"
+          build-amd-spirv/bin/dxc -spirv -fspv-target-env=vulkan1.2 -T cs_6_6 -E main -Fo "$RUNNER_TEMP/amd_dxc_smoke.spv" "$RUNNER_TEMP/amd_dxc_smoke.hlsl"
+          test -s "$RUNNER_TEMP/amd_dxc_smoke.dxil"
+          test -s "$RUNNER_TEMP/amd_dxc_smoke.spv"
+
+      - name: AMD compiler contracts
+        run: |
+          set -euo pipefail
+          export LD_LIBRARY_PATH="$PWD/build-amd-spirv/lib:${LD_LIBRARY_PATH:-}"
+          DXC="$PWD/build-amd-spirv/bin/dxc"
+          python3 utils/amd_spirv_ci.py --dxc "$DXC"
+          python3 utils/amd_math_ci.py --dxc "$DXC"
+          python3 utils/amd_subgroup_ci.py --dxc "$DXC"
+          python3 utils/amd_dxil_ci.py --dxc "$DXC"
+
+  build-windows:
+    name: Windows compiler + contracts
+    needs: preflight
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout source and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
       - name: Configure and build
         shell: cmd
         run: |
@@ -89,12 +124,35 @@ jobs:
           if errorlevel 1 exit /b %errorlevel%
           cmake --build build-amd-spirv --target dxc dxcompiler dxildll --parallel 4
           if errorlevel 1 exit /b %errorlevel%
-      - name: AMD SPIR-V contracts and math
+
+      - name: Smoke DXIL and SPIR-V
         shell: pwsh
         run: |
-          python utils/amd_spirv_ci.py --dxc "$PWD\build-amd-spirv\bin\dxc.exe"
+          @'
+          RWStructuredBuffer<uint> Out : register(u0);
+          [numthreads(1,1,1)]
+          void main(uint3 tid : SV_DispatchThreadID) { Out[0] = tid.x + 1; }
+          '@ | Set-Content -LiteralPath "$env:RUNNER_TEMP\amd_dxc_smoke.hlsl" -Encoding Ascii
+          $dxc = Join-Path $PWD 'build-amd-spirv\bin\dxc.exe'
+          $source = "$env:RUNNER_TEMP\amd_dxc_smoke.hlsl"
+          $dxil = "$env:RUNNER_TEMP\amd_dxc_smoke.dxil"
+          $spirv = "$env:RUNNER_TEMP\amd_dxc_smoke.spv"
+          & $dxc -T cs_6_6 -E main -Fo $dxil $source
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python utils/amd_math_ci.py --dxc "$PWD\build-amd-spirv\bin\dxc.exe"
+          & $dxc -spirv -fspv-target-env=vulkan1.2 -T cs_6_6 -E main -Fo $spirv $source
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python utils/amd_subgroup_ci.py --dxc "$PWD\build-amd-spirv\bin\dxc.exe"
+          if ((Get-Item -LiteralPath $dxil).Length -eq 0) { throw 'DXIL smoke output is empty' }
+          if ((Get-Item -LiteralPath $spirv).Length -eq 0) { throw 'SPIR-V smoke output is empty' }
+
+      - name: AMD compiler contracts
+        shell: pwsh
+        run: |
+          $dxc = Join-Path $PWD 'build-amd-spirv\bin\dxc.exe'
+          python utils/amd_spirv_ci.py --dxc $dxc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python utils/amd_math_ci.py --dxc $dxc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python utils/amd_subgroup_ci.py --dxc $dxc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python utils/amd_dxil_ci.py --dxc $dxc
           exit $LASTEXITCODE
