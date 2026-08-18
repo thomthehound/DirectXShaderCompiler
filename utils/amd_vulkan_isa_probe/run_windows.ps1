@@ -107,6 +107,16 @@ $ConversionArgs = @(
 python @ConversionArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+Write-Host "[AMD SPIR-V] Packed normalized/integer conversion recovery"
+$PackingArgs = @(
+    (Join-Path $ProbeRoot "packing_probe.py"),
+    "--dxc", $Dxc,
+    "--driver-probe", $DriverProbe,
+    "--out-dir", (Join-Path $OutDir "packing")
+)
+python @PackingArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 Write-Host "[AMD SPIR-V] Transcendental spelling A/B"
 $TranscendentalArgs = @(
     (Join-Path $ProbeRoot "transcendental_probe.py"),
