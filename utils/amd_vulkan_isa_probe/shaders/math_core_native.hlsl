@@ -8,6 +8,7 @@ RWStructuredBuffer<uint> Out : register(u0);
 void main(uint3 tid : SV_DispatchThreadID) {
   uint seed = tid.x * 0x9e3779b9u + 0x7f4a7c15u;
   uint seed2 = seed ^ (tid.x * 0x45d9f3bu + 0x13579bdfu);
+  uint seed3 = seed2 + tid.x * 17u + 3u;
   int signedSeed = asint(seed ^ 0x81234567u);
 
   uint ubfe = vk::amd::UBfe(seed, (tid.x & 7u) + 1u, 11u);
@@ -16,12 +17,26 @@ void main(uint3 tid : SV_DispatchThreadID) {
   uint bits = vk::amd::BitCount(seed ^ 0xa55aa55au);
   uint mulU24 = vk::amd::MulU24(seed, seed2);
   int mulI24 = vk::amd::MulI24(signedSeed, asint(seed2));
+  uint mulHiU24 = vk::amd::MulHiU24(seed, seed2);
+  int mulHiI24 = vk::amd::MulHiI24(signedSeed, asint(seed2));
+  uint madU24 = vk::amd::MadU24(seed, seed2, seed3);
+  int madI24 = vk::amd::MadI24(signedSeed, asint(seed2), asint(seed3));
 
   uint sadU8 = vk::amd::SadU8(seed, seed2, tid.x + 3u);
   uint sadHiU8 = vk::amd::SadHiU8(seed2, seed, tid.x + 5u);
   uint sadU16 = vk::amd::SadU16(seed, seed2, tid.x + 7u);
   uint sadU32 = vk::amd::SadU32(seed, seed2, tid.x + 11u);
   uint msadU8 = vk::amd::MsadU8(seed, seed2 | 0x00000100u, tid.x + 13u);
+
+  uint lerp = vk::amd::LerpU8(seed, seed2, seed3);
+  uint bfi = vk::amd::Bfi(seed, seed2, seed3);
+  uint xad = vk::amd::XadU32(seed, seed2, seed3);
+  uint lshlAdd = vk::amd::LshlAddU32(seed, seed2, seed3);
+  uint addLshl = vk::amd::AddLshlU32(seed, seed2, seed3);
+  uint add3 = vk::amd::Add3U32(seed, seed2, seed3);
+  uint lshlOr = vk::amd::LshlOrB32(seed, seed2, seed3);
+  uint andOr = vk::amd::AndOrB32(seed, seed2, seed3);
+  uint or3 = vk::amd::Or3B32(seed, seed2, seed3);
 
   float x = 0.75f + float(seed & 1023u) * (1.0f / 2048.0f);
   float y = vk::amd::Rcp(x + 0.25f);
@@ -33,5 +48,7 @@ void main(uint3 tid : SV_DispatchThreadID) {
   y += vk::amd::FMed3(x, -x, y);
 
   Out[tid.x] = ubfe ^ asuint(sbfe) ^ rev ^ bits ^ mulU24 ^ asuint(mulI24) ^
-               sadU8 ^ sadHiU8 ^ sadU16 ^ sadU32 ^ msadU8 ^ asuint(y);
+               mulHiU24 ^ asuint(mulHiI24) ^ madU24 ^ asuint(madI24) ^
+               sadU8 ^ sadHiU8 ^ sadU16 ^ sadU32 ^ msadU8 ^ lerp ^ bfi ^ xad ^
+               lshlAdd ^ addLshl ^ add3 ^ lshlOr ^ andOr ^ or3 ^ asuint(y);
 }
