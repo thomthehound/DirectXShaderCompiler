@@ -126,6 +126,31 @@ def main() -> int:
     )
 
     require_success(
+        "AMD wave reduce and scan parity",
+        compile_shader(
+            "amd.intrinsics.wave-reduce-scan.hlsl",
+            "-T", "cs_6_0", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-target-env=vulkan1.1",
+        ),
+        required=(
+            r"\bOpGroupNonUniformFAdd\b",
+            r"\bOpGroupNonUniformIAdd\b",
+            r"\bOpGroupNonUniformFMul\b",
+            r"\bOpGroupNonUniformIMul\b",
+            r"\bOpGroupNonUniformFMin\b",
+            r"\bOpGroupNonUniformSMin\b",
+            r"\bOpGroupNonUniformUMin\b",
+            r"\bOpGroupNonUniformFMax\b",
+            r"\bOpGroupNonUniformSMax\b",
+            r"\bOpGroupNonUniformUMax\b",
+            r"\bOpGroupNonUniformBitwiseAnd\b",
+            r"\bOpGroupNonUniformBitwiseOr\b",
+            r"\bOpGroupNonUniformBitwiseXor\b",
+            r"ExclusiveScan",
+        ),
+    )
+
+    require_success(
         "AMD exact core math contracts",
         compile_shader(
             "amd.math.core.hlsl",
