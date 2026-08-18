@@ -31,10 +31,11 @@ jobs:
           -DHLSL_INCLUDE_TESTS=OFF
       - name: Build DXC
         run: cmake --build build-amd-spirv --target dxc dxcompiler dxildll --parallel 4
-      - name: AMD SPIR-V contracts
+      - name: AMD SPIR-V contracts and math
         run: |
           export LD_LIBRARY_PATH="$PWD/build-amd-spirv/lib:${LD_LIBRARY_PATH:-}"
           python3 utils/amd_spirv_ci.py --dxc "$PWD/build-amd-spirv/bin/dxc"
+          python3 utils/amd_math_ci.py --dxc "$PWD/build-amd-spirv/bin/dxc"
 
   build-windows:
     runs-on: windows-latest
@@ -54,8 +55,10 @@ jobs:
           if errorlevel 1 exit /b %errorlevel%
           cmake --build build-amd-spirv --target dxc dxcompiler dxildll --parallel 4
           if errorlevel 1 exit /b %errorlevel%
-      - name: AMD SPIR-V contracts
+      - name: AMD SPIR-V contracts and math
         shell: pwsh
         run: |
           python utils/amd_spirv_ci.py --dxc "$PWD\build-amd-spirv\bin\dxc.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python utils/amd_math_ci.py --dxc "$PWD\build-amd-spirv\bin\dxc.exe"
           exit $LASTEXITCODE
