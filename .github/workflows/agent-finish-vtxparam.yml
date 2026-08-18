@@ -20,11 +20,16 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Checkout dev branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: amd-spirv-native-intrinsics-dev
           submodules: recursive
           fetch-depth: 1
+
+      - name: Install Linux build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build clang lld clang-format
 
       - name: Apply compiler patch
         run: |
@@ -42,6 +47,7 @@ jobs:
           PY
           python3 utils/amd_finish_vertex_parameter.py
           python3 utils/hct/hctgen.py HLSLIntrinsicOp --output include/dxc/HlslIntrinsicOp.h
+          clang-format -i include/dxc/HlslIntrinsicOp.h
 
       - name: Finalize current metadata schema
         run: |
@@ -115,11 +121,6 @@ jobs:
           grep -q 'getAmdVertexParameterComponentPtr' tools/clang/lib/SPIRV/DeclResultIdMapper.cpp
           ! grep -q 'ags-vtxparam-raw-signature-index' utils/apusr_amd_ingress_blockers.json
 
-      - name: Install Linux build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build clang lld
-
       - name: Configure and build Linux DXC
         run: |
           set -euo pipefail
@@ -170,7 +171,7 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Checkout final dev branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: amd-spirv-native-intrinsics-dev
           submodules: recursive
