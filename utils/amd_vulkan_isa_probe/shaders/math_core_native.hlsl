@@ -15,6 +15,9 @@ void main(uint3 tid : SV_DispatchThreadID) {
   int sbfe = vk::amd::SBfe(signedSeed, (tid.x & 3u) + 2u, 13u);
   uint rev = vk::amd::BitReverse(seed);
   uint bits = vk::amd::BitCount(seed ^ 0xa55aa55au);
+  int firstLow = vk::amd::FirstBitLow(seed | 1u);
+  int firstHighU = vk::amd::FirstBitHigh(seed | 1u);
+  int firstHighI = vk::amd::FirstBitHigh(signedSeed | 1);
   uint mulU24 = vk::amd::MulU24(seed, seed2);
   int mulI24 = vk::amd::MulI24(signedSeed, asint(seed2));
   uint mulHiU24 = vk::amd::MulHiU24(seed, seed2);
@@ -55,14 +58,25 @@ void main(uint3 tid : SV_DispatchThreadID) {
   y += vk::amd::Rsq(x + 2.0f);
   y += vk::amd::Sin(x) + vk::amd::Cos(x * 0.5f);
   y += vk::amd::Log2(x + 1.0f) + vk::amd::Exp2(x * 0.125f);
+  y += vk::amd::Log(x + 1.25f) + vk::amd::Exp(x * 0.0625f);
+  y += vk::amd::Tanh(x - 1.0f);
+  y += vk::amd::Pow(x + 0.5f, 1.25f + float(tid.x & 3u) * 0.125f);
   y += vk::amd::Fract(x * 1.75f);
   y += vk::amd::FMed3(x, -x, y);
 
-  Out[tid.x] = ubfe ^ asuint(sbfe) ^ rev ^ bits ^ mulU24 ^ asuint(mulI24) ^
-               mulHiU24 ^ asuint(mulHiI24) ^ madU24 ^ asuint(madI24) ^
-               sadU8 ^ sadHiU8 ^ sadU16 ^ sadU32 ^ msadU8 ^
+  float frexpExponent;
+  float frexpMantissa = vk::amd::Frexp(x + 0.125f, frexpExponent);
+  float scaled = vk::amd::Ldexp(frexpMantissa, frexpExponent);
+  uint halfPair = vk::amd::PackF16x2(float2(x, y));
+  float2 halfPairF32 = vk::amd::UnpackF16x2(halfPair);
+  y += scaled + halfPairF32.x + halfPairF32.y;
+
+  Out[tid.x] = ubfe ^ asuint(sbfe) ^ rev ^ bits ^ asuint(firstLow) ^
+               asuint(firstHighU) ^ asuint(firstHighI) ^ mulU24 ^
+               asuint(mulI24) ^ mulHiU24 ^ asuint(mulHiI24) ^ madU24 ^
+               asuint(madI24) ^ sadU8 ^ sadHiU8 ^ sadU16 ^ sadU32 ^ msadU8 ^
                uint(qsad) ^ uint(qsad >> 32u) ^ uint(mqsad) ^ uint(mqsad >> 32u) ^
-               mqsad32.x ^ mqsad32.y ^ mqsad32.z ^ mqsad32.w ^
-               lerp ^ bfi ^ xad ^ lshlAdd ^ addLshl ^ add3 ^ lshlOr ^ andOr ^
-               or3 ^ asuint(y);
+               mqsad32.x ^ mqsad32.y ^ mqsad32.z ^ mqsad32.w ^ lerp ^ bfi ^ xad ^
+               lshlAdd ^ addLshl ^ add3 ^ lshlOr ^ andOr ^ or3 ^ halfPair ^
+               asuint(y);
 }
