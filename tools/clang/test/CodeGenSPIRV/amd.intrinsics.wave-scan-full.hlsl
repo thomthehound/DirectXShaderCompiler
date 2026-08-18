@@ -16,6 +16,9 @@
 // CHECK: OpGroupNonUniformBitwiseAnd {{.*}} Reduce
 // CHECK: OpGroupNonUniformBitwiseOr {{.*}} Reduce
 // CHECK: OpGroupNonUniformBitwiseXor {{.*}} Reduce
+// CHECK: OpTypeVector %float 2
+// CHECK: OpTypeVector %int 3
+// CHECK: OpTypeVector %uint 4
 
 RWStructuredBuffer<uint4> Out : register(u0);
 
@@ -36,8 +39,19 @@ void main(uint3 tid : SV_DispatchThreadID) {
   a ^= uint(vk::amd::InclusiveMax(s));
   a ^= vk::amd::ExclusiveMax(u);
 
+  float2 fv = float2(f, f + 1.0f);
+  int3 iv = int3(s, s + 1, s - 1);
+  uint4 uv = uint4(u, u + 1u, u ^ 7u, u + 3u);
+  float2 fs = vk::amd::InclusiveSum(fv);
+  int3 im = vk::amd::ExclusiveMin(iv);
+  uint4 ux = vk::amd::ReduceBitXor(uv);
+
   uint b = vk::amd::ReduceBitAnd(u) ^ vk::amd::ReduceBitOr(u) ^
            vk::amd::ReduceBitXor(u);
+  b ^= asuint(fs.x) ^ asuint(fs.y);
+  b ^= uint(im.x) ^ uint(im.y) ^ uint(im.z);
+  b ^= ux.x ^ ux.y ^ ux.z ^ ux.w;
+
   Out[tid.x] = uint4(a, b, vk::amd::InclusiveProduct(u),
                      vk::amd::ExclusiveSum(u));
 }
