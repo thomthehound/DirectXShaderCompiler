@@ -42,6 +42,15 @@ jobs:
           text = text.replace('processIntrinsicReadClock(const CallExpr *callExpr)',
                               'processIntrinsicReadClock(const CallExpr *)')
           p.write_text(text, encoding='utf-8')
+
+          p = Path('utils/amd_finalize_vertex_parameter.py')
+          text = p.read_text(encoding='utf-8')
+          old = r'\(UINT\)IntrinsicOp::'
+          new = r'\(UINT\)hlsl::IntrinsicOp::'
+          count = text.count(old)
+          if count != 3:
+              raise SystemExit(f'unexpected HCT opcode regex count: {count}')
+          p.write_text(text.replace(old, new), encoding='utf-8')
           PY
           python3 utils/amd_finish_vertex_parameter.py
           python3 utils/amd_finalize_vertex_parameter.py
