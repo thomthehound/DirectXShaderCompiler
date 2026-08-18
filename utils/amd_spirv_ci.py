@@ -109,6 +109,23 @@ def main() -> int:
     )
 
     require_success(
+        "AMD wave intrinsic Vulkan parity",
+        compile_shader(
+            "amd.intrinsics.wave-parity.hlsl",
+            "-T", "cs_6_0", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-target-env=vulkan1.1",
+        ),
+        required=(
+            r"\bOpGroupNonUniformBroadcastFirst\b",
+            r"\bOpGroupNonUniformShuffle\b",
+            r"\bOpGroupNonUniformBallot\b",
+            r"\bOpGroupNonUniformAny\b",
+            r"\bOpGroupNonUniformAll\b",
+        ),
+        forbidden=(r"\bSwizzleInvocationsAMD\b",),
+    )
+
+    require_success(
         "AMD explicit vertex interpolation",
         compile_shader(
             "amd.intrinsics.explicit-vertex.hlsl",
