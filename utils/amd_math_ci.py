@@ -131,10 +131,16 @@ def main() -> int:
                 r"OpCapability DotProduct",
                 r"OpCapability DotProductInput4x8BitPacked",
                 r'OpExtension "SPV_KHR_integer_dot_product"',
+                r"\bOpSDotAccSat\b", r"\bOpUDotAccSat\b",
                 r"\bOpBitFieldSExtract\b", r"\bOpBitFieldUExtract\b",
                 r"\bOpIMul\b",
             ),
-            counts=((r"\bOpSDot\b", 1), (r"\bOpUDot\b", 1)),
+            counts=(
+                (r"\bOpSDot\b", 1),
+                (r"\bOpUDot\b", 1),
+                (r"\bOpSDotAccSat\b", 1),
+                (r"\bOpUDotAccSat\b", 1),
+            ),
             target="cs_6_4",
         ),
     )
