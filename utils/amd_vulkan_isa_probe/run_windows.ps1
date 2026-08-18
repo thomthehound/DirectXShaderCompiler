@@ -80,6 +80,16 @@ $CrosslaneArgs = @(
 python @CrosslaneArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+Write-Host "[AMD SPIR-V] Empirical candidate zoo"
+$ZooArgs = @(
+    (Join-Path $ProbeRoot "candidate_zoo.py"),
+    "--dxc", $Dxc,
+    "--driver-probe", $DriverProbe,
+    "--out-dir", (Join-Path $OutDir "candidate-zoo")
+)
+python @ZooArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 Write-Host "[AMD SPIR-V] Core math native recovery"
 $MathArgs = @(
     (Join-Path $ProbeRoot "math_probe.py"),
