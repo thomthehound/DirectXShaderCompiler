@@ -201,6 +201,21 @@ def main() -> int:
     )
 
     require_success(
+        "AMD draw parameter Vulkan parity",
+        compile_shader(
+            "amd.intrinsics.draw-parameters.hlsl",
+            "-T", "vs_6_8", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-target-env=vulkan1.1",
+        ),
+        required=(
+            r'OpExtension "SPV_KHR_shader_draw_parameters"',
+            r"BuiltIn BaseVertex",
+            r"BuiltIn BaseInstance",
+            r"BuiltIn DrawIndex",
+        ),
+    )
+
+    require_success(
         "AMD extension family alias",
         compile_shader(
             "extensions.amd-family.hlsl",
