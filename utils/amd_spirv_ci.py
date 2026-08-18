@@ -126,6 +126,28 @@ def main() -> int:
     )
 
     require_success(
+        "AMD exact core math contracts",
+        compile_shader(
+            "amd.math.core.hlsl",
+            "-T", "cs_6_2", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-extension=AMD",
+        ),
+        required=(
+            r"\bOpBitFieldUExtract\b",
+            r"\bOpBitFieldSExtract\b",
+            r"\bOpBitReverse\b",
+            r"\bOpBitCount\b",
+            r"\bOpExtInst\b.*\bFMid3AMD\b",
+        ),
+        counts=(
+            (r"\bOpBitFieldUExtract\b", 1),
+            (r"\bOpBitFieldSExtract\b", 1),
+            (r"\bOpBitReverse\b", 1),
+            (r"\bOpBitCount\b", 1),
+        ),
+    )
+
+    require_success(
         "AMD explicit vertex interpolation",
         compile_shader(
             "amd.intrinsics.explicit-vertex.hlsl",
