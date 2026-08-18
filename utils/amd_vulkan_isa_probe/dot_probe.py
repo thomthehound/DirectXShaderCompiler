@@ -11,8 +11,14 @@ from pathlib import Path
 
 
 EXPECTED = {
-    "dot4_i8": re.compile(r"\bv_dot4(?:c)?_i32_i8\b", re.I),
+    "dot4_i8": re.compile(r"\bv_dot4(?:c)?_i32_(?:i8|iu8)\b", re.I),
     "dot4_u8": re.compile(r"\bv_dot4(?:c)?_u32_u8\b", re.I),
+    "dot4_i8_accsat": re.compile(
+        r"\bv_dot4(?:c)?_i32_(?:i8|iu8)\b[^\n]*\bclamp\b", re.I
+    ),
+    "dot4_u8_accsat": re.compile(
+        r"\bv_dot4(?:c)?_u32_u8\b[^\n]*\bclamp\b", re.I
+    ),
     "dot2_i16": re.compile(r"\bv_dot2(?:c)?_i32_i16\b", re.I),
     "dot2_u16": re.compile(r"\bv_dot2(?:c)?_u32_u16\b", re.I),
     "dot4_mixed_i8_u8": re.compile(r"\bv_dot4_i32_iu8\b", re.I),
@@ -82,11 +88,12 @@ def main() -> int:
         "isa": str(isa),
         "native_recovery": results,
         "note": (
-            "Instruction availability is GPU-generation dependent. Missing i4, mixed-sign, "
-            "legacy integer-dot, or packed-half FP16-dot variants is evidence about this "
-            "driver/GPU, not a harness failure. The packed-half FP16 candidate deliberately "
-            "uses uint input bits plus f16tof32 so the device does not need shaderFloat16 "
-            "enabled merely to test v_dot2_f32_f16 recovery."
+            "Instruction availability is GPU-generation dependent. The AccSat rows require "
+            "the native dot instruction and its clamp modifier on the same ISA line. Missing "
+            "i4, mixed-sign, legacy integer-dot, clamp, or packed-half FP16-dot variants is "
+            "evidence about this driver/GPU, not a harness failure. The packed-half FP16 "
+            "candidate uses uint input bits plus f16tof32 so the device does not need "
+            "shaderFloat16 enabled merely to test v_dot2_f32_f16 recovery."
         ),
     }
     (out_dir / "dot_report.json").write_text(
