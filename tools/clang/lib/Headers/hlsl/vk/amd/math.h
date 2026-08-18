@@ -68,10 +68,8 @@ uint MsadU8(uint source, uint reference, uint accum) {
   return accum + d0 + d1 + d2 + d3;
 }
 
-// Canonical recovery candidates for AMD 24-bit multiply. The native operations
-// consume the low 24 bits of each input as unsigned or signed 24-bit integers.
-// Keeping the range restriction explicit gives the Vulkan backend the proof it
-// needs to select v_mul_{u32_u24,i32_i24} if its combiner recognizes the form.
+// AMD 24-bit integer multiply family. The low 24 bits of each operand are the
+// complete native inputs; signed forms sign-extend bit 23 before multiplication.
 uint MulU24(uint a, uint b) {
   return (a & 0x00ffffffu) * (b & 0x00ffffffu);
 }
@@ -80,6 +78,41 @@ int MulI24(int a, int b) {
   int b24 = (b << 8) >> 8;
   return a24 * b24;
 }
+uint MulHiU24(uint a, uint b) {
+  uint64_t product = uint64_t(a & 0x00ffffffu) * uint64_t(b & 0x00ffffffu);
+  return uint(product >> 32u);
+}
+int MulHiI24(int a, int b) {
+  int64_t a24 = int64_t((a << 8) >> 8);
+  int64_t b24 = int64_t((b << 8) >> 8);
+  return int((a24 * b24) >> 32);
+}
+uint MadU24(uint a, uint b, uint c) { return MulU24(a, b) + c; }
+int MadI24(int a, int b, int c) { return MulI24(a, b) + c; }
+
+// Packed U8 linear interpolation. Each byte lane computes
+// (src0 + src1 + rounding_bit) >> 1, where src2 bits 0/8/16/24 supply the
+// four independent rounding bits. Keep the lane graph explicit for V_LERP_U8
+// recovery.
+uint LerpU8(uint src0, uint src1, uint src2) {
+  uint b0 = (UBfe(src0, 0u, 8u) + UBfe(src1, 0u, 8u) + UBfe(src2, 0u, 1u)) >> 1u;
+  uint b1 = (UBfe(src0, 8u, 8u) + UBfe(src1, 8u, 8u) + UBfe(src2, 8u, 1u)) >> 1u;
+  uint b2 = (UBfe(src0, 16u, 8u) + UBfe(src1, 16u, 8u) + UBfe(src2, 16u, 1u)) >> 1u;
+  uint b3 = (UBfe(src0, 24u, 8u) + UBfe(src1, 24u, 8u) + UBfe(src2, 24u, 1u)) >> 1u;
+  return b0 | (b1 << 8u) | (b2 << 16u) | (b3 << 24u);
+}
+
+// Exact integer/Boolean VALU candidates.
+uint Bfi(uint mask, uint src1, uint src2) {
+  return (mask & src1) | (~mask & src2);
+}
+uint XadU32(uint a, uint b, uint c) { return (a ^ b) + c; }
+uint LshlAddU32(uint a, uint shift, uint c) { return (a << (shift & 31u)) + c; }
+uint AddLshlU32(uint a, uint b, uint shift) { return (a + b) << (shift & 31u); }
+uint Add3U32(uint a, uint b, uint c) { return a + b + c; }
+uint LshlOrB32(uint a, uint shift, uint c) { return (a << (shift & 31u)) | c; }
+uint AndOrB32(uint a, uint b, uint c) { return (a & b) | c; }
+uint Or3B32(uint a, uint b, uint c) { return a | b | c; }
 
 // Non-legacy VALU math. These spell the standard HLSL operation deliberately:
 // Vulkan carries equivalent mathematical semantics and the AMD Vulkan backend
