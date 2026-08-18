@@ -76,6 +76,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dxc", required=True)
     parser.add_argument("--driver-probe", required=True)
+    parser.add_argument("--runtime-verifier")
     parser.add_argument("--out-dir", default="out/amd-candidate-zoo")
     parser.add_argument("--target-env", default="vulkan1.2")
     parser.add_argument(
@@ -88,6 +89,9 @@ def main() -> int:
 
     dxc = str(Path(args.dxc).resolve())
     driver_probe = str(Path(args.driver_probe).resolve())
+    runtime_verifier = (
+        str(Path(args.runtime_verifier).resolve()) if args.runtime_verifier else None
+    )
     out_dir = Path(args.out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     shader = Path(__file__).resolve().parent / "shaders" / "candidate_zoo.hlsl"
@@ -100,6 +104,7 @@ def main() -> int:
 
     records: list[dict] = []
     hits: list[dict] = []
+    runtime_failures = 0
 
     for candidate in candidates:
         stem = f"{candidate.index:02d}_{candidate.name}"
@@ -123,6 +128,17 @@ def main() -> int:
             print(f"{candidate.index:02d} {candidate.name:<34} COMPILE FAIL")
             continue
 
+        runtime_status = "not-run"
+        runtime_output = ""
+        if runtime_verifier is not None:
+            verified = run([runtime_verifier, str(spv), str(candidate.index)])
+            runtime_output = (verified.stdout + "\n" + verified.stderr).strip()
+            if verified.returncode == 0:
+                runtime_status = "pass"
+            else:
+                runtime_status = "failed"
+                runtime_failures += 1
+
         probed = run([driver_probe, str(spv), str(isa)])
         if probed.returncode != 0 or not isa.exists():
             records.append({
@@ -130,11 +146,16 @@ def main() -> int:
                 "name": candidate.name,
                 "family": candidate.family,
                 "compile": "pass",
+                "runtime": runtime_status,
+                "runtime_output": runtime_output[-4000:],
                 "probe": "failed",
                 "stdout": probed.stdout[-4000:],
                 "stderr": probed.stderr[-4000:],
             })
-            print(f"{candidate.index:02d} {candidate.name:<34} PROBE FAIL")
+            print(
+                f"{candidate.index:02d} {candidate.name:<34} "
+                f"runtime={runtime_status} PROBE FAIL"
+            )
             continue
 
         text = isa.read_text(encoding="utf-8", errors="replace")
@@ -144,28 +165,34 @@ def main() -> int:
             "name": candidate.name,
             "family": candidate.family,
             "compile": "pass",
+            "runtime": runtime_status,
+            "runtime_output": runtime_output[-4000:],
             "probe": "pass",
             "specialized": found,
             "spv": str(spv),
             "isa": str(isa),
         }
         records.append(record)
-        if found:
+        if found and runtime_status != "failed":
             hits.append(record)
         label = ", ".join(found) if found else "no targeted mnemonic"
-        print(f"{candidate.index:02d} {candidate.name:<34} {label}")
+        print(
+            f"{candidate.index:02d} {candidate.name:<34} "
+            f"runtime={runtime_status:<7} {label}"
+        )
 
     report = {
         "shader": str(shader),
         "candidate_count": len(candidates),
         "hit_count": len(hits),
+        "runtime_failures": runtime_failures,
         "hits": hits,
         "records": records,
         "policy": (
-            "A hit means the installed Radeon compiler selected a specialized "
-            "instruction for a source expression with defined HLSL semantics. "
-            "It does not by itself license substituting that expression into APUSR; "
-            "surviving candidates still require consumer-level differential tests."
+            "A promoted hit requires a specialized Radeon ISA mnemonic and no "
+            "runtime semantic failure. It still does not license substituting the "
+            "expression into APUSR until the relevant APUSR consumer passes a "
+            "differential/numerical and performance A/B test."
         ),
     }
     (out_dir / "candidate_zoo_report.json").write_text(
@@ -175,10 +202,12 @@ def main() -> int:
         json.dumps(hits, indent=2) + "\n", encoding="utf-8"
     )
 
-    print(f"candidate zoo: {len(hits)} specialized hit(s) / {len(candidates)} candidate(s)")
-    # Empirical misses are useful data, not failures. Only tool/compiler failures
-    # are recorded in the report; the runner stays green so all candidates run.
-    return 0
+    print(
+        f"candidate zoo: {len(hits)} promoted hit(s) / {len(candidates)} candidate(s); "
+        f"runtime failures={runtime_failures}"
+    )
+    # Empirical misses are useful data. A runtime semantic mismatch is not.
+    return 1 if runtime_failures else 0
 
 
 if __name__ == "__main__":
