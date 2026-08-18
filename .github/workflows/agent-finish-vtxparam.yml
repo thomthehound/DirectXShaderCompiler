@@ -44,6 +44,22 @@ jobs:
           p.write_text(text, encoding='utf-8')
           PY
           python3 utils/amd_finish_vertex_parameter.py
+
+          # HCT appends new intrinsic opcodes in lexical intrinsic-key order.
+          # Preserve that canonical order instead of hand-assigning the two new
+          # vk intrinsics in reverse order.
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          path = Path('utils/hct/hlsl_intrinsic_opcodes.json')
+          data = json.loads(path.read_text(encoding='utf-8'))
+          ops = data['IntrinsicOpCodes']
+          ops['IOP_VkAmdVertexParameter'] = 424
+          ops['IOP_VkAmdVertexParameterComponent'] = 425
+          ops['Num_Intrinsics'] = 426
+          path.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+          PY
+
           python3 utils/hct/hctgen.py HLSLIntrinsicOp --output include/dxc/HlslIntrinsicOp.h
           clang-format -i include/dxc/HlslIntrinsicOp.h
 
@@ -85,10 +101,10 @@ jobs:
           text = lower.read_text(encoding='utf-8')
           marker = '''};
           constexpr size_t NumLowerTableEntries ='''
-          entries = '''    {IntrinsicOp::IOP_VkAmdVertexParameterComponent,
-               UnsupportedVulkanIntrinsic, DXIL::OpCode::NumOpCodes},
-              {IntrinsicOp::IOP_VkAmdVertexParameter, UnsupportedVulkanIntrinsic,
+          entries = '''    {IntrinsicOp::IOP_VkAmdVertexParameter, UnsupportedVulkanIntrinsic,
                DXIL::OpCode::NumOpCodes},
+              {IntrinsicOp::IOP_VkAmdVertexParameterComponent,
+               UnsupportedVulkanIntrinsic, DXIL::OpCode::NumOpCodes},
           '''
           if text.count(marker) != 1:
               raise SystemExit(f'DXIL lowering table boundary count={text.count(marker)}')
@@ -128,11 +144,19 @@ jobs:
           python3 -m json.tool utils/hct/hlsl_intrinsic_opcodes.json >/dev/null
           python3 -m json.tool utils/amd_spirv_contracts.json >/dev/null
           python3 -m json.tool utils/apusr_amd_ingress_blockers.json >/dev/null
+          python3 - <<'PY'
+          import json
+          with open('utils/hct/hlsl_intrinsic_opcodes.json', encoding='utf-8') as f:
+              ops = json.load(f)['IntrinsicOpCodes']
+          assert ops['IOP_VkAmdVertexParameter'] == 424
+          assert ops['IOP_VkAmdVertexParameterComponent'] == 425
+          assert ops['Num_Intrinsics'] == 426
+          PY
           git diff --check
-          grep -q 'IOP_VkAmdVertexParameterComponent' include/dxc/HlslIntrinsicOp.h
-          grep -q 'IOP_VkAmdVertexParameter' include/dxc/HlslIntrinsicOp.h
+          grep -q 'IOP_VkAmdVertexParameter = 424' include/dxc/HlslIntrinsicOp.h
+          grep -q 'IOP_VkAmdVertexParameterComponent = 425' include/dxc/HlslIntrinsicOp.h
+          grep -q 'IOP_VkAmdVertexParameter' lib/HLSL/HLOperationLower.cpp
           grep -q 'IOP_VkAmdVertexParameterComponent' lib/HLSL/HLOperationLower.cpp
-          grep -q 'IOP_VkAmdVertexParameter, UnsupportedVulkanIntrinsic' lib/HLSL/HLOperationLower.cpp
           grep -q 'processAmdVertexParameter' tools/clang/lib/SPIRV/SpirvEmitter.cpp
           grep -q 'getAmdVertexParameterComponentPtr' tools/clang/lib/SPIRV/DeclResultIdMapper.cpp
           ! grep -q 'ags-vtxparam-raw-signature-index' utils/apusr_amd_ingress_blockers.json
@@ -151,6 +175,41 @@ jobs:
             -DCLANG_INCLUDE_TESTS=OFF \
             -DHLSL_INCLUDE_TESTS=OFF
           cmake --build build-amd-spirv --target dxc dxcompiler dxildll --parallel 4
+
+      - name: Smoke intrinsic registration
+        run: |
+          set -euo pipefail
+          export LD_LIBRARY_PATH="$PWD/build-amd-spirv/lib:${LD_LIBRARY_PATH:-}"
+          DXC="$PWD/build-amd-spirv/bin/dxc"
+
+          cat >/tmp/plain.hlsl <<'HLSL'
+          RWStructuredBuffer<uint> outBuffer : register(u0);
+          [numthreads(1, 1, 1)]
+          void main(uint3 tid : SV_DispatchThreadID) { outBuffer[0] = tid.x; }
+          HLSL
+          "$DXC" -T cs_6_2 -E main -fcgl -spirv /tmp/plain.hlsl -Fo /tmp/plain.spv
+
+          set +e
+          "$DXC" -T cs_6_2 -E main -fcgl -spirv -fspv-extension=AMD \
+            tools/clang/test/CodeGenSPIRV/amd.intrinsics.header.hlsl \
+            -Fo /tmp/amd-header.spv
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo "AMD header smoke failed with rc=$rc; collecting debugger backtrace"
+            if ! command -v gdb >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y gdb
+            fi
+            gdb --batch \
+              -ex 'set pagination off' \
+              -ex run \
+              -ex 'thread apply all bt full' \
+              --args "$DXC" -T cs_6_2 -E main -fcgl -spirv -fspv-extension=AMD \
+                tools/clang/test/CodeGenSPIRV/amd.intrinsics.header.hlsl \
+                -Fo /tmp/amd-header-gdb.spv || true
+            exit "$rc"
+          fi
 
       - name: Run Linux AMD compiler contracts
         run: |
