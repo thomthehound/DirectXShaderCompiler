@@ -83,6 +83,16 @@ $MixedDotArgs = @(
 python @MixedDotArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+Write-Host "[AMD SPIR-V] First-class BF16 conversion qualification"
+$BF16ConversionArgs = @(
+    (Join-Path $ProbeRoot "bfloat16_conversion_probe.py"),
+    "--dxc", $Dxc,
+    "--driver-probe", $DriverProbe,
+    "--out-dir", (Join-Path $OutDir "bfloat16-conversion")
+)
+python @BF16ConversionArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 # dot_f16_probe.py intentionally remains a separate manual probe. The mixed-dot
 # qualification above is now the stronger exact SPV_VALVE path when supported;
 # this older probe remains useful as a canonical-recovery control.
