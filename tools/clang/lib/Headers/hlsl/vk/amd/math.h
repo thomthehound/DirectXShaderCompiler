@@ -68,6 +68,58 @@ uint MsadU8(uint source, uint reference, uint accum) {
   return accum + d0 + d1 + d2 + d3;
 }
 
+// Four rolling 4-byte windows over an 8-byte source. Packed forms use four
+// independent 16-bit accumulators; arithmetic naturally truncates back to each
+// packed 16-bit result lane. MQSAD suppresses each reference byte whose value
+// is zero, exactly like MsadU8.
+uint64_t PackU16x4(uint x0, uint x1, uint x2, uint x3) {
+  return uint64_t(x0 & 0xffffu) |
+         (uint64_t(x1 & 0xffffu) << 16u) |
+         (uint64_t(x2 & 0xffffu) << 32u) |
+         (uint64_t(x3 & 0xffffu) << 48u);
+}
+
+uint64_t QsadPkU16U8(uint64_t source, uint reference, uint64_t accum) {
+  uint a0 = uint(accum) & 0xffffu;
+  uint a1 = uint(accum >> 16u) & 0xffffu;
+  uint a2 = uint(accum >> 32u) & 0xffffu;
+  uint a3 = uint(accum >> 48u) & 0xffffu;
+  uint w0 = uint(source);
+  uint w1 = uint(source >> 8u);
+  uint w2 = uint(source >> 16u);
+  uint w3 = uint(source >> 24u);
+  return PackU16x4(SadU8(w0, reference, a0),
+                   SadU8(w1, reference, a1),
+                   SadU8(w2, reference, a2),
+                   SadU8(w3, reference, a3));
+}
+
+uint64_t MqsadPkU16U8(uint64_t source, uint reference, uint64_t accum) {
+  uint a0 = uint(accum) & 0xffffu;
+  uint a1 = uint(accum >> 16u) & 0xffffu;
+  uint a2 = uint(accum >> 32u) & 0xffffu;
+  uint a3 = uint(accum >> 48u) & 0xffffu;
+  uint w0 = uint(source);
+  uint w1 = uint(source >> 8u);
+  uint w2 = uint(source >> 16u);
+  uint w3 = uint(source >> 24u);
+  return PackU16x4(MsadU8(w0, reference, a0),
+                   MsadU8(w1, reference, a1),
+                   MsadU8(w2, reference, a2),
+                   MsadU8(w3, reference, a3));
+}
+
+uint4 MqsadU32U8(uint64_t source, uint reference, uint4 accum) {
+  uint w0 = uint(source);
+  uint w1 = uint(source >> 8u);
+  uint w2 = uint(source >> 16u);
+  uint w3 = uint(source >> 24u);
+  return uint4(MsadU8(w0, reference, accum.x),
+               MsadU8(w1, reference, accum.y),
+               MsadU8(w2, reference, accum.z),
+               MsadU8(w3, reference, accum.w));
+}
+
 // AMD 24-bit integer multiply family. The low 24 bits of each operand are the
 // complete native inputs; signed forms sign-extend bit 23 before multiplication.
 uint MulU24(uint a, uint b) {
