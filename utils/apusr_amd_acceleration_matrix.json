@@ -1,0 +1,232 @@
+{
+  "schema": 1,
+  "snapshot": "APUSR v738",
+  "policy": {
+    "goal": "Attempt every AMD/compiler lowering that could plausibly reduce APUSR shader cost or improve native Radeon ISA on Vulkan, D3D12, or the shared D3D11On12 path before qualification and PR splitting.",
+    "ready_rule": "Every non-deferred row must be implemented, probe-only, or explicitly blocked with a concrete reason. No silent unattempted rows are allowed.",
+    "performance_rule": "Canonical arithmetic is a candidate, not a native implementation, until Radeon ISA or a backend-native contract proves the intended instruction family.",
+    "dx11_rule": "DXC does not produce native DXBC. D3D11On12/shared shader-source opportunities stay in scope; a pure DXBC backend is recorded as outside this DXC branch rather than silently ignored.",
+    "deferred_hardware": "FP8/BF8/FP6/BF6/FP4 format families remain tracked but do not gate readiness until suitable hardware is available."
+  },
+  "apusr_evidence": {
+    "packed_dot_i8_calls": 668,
+    "wave_read_lane_at_calls": 38,
+    "wave_lane_id_calls": 32,
+    "tanh_calls": 16,
+    "exp_calls": 12,
+    "log_calls": 5,
+    "log2_calls": 13,
+    "pow_calls": 9,
+    "rcp_calls": 3,
+    "sqrt_calls": 6,
+    "f16tof32_calls": 6,
+    "f32tof16_calls": 2,
+    "groupshared_declarations": 20,
+    "barrier_calls": 12,
+    "product_interlocked_calls": 5,
+    "note": "Counts exclude third_party, experiments, and AmdExtD3D definition headers; they are evidence of candidate consumers, not performance weights."
+  },
+  "families": [
+    {
+      "id": "packed-dot-4x8",
+      "consumers": ["FSR4 INT8 model middle", "APUSR tiled INT8 passes"],
+      "spirv": "implemented-direct-SPV_KHR_integer_dot_product",
+      "dxil": "implemented-existing-HLSL-dot4add",
+      "d3d11on12": "shared-DXIL-path",
+      "expected_isa": ["v_dot4_i32_i8", "v_dot4_u32_u8", "generation-equivalent dot4 forms"],
+      "attempt": "implemented",
+      "tests": ["intrinsics.dot4add.packed.amd.hlsl", "amd.dot.math.hlsl", "APUSR FSR4 shader corpus"]
+    },
+    {
+      "id": "packed-dot-mixed-2x16-8x4-saturating",
+      "consumers": ["FSR4 quantized kernels", "future packed INT kernels", "RDNA2 compatibility experiments"],
+      "spirv": "direct where KHR integer-dot width/packing semantics match; canonical otherwise",
+      "dxil": "AMD/native-HLSL and canonical candidates",
+      "d3d11on12": "shared-DXIL-path",
+      "expected_isa": ["v_dot2_i32_i16", "v_dot2_u32_u16", "v_dot4_i32_iu8", "v_dot8_*_i4", "clamped/accumulating dot forms"],
+      "attempt": "probe-only",
+      "tests": ["amd.dot.math.hlsl", "pending i4 and saturation boundary corpus"]
+    },
+    {
+      "id": "sad-msad-qsad-mqsad",
+      "consumers": ["Frame Generation optical-flow search", "packed luma comparison"],
+      "spirv": "implemented canonical exact-semantic graphs plus msad4 packed-dot candidate",
+      "dxil": "native msad4 path already available to HLSL/DXIL",
+      "d3d11on12": "shared-DXIL-path",
+      "expected_isa": ["v_sad_u8", "v_sad_hi_u8", "v_sad_u16", "v_sad_u32", "v_msad_u8", "v_qsad_pk_u16_u8", "v_mqsad_pk_u16_u8", "v_mqsad_u32_u8"],
+      "attempt": "implemented",
+      "tests": ["amd.math.sad-candidates.hlsl", "amd.math.qsad-candidates.hlsl", "real Vulkan math execution verifier", "Radeon ISA probe"]
+    },
+    {
+      "id": "bitfield-scan-pack",
+      "consumers": ["INT8 packing", "optical flow", "token packing", "address/bit manipulation"],
+      "spirv": "direct bitfield extract/reverse/count; scan/insert/packing candidates",
+      "dxil": "standard HLSL bit operations and AMD candidates",
+      "d3d11on12": "shared source where shader model permits",
+      "expected_isa": ["v_bfe_u32", "v_bfe_i32", "v_bfrev_b32", "v_bcnt_u32_b32", "v_ffbh_*", "v_ffbl_b32", "v_bfi_b32"],
+      "attempt": "implemented",
+      "tests": ["amd.math.core.hlsl", "amd.math.integer-candidates.hlsl", "pending bit-scan zero/sign corpus"]
+    },
+    {
+      "id": "mul24-mad24-highmul",
+      "consumers": ["integer address/index math", "packed kernels", "future optical-flow integer kernels"],
+      "spirv": "implemented exact canonical range-restricted graphs",
+      "dxil": "canonical/native-selection candidate",
+      "d3d11on12": "shared source",
+      "expected_isa": ["v_mul_u32_u24", "v_mul_i32_i24", "v_mul_hi_u32_u24", "v_mul_hi_i32_i24", "v_mad_u32_u24", "v_mad_i32_i24"],
+      "attempt": "implemented",
+      "tests": ["amd.math.candidates.hlsl", "amd.math.integer-candidates.hlsl", "real Vulkan math execution verifier", "Radeon ISA probe"]
+    },
+    {
+      "id": "fused-integer-valu",
+      "consumers": ["packing/unpacking", "token address arithmetic", "quantized kernels"],
+      "spirv": "implemented exact canonical graphs",
+      "dxil": "canonical/native-selection candidate",
+      "d3d11on12": "shared source",
+      "expected_isa": ["v_lerp_u8", "v_bfi_b32", "v_xad_u32", "v_lshl_add_u32", "v_add_lshl_u32", "v_add3_u32", "v_lshl_or_b32", "v_and_or_b32", "v_or3_b32"],
+      "attempt": "implemented",
+      "tests": ["amd.math.integer-candidates.hlsl", "real Vulkan math execution verifier", "Radeon ISA probe"]
+    },
+    {
+      "id": "align-permute-byte-routing",
+      "consumers": ["packed tensor loads", "optical-flow rolling windows", "token/byte repacking"],
+      "spirv": "canonical funnel/shift/or candidate; direct ingress absent for AMD align instructions",
+      "dxil": "AMD/canonical candidate",
+      "d3d11on12": "shared source",
+      "expected_isa": ["v_alignbyte_b32", "v_alignbit_b32", "v_perm_b32"],
+      "attempt": "probe-only",
+      "tests": ["pending concatenation-order and shift-boundary corpus", "Radeon ISA probe"]
+    },
+    {
+      "id": "minmax-med3-clamp",
+      "consumers": ["RCAS", "FSR4 pre/post", "quantization clamps", "ReLU/clamp paths"],
+      "spirv": "AMD trinary min/max direct contract plus standard min/max/clamp",
+      "dxil": "standard HLSL and AGS trinary operations",
+      "d3d11on12": "shared source",
+      "expected_isa": ["v_min3_*", "v_max3_*", "v_med3_*", "clamp modifier/forms"],
+      "attempt": "implemented",
+      "tests": ["amd.intrinsics.header.hlsl", "amd.math.core.hlsl", "pending NaN/tie integer boundary corpus"]
+    },
+    {
+      "id": "fp-transcendental-standard",
+      "consumers": ["FSR4 pre/post bookends", "auto exposure", "RCAS", "color transforms"],
+      "spirv": "standard math semantics with native-recovery probes",
+      "dxil": "standard HLSL math with native-recovery/codegen comparison",
+      "d3d11on12": "shared source",
+      "expected_isa": ["v_rcp_*", "v_sqrt_*", "v_rsq_*", "v_log_*", "v_exp_*", "v_sin_*", "v_cos_*", "v_tanh_*", "v_fract_*"],
+      "attempt": "implemented",
+      "tests": ["math ISA probe", "pending tanh/pow/special-value corpus", "APUSR pre/post shader corpus"]
+    },
+    {
+      "id": "fp-decompose-class-rounding",
+      "consumers": ["FP16 bookends", "conversion/packing", "possible quantization and range analysis"],
+      "spirv": "frexp/ldexp/classification and explicit F32->F16 rounding contracts under review",
+      "dxil": "AGS FloatConversion/FloatOpWithRoundMode plus standard HLSL",
+      "d3d11on12": "shared source where shader model permits",
+      "expected_isa": ["v_frexp_*", "v_ldexp_*", "v_cmp_class_*", "v_cvt_f16_f32", "packed conversion forms"],
+      "attempt": "probe-only",
+      "tests": ["pending NaN/Inf/subnormal/tie rounding corpus"]
+    },
+    {
+      "id": "packed-f16-bf16-conversion-dot",
+      "consumers": ["FSR4 FP16 operators", "future mixed-precision kernels"],
+      "spirv": "standard/KHR FP16/BF16 contracts where exact; packing candidates otherwise",
+      "dxil": "native HLSL/AGS matrix and conversion paths",
+      "d3d11on12": "shared DXIL path",
+      "expected_isa": ["v_cvt_pkrtz_f16_f32", "v_pack_b32_f16", "v_dot2_f32_f16", "BF16 dot/conversion families"],
+      "attempt": "probe-only",
+      "tests": ["pending FP16/BF16 rounding/accumulation corpus", "APUSR FP16 model operators"]
+    },
+    {
+      "id": "wave-broadcast-shuffle-ballot",
+      "consumers": ["FSR4 generated FP16 operators", "Frame Generation reductions", "future tiled kernels"],
+      "spirv": "implemented subgroup broadcast/shuffle/ballot contracts",
+      "dxil": "standard Wave* DXIL operations",
+      "d3d11on12": "shared DXIL path",
+      "expected_isa": ["ds_bpermute/ds_permute", "readlane/readfirstlane", "ballot/mask operations"],
+      "attempt": "implemented",
+      "tests": ["amd.intrinsics.wave-parity.hlsl", "APUSR wave corpus"]
+    },
+    {
+      "id": "wave-reduce-scan-cluster",
+      "consumers": ["38 manual WaveReadLaneAt reduction steps in FSR4 FP16 operators", "auto exposure", "future reductions"],
+      "spirv": "OpGroupNonUniform reduce/scan/cluster contracts for matching operation/type semantics",
+      "dxil": "standard WaveActive/WavePrefix plus AGS WaveReduce/WaveScan for extra forms",
+      "d3d11on12": "shared DXIL path",
+      "expected_isa": ["DPP/permlane/reduction sequences", "wave reduction optimized forms"],
+      "attempt": "probe-only",
+      "tests": ["pending adversarial active-mask/wave32/wave64 reduction corpus", "APUSR manual-tree comparison"]
+    },
+    {
+      "id": "dpp-permlane-crosslane",
+      "consumers": ["manual FP16 reduction trees", "packed tensor lane exchange", "future WMMA staging"],
+      "spirv": "subgroup shuffle/xor/up/down plus AMD extinst subsets; exact DPP control semantics require per-control review",
+      "dxil": "AGS swizzle/readlane and compiler-recognition candidates",
+      "d3d11on12": "shared DXIL path",
+      "expected_isa": ["DPP", "DPP8", "v_permlane16", "v_permlanex16", "v_permlane64", "ds_swizzle"],
+      "attempt": "probe-only",
+      "tests": ["pending lane-routing corpus across wave32/wave64 and inactive lanes"]
+    },
+    {
+      "id": "wmma-swmma-cooperative-matrix",
+      "consumers": ["FSR4 model middle", "future APUSR-native matrix kernels", "NPU/GPU partitioning comparison"],
+      "spirv": "SPV_KHR_cooperative_matrix where exact shape/type/accumulator semantics match",
+      "dxil": "AmdExtD3D WaveMatrix/WMMA surface and HLSL linear-algebra builtins",
+      "d3d11on12": "shared D3D12 compute path",
+      "expected_isa": ["v_wmma_*", "v_swmmac_*"],
+      "attempt": "implemented",
+      "tests": ["linalg.cooperative-matrix.amd.hlsl", "pending per-shape FP16/BF16/IU8 ISA and numerical corpus"]
+    },
+    {
+      "id": "lds-barrier-resource-codegen",
+      "consumers": ["FSR4 pre/post groupshared staging", "APUSR tiled INT8 passes", "auto exposure"],
+      "spirv": "workgroup-memory/barrier semantics plus compiler scheduling/coalescing opportunities",
+      "dxil": "groupshared/barrier DXIL codegen and scheduling opportunities",
+      "d3d11on12": "shared source",
+      "expected_isa": ["ds_*", "s_waitcnt/barrier sequencing reductions where legal"],
+      "attempt": "probe-only",
+      "tests": ["pending LDS/barrier microcorpus derived from APUSR tiled passes", "static shared-memory and instruction-count comparison"]
+    },
+    {
+      "id": "atomics-64-and-contention",
+      "consumers": ["profiling/verification", "future queue/counter reductions", "possible shared reductions"],
+      "spirv": "Int64Atomics/core atomic operations where resource semantics match",
+      "dxil": "AGS AtomicU64 and standard modern HLSL atomics",
+      "d3d11on12": "shared DXIL path where supported",
+      "expected_isa": ["buffer/global/ds atomic families"],
+      "attempt": "probe-only",
+      "tests": ["pending resource-class/order/contention corpus"]
+    },
+    {
+      "id": "clock-instrumentation",
+      "consumers": ["shader microbenchmarking and qualification only"],
+      "spirv": "ShaderClockKHR/AMD time contracts where available",
+      "dxil": "AGS ShaderClock/ShaderRealtimeClock",
+      "d3d11on12": "qualification-only",
+      "expected_isa": ["shader clock reads"],
+      "attempt": "probe-only",
+      "tests": ["pending monotonicity/scope corpus"],
+      "note": "Instrumentation helper, not a product hot-path dependency."
+    },
+    {
+      "id": "pow-tanh-and-pattern-combines",
+      "consumers": ["FSR4 post_common", "APUSR import/export/color transforms", "generated scalar operators"],
+      "spirv": "standard math plus canonical exp/log and tanh patterns compared against direct forms",
+      "dxil": "standard HLSL/direct AMD tanh where available plus pattern comparison",
+      "d3d11on12": "shared source",
+      "expected_isa": ["v_tanh_*", "v_log_*", "v_exp_*", "shortened fused sequences"],
+      "attempt": "probe-only",
+      "tests": ["pending APUSR-derived numerical and ISA A/B corpus"]
+    },
+    {
+      "id": "low-precision-fp8-bf8-fp6-bf6-fp4",
+      "consumers": ["future low-precision FSR4/WMMA paths"],
+      "spirv": "tracked evolving low-precision contracts",
+      "dxil": "AGS/current AMD low-precision surface",
+      "d3d11on12": "shared DXIL path",
+      "expected_isa": ["AMD low-precision conversion/dot/matrix families"],
+      "attempt": "deferred-hardware",
+      "tests": ["deferred until suitable hardware exists"]
+    }
+  ]
+}
