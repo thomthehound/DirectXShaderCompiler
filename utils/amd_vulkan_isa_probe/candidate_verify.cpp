@@ -226,10 +226,8 @@ int main(int argc, char **argv) {
     for (int pass = 0; pass < 2 && !physical; ++pass) {
       for (auto candidateDevice : physicals) {
         VkPhysicalDeviceProperties properties{};
-        VkPhysicalDeviceFeatures features{};
         vkGetPhysicalDeviceProperties(candidateDevice, &properties);
-        vkGetPhysicalDeviceFeatures(candidateDevice, &features);
-        if (!features.shaderInt64 || (pass == 0 && properties.vendorID != 0x1002))
+        if (pass == 0 && properties.vendorID != 0x1002)
           continue;
         uint32_t count = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(candidateDevice, &count, nullptr);
@@ -248,19 +246,16 @@ int main(int argc, char **argv) {
       }
     }
     if (!physical)
-      throw std::runtime_error("no Vulkan compute device with shaderInt64");
+      throw std::runtime_error("no Vulkan compute device");
 
     const float priority = 1.0f;
     VkDeviceQueueCreateInfo qci{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
     qci.queueFamilyIndex = queueFamily;
     qci.queueCount = 1;
     qci.pQueuePriorities = &priority;
-    VkPhysicalDeviceFeatures enabled{};
-    enabled.shaderInt64 = VK_TRUE;
     VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     dci.queueCreateInfoCount = 1;
     dci.pQueueCreateInfos = &qci;
-    dci.pEnabledFeatures = &enabled;
     vkCheck(vkCreateDevice(physical, &dci, nullptr, &s.device), "vkCreateDevice");
 
     VkQueue queue = VK_NULL_HANDLE;
@@ -370,7 +365,7 @@ int main(int argc, char **argv) {
     vkCheck(vkQueueWaitIdle(queue), "vkQueueWaitIdle");
 
     void *mapped = nullptr;
-    vkCheck(vkMapMemory(s.device, s.memory, 0, kBufferSize, 0, &mapped), "vkMapMemory");
+    vkCheck(vkMapMemory(s.device, s.memory, 0, req.size, 0, &mapped), "vkMapMemory");
     if (!coherent) {
       VkMappedMemoryRange range{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};
       range.memory = s.memory;
