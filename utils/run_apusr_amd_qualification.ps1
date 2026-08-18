@@ -30,6 +30,10 @@ if ($Tier -ne "inventory") {
     python (Join-Path $RepoRoot "utils/amd_subgroup_ci.py") --dxc $DxcPath
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+    Write-Host "[APUSR AMD] DXIL AMD contracts"
+    python (Join-Path $RepoRoot "utils/amd_dxil_ci.py") --dxc $DxcPath
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
     $Args += @("--dxc", $DxcPath)
 }
 
