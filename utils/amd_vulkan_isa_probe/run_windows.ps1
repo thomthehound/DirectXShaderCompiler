@@ -50,6 +50,16 @@ if ($RgaLive) { $SadArgs += "--rga-live" }
 python @SadArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+Write-Host "[AMD SPIR-V] Packed dot native recovery"
+$DotArgs = @(
+    (Join-Path $ProbeRoot "dot_probe.py"),
+    "--dxc", $Dxc,
+    "--driver-probe", $DriverProbe,
+    "--out-dir", (Join-Path $OutDir "dot")
+)
+python @DotArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 Write-Host "[AMD SPIR-V] Core math native recovery"
 $MathArgs = @(
     (Join-Path $ProbeRoot "math_probe.py"),
