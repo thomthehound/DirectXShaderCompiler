@@ -1,9 +1,9 @@
 {
-  "schema": 1,
+  "schema": 2,
   "policy": {
-    "purpose": "Record AMD hardware acceleration opportunities that were actively investigated for APUSR but cannot currently be represented faithfully through the shader-facing DXC/DXIL/SPIR-V contracts used by the project.",
-    "rule": "A blocker is not an implementation. Do not replace it with generic arithmetic, ordinary loads/stores, or synchronization that loses the native operation's semantics or performance intent merely to mark the row complete.",
-    "qualification": "A blocker counts as attempted for integration-branch readiness only when the missing ingress and the required real fix are explicit."
+    "purpose": "Record AMD hardware acceleration opportunities or AGS parity contracts that were actively investigated for APUSR but cannot currently be represented faithfully through the shader-facing DXC/DXIL/SPIR-V contracts used by the project.",
+    "rule": "A blocker is not an implementation. Do not replace it with generic arithmetic, ordinary loads/stores, synchronization, guessed indexing, or weaker ordering semantics merely to mark the row complete.",
+    "qualification": "A blocker counts as attempted for integration-branch readiness only when the missing ingress or semantic proof and the required real fix are explicit."
   },
   "blockers": [
     {
@@ -68,6 +68,42 @@
       "spirv": "BF16 support must use a real typed capability/extension path; opaque uint16_t bitcasts would not preserve arithmetic semantics.",
       "status": "blocked-ingress",
       "required_fix": "Add or consume a first-class BF16 arithmetic type and exact SPIR-V/DXIL lowering before exposing AMD BF16 dot/conversion helpers."
+    },
+    {
+      "id": "ags-vtxparam-raw-signature-index",
+      "amd_intrinsics": ["AmdExtD3DShaderIntrinsics_VertexParameter"],
+      "apusr_relevance": ["pixel-stage interpolation specialization and future graphics-path compatibility"],
+      "dxil": "AGS already consumes the compile-time D3D signature parameter/component index directly.",
+      "spirv": "SPV_AMD_shader_explicit_vertex_parameter InterpolateAtVertexAMD takes a reference to the actual fragment Input variable, not a D3D signature parameter number. The branch has exact source-visible-input parity but no exact raw-index frontend operation.",
+      "status": "blocked-ingress-partial",
+      "required_fix": "Add a DXC frontend intrinsic whose compile-time parameterIdx/componentIdx is resolved against the pixel-shader input signature and lowered to InterpolateAtVertexAMD on the corresponding input variable. Do not assume Vulkan Location equals the D3D signature index."
+    },
+    {
+      "id": "ags-load-dword-offset-unit",
+      "amd_intrinsics": ["AmdExtD3DShaderIntrinsics_LoadDwordAtAddr"],
+      "apusr_relevance": ["raw/stateless GPU-address access, packed metadata and future persistent/tiled kernels"],
+      "dxil": "AGS defines a 64-bit GPU VA plus a separate 32-bit offset and native raw load.",
+      "spirv": "DXC can express a physical-storage-buffer RawBufferLoad from a 64-bit device address, but the public AGS header does not specify whether its offset is byte-scaled or DWORD-scaled and no authoritative public call site was found.",
+      "status": "blocked-semantic-proof",
+      "required_fix": "Run a tiny DX12 differential test over offsets 1, 2 and 4 against known memory, then encode the proven scaling in the Vulkan physical-address helper. Do not guess address+offset versus address+4*offset."
+    },
+    {
+      "id": "ags-f32-to-f16-directed-rounding-value",
+      "amd_intrinsics": ["AmdExtD3DShaderIntrinsics_ConvertF32toF16 round-nearest/negative-infinity/positive-infinity"],
+      "apusr_relevance": ["FP16 packing, quantization boundaries and deterministic conversion paths"],
+      "dxil": "AGS provides all three modes and returns the resulting F16 encoding as a value.",
+      "spirv": "SPIR-V FPRoundingMode can request RTE/RTN/RTP on OpFConvert, but Vulkan restricts the decorated narrowing conversion to specific direct-store uses. That does not represent AGS's reusable returned F16-bit value contract. Standard f32tof16 covers nearest-even only.",
+      "status": "blocked-ingress-partial",
+      "required_fix": "Use a future Vulkan/SPIR-V value-producing directional half-conversion contract or a real AMD extension/backend intrinsic. Software bit emulation is not accepted as native parity."
+    },
+    {
+      "id": "ags-shader-realtime-clock-barrier",
+      "amd_intrinsics": ["AmdExtD3DShaderIntrinsics_ShaderRealtimeClock"],
+      "apusr_relevance": ["shader microbenchmarking and precise qualification instrumentation"],
+      "dxil": "AGS defines a globally coherent realtime clock read that also acts as a code-motion barrier.",
+      "spirv": "Device-scope OpReadClockKHR supplies a device-consistent clock value, but SPV_KHR_shader_clock explicitly does not promise a code-motion barrier.",
+      "status": "blocked-ingress",
+      "required_fix": "Add a barrier-preserving AMD/compiler intrinsic or extension. DeviceClockNoBarrier remains qualification instrumentation only and must not be labeled ShaderRealtimeClock parity."
     },
     {
       "id": "legacy-fp-assists",
