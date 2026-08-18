@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the AMD-oriented DXIL contract regression with only a built dxc."""
+"""Run AMD-oriented DXIL contract regressions with only a built dxc."""
 
 from __future__ import annotations
 
@@ -10,12 +10,42 @@ import tempfile
 from pathlib import Path
 
 
-REQUIRED = (
-    "@dx.op.dot4AddPacked.i32(i32 163,",
-    "@dx.op.dot4AddPacked.i32(i32 164,",
-    "dx.op.waveReadLaneAt",
-    "dx.op.waveActiveOp",
-)
+def compile_listing(
+    dxc: str,
+    shader: Path,
+    target: str,
+    required: tuple[str, ...],
+    temp: Path,
+    stem: str,
+) -> int:
+    blob = temp / f"{stem}.dxil"
+    listing = temp / f"{stem}.ll"
+    proc = subprocess.run(
+        [dxc, "-E", "main", "-T", target, str(shader),
+         "-Fo", str(blob), "-Fc", str(listing)],
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if proc.returncode != 0:
+        print(proc.stdout, end="")
+        print(proc.stderr, end="", file=sys.stderr)
+        return proc.returncode or 2
+    if not listing.is_file():
+        print(f"{stem}: DXC succeeded but produced no DXIL listing", file=sys.stderr)
+        return 3
+    text = listing.read_text(encoding="utf-8", errors="replace")
+    missing = [needle for needle in required if needle not in text]
+    if missing:
+        print(f"{stem}: AMD DXIL contract regression failed; missing:", file=sys.stderr)
+        for needle in missing:
+            print(f"  {needle}", file=sys.stderr)
+        return 4
+    print(f"PASS AMD DXIL: {stem}")
+    return 0
 
 
 def main() -> int:
@@ -24,37 +54,35 @@ def main() -> int:
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parents[1]
-    shader = root / "tools/clang/test/HLSLFileCheck/hlsl/amd/dxil-parity.hlsl"
+    tests = root / "tools/clang/test/HLSLFileCheck/hlsl/amd"
     dxc = str(Path(args.dxc).resolve())
+
+    cases = (
+        (
+            "core-parity",
+            tests / "dxil-parity.hlsl",
+            "cs_6_4",
+            (
+                "@dx.op.dot4AddPacked.i32(i32 163,",
+                "@dx.op.dot4AddPacked.i32(i32 164,",
+                "dx.op.waveReadLaneAt",
+                "dx.op.waveActiveOp",
+            ),
+        ),
+        (
+            "draw-parameters",
+            tests / "dxil-draw-parameters.hlsl",
+            "vs_6_8",
+            ("dx.op.startVertexLocation", "dx.op.startInstanceLocation"),
+        ),
+    )
 
     with tempfile.TemporaryDirectory(prefix="amd_dxil_ci_") as temp_name:
         temp = Path(temp_name)
-        blob = temp / "dxil-parity.dxil"
-        listing = temp / "dxil-parity.ll"
-        proc = subprocess.run(
-            [dxc, "-E", "main", "-T", "cs_6_4", str(shader),
-             "-Fo", str(blob), "-Fc", str(listing)],
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-        )
-        if proc.returncode != 0:
-            print(proc.stdout, end="")
-            print(proc.stderr, end="", file=sys.stderr)
-            return proc.returncode or 2
-        if not listing.is_file():
-            print("DXC succeeded but did not produce a DXIL listing", file=sys.stderr)
-            return 3
-        text = listing.read_text(encoding="utf-8", errors="replace")
-        missing = [needle for needle in REQUIRED if needle not in text]
-        if missing:
-            print("AMD DXIL contract regression failed; missing:", file=sys.stderr)
-            for needle in missing:
-                print(f"  {needle}", file=sys.stderr)
-            return 4
+        for stem, shader, target, required in cases:
+            result = compile_listing(dxc, shader, target, required, temp, stem)
+            if result != 0:
+                return result
 
     print("AMD DXIL backend contracts: PASS")
     return 0
