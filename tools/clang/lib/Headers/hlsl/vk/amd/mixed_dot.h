@@ -5,25 +5,10 @@
 #ifndef _HLSL_VK_AMD_MIXED_DOT_H_
 #define _HLSL_VK_AMD_MIXED_DOT_H_
 
-#include <vk/spirv.h>
+#include <vk/amd/bfloat16.h>
 
 namespace vk {
 namespace amd {
-
-// A genuine SPIR-V bfloat16 scalar and 2-lane vector. Integer values are used
-// only as bit-preserving transport at the HLSL boundary; arithmetic never sees
-// them as integer operands.
-using BFloat16 = vk::SpirvOpaqueType<
-    /* OpTypeFloat */ 22,
-    vk::Literal<vk::integral_constant<uint, 16> >,
-    vk::Literal<vk::integral_constant<uint, 0> > >; // BFloat16KHR encoding
-
-using BFloat16x2 = vk::SpirvOpaqueType<
-    /* OpTypeVector */ 23, BFloat16,
-    vk::Literal<vk::integral_constant<uint, 2> > >;
-
-template <typename To, typename From>
-[[vk::ext_instruction(/* OpBitcast */ 124)]] To Bitcast(From value);
 
 // SPV_VALVE_mixed_float_dot_product preserves the mixed-precision operation
 // directly instead of forcing Radeon to reconstruct it from unpacked scalar
