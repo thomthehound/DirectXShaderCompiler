@@ -38,16 +38,15 @@ Dot2F16AccF32(float16_t2 a, float16_t2 b, float accumulator);
 [[vk::ext_instruction(/* OpFDot2MixAcc16VALVE */ 6917)]] float16_t
 Dot2F16AccF16(float16_t2 a, float16_t2 b, float16_t accumulator);
 
-// The BF16 capability implicitly declares BFloat16TypeKHR, but the KHR
-// extension string remains explicit because the encoded OpTypeFloat depends on
-// SPV_KHR_bfloat16 as well as the mixed-dot instruction extension.
-[[vk::ext_extension("SPV_KHR_bfloat16")]]
+// The BF16 mixed-dot capability implicitly declares BFloat16TypeKHR. DXC's
+// capability visitor also sees the encoded OpTypeFloat and requests the KHR
+// BF16 extension, so these declarations only need to name the instruction's
+// VALVE extension.
 [[vk::ext_extension("SPV_VALVE_mixed_float_dot_product")]]
 [[vk::ext_capability(/* DotProductBFloat16AccVALVE */ 6914)]]
 [[vk::ext_instruction(/* OpFDot2MixAcc32VALVE */ 6916)]] float
 Dot2BF16AccF32Raw(BFloat16x2 a, BFloat16x2 b, float accumulator);
 
-[[vk::ext_extension("SPV_KHR_bfloat16")]]
 [[vk::ext_extension("SPV_VALVE_mixed_float_dot_product")]]
 [[vk::ext_capability(/* DotProductBFloat16AccVALVE */ 6914)]]
 [[vk::ext_instruction(/* OpFDot2MixAcc16VALVE */ 6917)]] BFloat16
