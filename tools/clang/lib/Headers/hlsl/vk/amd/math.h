@@ -26,6 +26,48 @@ SBfe(int base, uint offset, uint count);
 [[vk::ext_instruction(/* OpBitReverse */ 204)]] uint BitReverse(uint value);
 [[vk::ext_instruction(/* OpBitCount */ 205)]] uint BitCount(uint value);
 
+uint AbsDiffU32(uint a, uint b) { return a > b ? a - b : b - a; }
+
+// Exact semantic graphs for the scalar SAD family. These are intentionally
+// unrolled so an AMD Vulkan compiler sees the lane structure directly.
+uint SadU8(uint a, uint b, uint accum) {
+  uint d0 = AbsDiffU32(UBfe(a, 0u, 8u), UBfe(b, 0u, 8u));
+  uint d1 = AbsDiffU32(UBfe(a, 8u, 8u), UBfe(b, 8u, 8u));
+  uint d2 = AbsDiffU32(UBfe(a, 16u, 8u), UBfe(b, 16u, 8u));
+  uint d3 = AbsDiffU32(UBfe(a, 24u, 8u), UBfe(b, 24u, 8u));
+  return accum + d0 + d1 + d2 + d3;
+}
+
+uint SadHiU8(uint a, uint b, uint accum) {
+  return accum + ((SadU8(a, b, 0u)) << 16u);
+}
+
+uint SadU16(uint a, uint b, uint accum) {
+  uint d0 = AbsDiffU32(UBfe(a, 0u, 16u), UBfe(b, 0u, 16u));
+  uint d1 = AbsDiffU32(UBfe(a, 16u, 16u), UBfe(b, 16u, 16u));
+  return accum + d0 + d1;
+}
+
+uint SadU32(uint a, uint b, uint accum) {
+  return accum + AbsDiffU32(a, b);
+}
+
+uint MsadU8(uint source, uint reference, uint accum) {
+  uint s0 = UBfe(source, 0u, 8u);
+  uint s1 = UBfe(source, 8u, 8u);
+  uint s2 = UBfe(source, 16u, 8u);
+  uint s3 = UBfe(source, 24u, 8u);
+  uint r0 = UBfe(reference, 0u, 8u);
+  uint r1 = UBfe(reference, 8u, 8u);
+  uint r2 = UBfe(reference, 16u, 8u);
+  uint r3 = UBfe(reference, 24u, 8u);
+  uint d0 = r0 != 0u ? AbsDiffU32(s0, r0) : 0u;
+  uint d1 = r1 != 0u ? AbsDiffU32(s1, r1) : 0u;
+  uint d2 = r2 != 0u ? AbsDiffU32(s2, r2) : 0u;
+  uint d3 = r3 != 0u ? AbsDiffU32(s3, r3) : 0u;
+  return accum + d0 + d1 + d2 + d3;
+}
+
 // Canonical recovery candidates for AMD 24-bit multiply. The native operations
 // consume the low 24 bits of each input as unsigned or signed 24-bit integers.
 // Keeping the range restriction explicit gives the Vulkan backend the proof it
