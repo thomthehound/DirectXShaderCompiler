@@ -57,6 +57,7 @@ def main() -> int:
     tests = root / "tools/clang/test/HLSLFileCheck/hlsl/amd"
     dxc = str(Path(args.dxc).resolve())
 
+    i64_atomic = ("dx.op.atomicBinOp.i64", "dx.op.atomicCompareExchange.i64")
     cases = (
         (
             "core-parity",
@@ -75,18 +76,10 @@ def main() -> int:
             "vs_6_8",
             ("dx.op.startVertexLocation", "dx.op.startInstanceLocation"),
         ),
-        (
-            "atomic-u64-buffer",
-            tests / "dxil-atomic-u64.hlsl",
-            "cs_6_6",
-            ("dx.op.atomicBinOp.i64", "dx.op.atomicCompareExchange.i64"),
-        ),
-        (
-            "atomic-u64-image",
-            tests / "dxil-atomic-u64-image.hlsl",
-            "cs_6_6",
-            ("dx.op.atomicBinOp.i64", "dx.op.atomicCompareExchange.i64"),
-        ),
+        ("atomic-u64-structured", tests / "dxil-atomic-u64.hlsl", "cs_6_6", i64_atomic),
+        ("atomic-u64-byteaddress", tests / "dxil-atomic-u64-byteaddress.hlsl", "cs_6_6", i64_atomic),
+        ("atomic-u64-image-ops", tests / "dxil-atomic-u64-image.hlsl", "cs_6_6", i64_atomic),
+        ("atomic-u64-image-shapes", tests / "dxil-atomic-u64-image-shapes.hlsl", "cs_6_6", i64_atomic),
     )
 
     with tempfile.TemporaryDirectory(prefix="amd_dxil_ci_") as temp_name:
