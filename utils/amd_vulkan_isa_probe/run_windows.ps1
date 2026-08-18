@@ -15,13 +15,26 @@ if (-not $VulkanSdk) {
     throw "VULKAN_SDK is not set. Install/activate a Vulkan SDK or pass -VulkanSdk."
 }
 
+New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 cmake -G Ninja -S $ProbeRoot -B $BuildDir -DCMAKE_BUILD_TYPE=Release -DVulkan_ROOT="$VulkanSdk"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 cmake --build $BuildDir
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $DriverProbe = Join-Path $BuildDir "amd_vulkan_isa_probe.exe"
+$MathVerify = Join-Path $BuildDir "amd_vulkan_math_verify.exe"
 $SpirvDis = Join-Path $VulkanSdk "Bin/spirv-dis.exe"
+
+Write-Host "[AMD SPIR-V] Runtime math semantic verification"
+$SemanticDir = Join-Path $OutDir "semantic"
+New-Item -ItemType Directory -Force -Path $SemanticDir | Out-Null
+$SemanticSpv = Join-Path $SemanticDir "math_execute.spv"
+$SemanticShader = Join-Path $ProbeRoot "shaders/math_execute.hlsl"
+& $Dxc -spirv -T cs_6_2 -E main -fspv-target-env=vulkan1.2 -fspv-extension=AMD `
+    $SemanticShader -Fo $SemanticSpv
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $MathVerify $SemanticSpv
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "[AMD SPIR-V] SAD/MSAD native recovery"
 $SadArgs = @(
@@ -35,8 +48,7 @@ if ($Rga) { $SadArgs += @("--rga", $Rga) }
 if ($RgaTarget) { $SadArgs += @("--rga-target", $RgaTarget) }
 if ($RgaLive) { $SadArgs += "--rga-live" }
 python @SadArgs
-$SadStatus = $LASTEXITCODE
-if ($SadStatus -ne 0) { exit $SadStatus }
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "[AMD SPIR-V] Core math native recovery"
 $MathArgs = @(
