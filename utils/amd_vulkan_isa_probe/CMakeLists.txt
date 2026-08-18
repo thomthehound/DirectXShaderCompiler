@@ -8,11 +8,13 @@ if(WIN32 AND NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
 endif()
 
 add_executable(amd_vulkan_isa_probe main.cpp)
+add_executable(amd_vulkan_matrix_probe matrix_probe_main.cpp)
 add_executable(amd_vulkan_math_verify math_verify.cpp)
 add_executable(amd_vulkan_candidate_verify candidate_verify.cpp)
 
 foreach(target
     amd_vulkan_isa_probe
+    amd_vulkan_matrix_probe
     amd_vulkan_math_verify
     amd_vulkan_candidate_verify)
   target_compile_features(${target} PRIVATE cxx_std_23)
