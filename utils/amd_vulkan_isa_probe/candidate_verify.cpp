@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstdint>
-#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -27,11 +26,14 @@ std::vector<uint32_t> readSpirv(const char *path) {
   if (!file)
     throw std::runtime_error(std::string("cannot open SPIR-V: ") + path);
   const auto end = file.tellg();
-  if (end <= 0 || (end % 4) != 0)
+  if (end <= 0)
     throw std::runtime_error("invalid SPIR-V size");
-  std::vector<uint32_t> words(static_cast<size_t>(end) / 4);
+  const auto size = static_cast<std::streamsize>(end);
+  if ((size % 4) != 0)
+    throw std::runtime_error("SPIR-V size is not dword-aligned");
+  std::vector<uint32_t> words(static_cast<size_t>(size) / 4);
   file.seekg(0);
-  file.read(reinterpret_cast<char *>(words.data()), end);
+  file.read(reinterpret_cast<char *>(words.data()), size);
   if (!file)
     throw std::runtime_error("failed to read SPIR-V");
   return words;
