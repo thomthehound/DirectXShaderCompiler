@@ -47,7 +47,7 @@ void main(uint3 tid : SV_DispatchThreadID) {
   uint swizzleMasked =
       vk::amd::SwizzleInvocationsMasked(tid.x, uint3(31, 0, 0));
   uint written = vk::amd::WriteInvocation(tid.x, 0x12345678u, 0u);
-  uint mbcnt = vk::amd::Mbcnt(0xffffffffu);
+  uint mbcnt = vk::amd::Mbcnt(0xffffffffffffffffull);
 
   float3 cubeP = float3(1.0f, 0.25f, -0.5f);
   float cubeFace = vk::amd::CubeFaceIndex(cubeP);
