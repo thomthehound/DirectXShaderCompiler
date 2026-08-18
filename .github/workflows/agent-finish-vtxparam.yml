@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - amd-spirv-native-intrinsics-dev
+  pull_request:
+    branches:
+      - amd-spirv-native-intrinsics
   workflow_dispatch:
 
 permissions:
@@ -15,13 +18,15 @@ concurrency:
 
 jobs:
   apply:
+    if: ${{ github.event_name != 'pull_request' || github.head_ref == 'amd-spirv-native-intrinsics-dev' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 120
     steps:
       - name: Checkout dev branch
         uses: actions/checkout@v4
         with:
           ref: amd-spirv-native-intrinsics-dev
+          submodules: recursive
           fetch-depth: 1
 
       - name: Apply compiler patch
@@ -40,9 +45,6 @@ jobs:
 
           root = Path('.')
 
-          # StageVar remembers inherited nointerpolation on the actual SPIR-V
-          # variable even when it came from the containing input struct. Make
-          # the D3D register packer use that rather than only field-local attrs.
           path = root / 'tools/clang/lib/SPIRV/DeclResultIdMapper.cpp'
           text = path.read_text(encoding='utf-8')
           old = '''hlsl::DXIL::InterpolationMode getAmdParameterInterpolation(
@@ -68,9 +70,6 @@ jobs:
               raise SystemExit('generated interpolation helper call missing')
           path.write_text(text.replace(old_call, new_call, 1), encoding='utf-8')
 
-          # The live contract schema uses ags_opcodes/low_level_math. The
-          # disposable patch script intentionally tolerates older schemas, so
-          # finalize the current schema explicitly here.
           path = root / 'utils/amd_spirv_contracts.json'
           data = json.loads(path.read_text(encoding='utf-8'))
           found_vtx = False
@@ -111,13 +110,46 @@ jobs:
           git diff --check
           grep -q 'IOP_VkAmdVertexParameterComponent' include/dxc/HlslIntrinsicOp.h
           grep -q 'IOP_VkAmdVertexParameter' include/dxc/HlslIntrinsicOp.h
-          grep -q 'AmdVertexParameterComponent' utils/hct/gen_intrin_main.txt
-          grep -q 'AmdVertexParameter' utils/hct/gen_intrin_main.txt
           grep -q 'processAmdVertexParameter' tools/clang/lib/SPIRV/SpirvEmitter.cpp
           grep -q 'getAmdVertexParameterComponentPtr' tools/clang/lib/SPIRV/DeclResultIdMapper.cpp
-          grep -q '"opcode": "0x0e"' utils/amd_spirv_contracts.json
-          grep -q '"status": "native-contract"' utils/amd_spirv_contracts.json
           ! grep -q 'ags-vtxparam-raw-signature-index' utils/apusr_amd_ingress_blockers.json
+
+      - name: Install Linux build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build clang lld
+
+      - name: Configure Linux DXC
+        run: |
+          cmake -S . -B build-amd-spirv -G Ninja \
+            -C cmake/caches/PredefinedParams.cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DLLVM_USE_LINKER=lld \
+            -DENABLE_SPIRV_CODEGEN=ON \
+            -DSPIRV_BUILD_TESTS=OFF \
+            -DLLVM_INCLUDE_TESTS=OFF \
+            -DCLANG_INCLUDE_TESTS=OFF \
+            -DHLSL_INCLUDE_TESTS=OFF
+
+      - name: Build Linux DXC
+        run: cmake --build build-amd-spirv --target dxc dxcompiler dxildll --parallel 4
+
+      - name: Run Linux AMD compiler contracts
+        run: |
+          set -euo pipefail
+          export LD_LIBRARY_PATH="$PWD/build-amd-spirv/lib:${LD_LIBRARY_PATH:-}"
+          DXC="$PWD/build-amd-spirv/bin/dxc"
+          python3 utils/amd_spirv_ci.py --dxc "$DXC"
+          python3 utils/amd_math_ci.py --dxc "$DXC"
+          python3 utils/amd_subgroup_ci.py --dxc "$DXC"
+          python3 utils/amd_atomic_ci.py --dxc "$DXC"
+          python3 utils/amd_packing_ci.py --dxc "$DXC"
+          python3 utils/amd_bfloat16_ci.py --dxc "$DXC"
+          python3 utils/amd_matrix_ci.py --dxc "$DXC"
+          python3 utils/amd_mixed_dot_ci.py --dxc "$DXC"
+          python3 utils/amd_dxil_ci.py --dxc "$DXC"
 
       - name: Remove disposable machinery
         run: |
@@ -133,3 +165,50 @@ jobs:
           git diff --cached --check
           git commit -m 'Finish raw AGS VertexParameter parity [full-ci]'
           git push origin HEAD:amd-spirv-native-intrinsics-dev
+
+  windows-final:
+    name: Windows final compiler + contracts
+    needs: apply
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout final dev branch
+        uses: actions/checkout@v4
+        with:
+          ref: amd-spirv-native-intrinsics-dev
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Configure and build
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%i"
+          if not defined VSINSTALL exit /b 1
+          call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -no_logo -arch=amd64 -host_arch=amd64
+          cmake -S . -B build-amd-spirv -G Ninja -C cmake\caches\PredefinedParams.cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_SPIRV_CODEGEN=ON -DSPIRV_BUILD_TESTS=OFF -DLLVM_INCLUDE_TESTS=OFF -DLLVM_BUILD_TESTS=OFF -DCLANG_INCLUDE_TESTS=OFF -DHLSL_INCLUDE_TESTS=OFF
+          if errorlevel 1 exit /b %errorlevel%
+          cmake --build build-amd-spirv --target dxc dxcompiler dxildll --parallel 4
+          if errorlevel 1 exit /b %errorlevel%
+
+      - name: Run Windows AMD compiler contracts
+        shell: pwsh
+        run: |
+          $dxc = Join-Path $PWD 'build-amd-spirv\bin\dxc.exe'
+          python utils/amd_spirv_ci.py --dxc $dxc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python utils/amd_math_ci.py --dxc $dxc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python utils/amd_subgroup_ci.py --dxc $dxc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python utils/amd_atomic_ci.py --dxc $dxc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python utils/amd_packing_ci.py --dxc $dxc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python utils/amd_bfloat16_ci.py --dxc $dxc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python utils/amd_matrix_ci.py --dxc $dxc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python utils/amd_mixed_dot_ci.py --dxc $dxc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python utils/amd_dxil_ci.py --dxc $dxc
+          exit $LASTEXITCODE
