@@ -50,7 +50,7 @@ if ($RgaLive) { $SadArgs += "--rga-live" }
 python @SadArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-Write-Host "[AMD SPIR-V] Packed dot native recovery"
+Write-Host "[AMD SPIR-V] Packed integer dot native recovery"
 $DotArgs = @(
     (Join-Path $ProbeRoot "dot_probe.py"),
     "--dxc", $Dxc,
@@ -58,6 +58,16 @@ $DotArgs = @(
     "--out-dir", (Join-Path $OutDir "dot")
 )
 python @DotArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+Write-Host "[AMD SPIR-V] FP16 dot native recovery"
+$DotF16Args = @(
+    (Join-Path $ProbeRoot "dot_f16_probe.py"),
+    "--dxc", $Dxc,
+    "--driver-probe", $DriverProbe,
+    "--out-dir", (Join-Path $OutDir "dot-f16")
+)
+python @DotF16Args
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "[AMD SPIR-V] APUSR cross-lane native recovery"
