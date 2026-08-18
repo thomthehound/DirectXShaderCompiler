@@ -61,6 +61,16 @@ $DotArgs = @(
 python @DotArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+Write-Host "[AMD SPIR-V] Saturating dot direct/canonical A/B"
+$DotSatArgs = @(
+    (Join-Path $ProbeRoot "dot_saturation_probe.py"),
+    "--dxc", $Dxc,
+    "--driver-probe", $DriverProbe,
+    "--out-dir", (Join-Path $OutDir "dot-saturation")
+)
+python @DotSatArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 # dot_f16_probe.py intentionally remains a separate manual probe. It uses
 # first-class Float16 SPIR-V arithmetic, which requires a device-creation path
 # that explicitly enables shaderFloat16. The default qualification path instead
@@ -75,6 +85,46 @@ $CrosslaneArgs = @(
     "--out-dir", (Join-Path $OutDir "crosslane")
 )
 python @CrosslaneArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+Write-Host "[AMD SPIR-V] Wave reduction direct/butterfly A/B"
+$ReductionArgs = @(
+    (Join-Path $ProbeRoot "reduction_probe.py"),
+    "--dxc", $Dxc,
+    "--driver-probe", $DriverProbe,
+    "--out-dir", (Join-Path $OutDir "reduction")
+)
+python @ReductionArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+Write-Host "[AMD SPIR-V] Half conversion scalar/packed A/B"
+$ConversionArgs = @(
+    (Join-Path $ProbeRoot "conversion_probe.py"),
+    "--dxc", $Dxc,
+    "--driver-probe", $DriverProbe,
+    "--out-dir", (Join-Path $OutDir "half-conversion")
+)
+python @ConversionArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+Write-Host "[AMD SPIR-V] Transcendental spelling A/B"
+$TranscendentalArgs = @(
+    (Join-Path $ProbeRoot "transcendental_probe.py"),
+    "--dxc", $Dxc,
+    "--driver-probe", $DriverProbe,
+    "--out-dir", (Join-Path $OutDir "transcendental")
+)
+python @TranscendentalArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+Write-Host "[AMD SPIR-V] LDS scalar/vector access A/B"
+$LdsArgs = @(
+    (Join-Path $ProbeRoot "lds_probe.py"),
+    "--dxc", $Dxc,
+    "--driver-probe", $DriverProbe,
+    "--out-dir", (Join-Path $OutDir "lds")
+)
+python @LdsArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "[AMD SPIR-V] Empirical candidate zoo + runtime oracle"
