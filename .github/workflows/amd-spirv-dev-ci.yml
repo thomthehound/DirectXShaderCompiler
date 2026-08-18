@@ -49,6 +49,7 @@ jobs:
             utils/amd_vulkan_isa_probe/dot_f16_probe.py \
             utils/amd_vulkan_isa_probe/dot_saturation_probe.py \
             utils/amd_vulkan_isa_probe/mixed_dot_probe.py \
+            utils/amd_vulkan_isa_probe/bfloat16_conversion_probe.py \
             utils/amd_vulkan_isa_probe/crosslane_probe.py \
             utils/amd_vulkan_isa_probe/reduction_probe.py \
             utils/amd_vulkan_isa_probe/conversion_probe.py \
