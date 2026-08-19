@@ -10,9 +10,9 @@ pipeline and, when the driver exposes `VK_AMD_shader_info`, asks
 compiled shader's own disassembly.
 
 For the included HLSL `msad4` experiment, the exact one-instruction target is
-`v_mqsad_u32_u8`. The report labels that result **EXACT MQSAD**. Other
-SAD-family mnemonics are preserved in the report as specialized partial
-lowering, and ordinary arithmetic is not relabeled as native support.
+`v_mqsad_u32_u8`. The report labels that result **native-mqsad**. Other
+SAD-family mnemonics are preserved as specialized partial lowering, and
+ordinary arithmetic is not relabeled as native support.
 
 ## APUSR optical-flow SAD/QSad probes
 
@@ -27,7 +27,46 @@ the rolling four-window QSad construction, and QSad equivalence to `msad4`
 under FidelityFX's required nonzero-luma input contract. A zero-reference-byte
 negative control is included so the test also proves why that contract matters.
 
-To compare the real APUSR optical-flow arithmetic shapes, use:
+The installed-driver comparison is one run:
+
+```powershell
+python utils\amd_vulkan_isa_probe\apusr_qsad_probe.py `
+  --dxc <path-to-forked-dxc.exe> `
+  --spirv-dis <path-to-spirv-dis.exe> `
+  --driver-probe out\amd-vulkan-isa-probe\Release\amd_vulkan_isa_probe.exe
+```
+
+The probe defaults to `cs_6_6` and Vulkan 1.2, matching the relevant APUSR
+Vulkan frame-generation compiler contract. It runs three cases over the same
+hot 8-row x 2-QSad search shape:
+
+1. `apusr.qsad.msad4-scalar`: ordinary DXC `msad4` expansion.
+2. `apusr.qsad.msad4-udot`: the same `msad4` shader through the AMD-oriented
+   packed-UDOT lowering.
+3. `apusr.qsad.swar-udot`: APUSR's current Vulkan SWAR + packed-UDOT workaround.
+
+The generated `REPORT.md` and `report.json` distinguish `not-probed`, probe
+failure, successful ISA extraction with no SAD-family instruction, other
+SAD-family lowering, and exact `v_mqsad_u32_u8`. Stale output files are removed
+before each stage, so an earlier ISA dump cannot be mistaken for a new result.
+
+The installed-driver result determines the next compiler move:
+
+- MQSAD only from `msad4-scalar`: the ordinary graph preserves a Radeon pattern
+  that the packed-UDOT lowering destroys; fix our AMD lowering rather than the
+  shader.
+- MQSAD only from `msad4-udot`: the AMD packed-UDOT graph is the useful Vulkan
+  spelling; qualify and use it for the real optical-flow path.
+- MQSAD from `swar-udot`: APUSR's production workaround is already recoverable
+  below DXC; compare residual ISA and avoid replacing it merely for mnemonic
+  aesthetics.
+- MQSAD from more than one case: compare residual instruction counts and prefer
+  the simplest source/compiler contract that preserves the native instruction.
+- No SAD-family instruction from any case: current legal SPIR-V spellings are
+  not enough on the installed Radeon compiler. The real fix then requires a
+  stronger compiler/backend ingress, not another software SAD expansion.
+
+RGA can be added to the same run as secondary evidence:
 
 ```powershell
 python utils\amd_vulkan_isa_probe\apusr_qsad_probe.py `
@@ -38,14 +77,8 @@ python utils\amd_vulkan_isa_probe\apusr_qsad_probe.py `
   --rga-target gfx1151
 ```
 
-The probe runs three cases over the same hot 8-row x 2-QSad search shape. The
-same 16-call `msad4` shader is compiled once through DXC's ordinary scalar
-expansion and once through the AMD-oriented packed-UDOT expansion; the third
-case is APUSR's current Vulkan SWAR path, which expands the search into 64 packed
-SAD calculations followed by packed UDOT. This isolates whether packed UDOT
-helps or destroys Radeon SAD-family recognition before comparing either form
-with the production workaround. The report keeps SPIR-V, installed-driver ISA,
-RGA live ISA, and RGA offline evidence separate.
+Installed-driver ISA remains authoritative. RGA offline is useful target
+evidence, not a substitute for the driver that actually runs APUSR.
 
 ## Build on Windows
 
