@@ -1,6 +1,8 @@
 // RUN: %dxc -T vs_6_8 -E main -fcgl -spirv -fspv-target-env=vulkan1.1 %s | FileCheck %s
 
-// CHECK: OpExtension "SPV_KHR_shader_draw_parameters"
+// Vulkan 1.1 targets SPIR-V 1.3, where shader draw parameters are core. The
+// capability and builtins are the contract; an extension declaration is not.
+// CHECK: OpCapability DrawParameters
 // CHECK: BuiltIn BaseVertex
 // CHECK: BuiltIn BaseInstance
 // CHECK: BuiltIn DrawIndex
