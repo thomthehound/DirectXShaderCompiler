@@ -43,6 +43,29 @@ def fail(case: Case, proc: subprocess.CompletedProcess[str], reason: str) -> Non
     )
 
 
+def check_case(dxc: str, tests: Path, case: Case) -> bool:
+    try:
+        common = ("-T", case.target, "-E", "main", "-fcgl", "-spirv")
+        proc = run([dxc, *common, *case.flags, str(tests / case.shader)])
+        if proc.returncode != 0:
+            fail(case, proc, "compilation failed")
+        for pattern in case.required:
+            if re.search(pattern, proc.stdout, re.MULTILINE) is None:
+                fail(case, proc, f"missing SPIR-V pattern: {pattern}")
+        for pattern in case.forbidden:
+            if re.search(pattern, proc.stdout, re.MULTILINE) is not None:
+                fail(case, proc, f"forbidden SPIR-V pattern: {pattern}")
+        for pattern, expected in case.counts:
+            actual = len(re.findall(pattern, proc.stdout, re.MULTILINE))
+            if actual != expected:
+                fail(case, proc, f"pattern {pattern}: got {actual}, expected {expected}")
+        print(f"PASS AMD math: {case.name}")
+        return True
+    except RuntimeError as error:
+        print(f"FAIL {error}", file=sys.stderr)
+        return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dxc", required=True)
@@ -149,30 +172,17 @@ def main() -> int:
         ),
     )
 
+    failed = False
     for case in cases:
-        common = ("-T", case.target, "-E", "main", "-fcgl", "-spirv")
-        proc = run([dxc, *common, *case.flags, str(tests / case.shader)])
-        if proc.returncode != 0:
-            fail(case, proc, "compilation failed")
-        for pattern in case.required:
-            if re.search(pattern, proc.stdout, re.MULTILINE) is None:
-                fail(case, proc, f"missing SPIR-V pattern: {pattern}")
-        for pattern in case.forbidden:
-            if re.search(pattern, proc.stdout, re.MULTILINE) is not None:
-                fail(case, proc, f"forbidden SPIR-V pattern: {pattern}")
-        for pattern, expected in case.counts:
-            actual = len(re.findall(pattern, proc.stdout, re.MULTILINE))
-            if actual != expected:
-                fail(case, proc, f"pattern {pattern}: got {actual}, expected {expected}")
-        print(f"PASS AMD math: {case.name}")
+        if not check_case(dxc, tests, case):
+            failed = True
+
+    if failed:
+        return 1
 
     print("AMD Vulkan low-level math regressions: PASS")
     return 0
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except RuntimeError as error:
-        print(f"FAIL {error}", file=sys.stderr)
-        raise SystemExit(1)
+    raise SystemExit(main())
