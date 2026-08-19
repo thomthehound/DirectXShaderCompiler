@@ -4,7 +4,12 @@ on:
   push:
     branches:
       - amd-raw-buffer-vectorization-impl
+    paths-ignore:
+      - '.github/workflows/raw-buffer-vectorization-ci.yml'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 concurrency:
   group: raw-buffer-vectorization-${{ github.ref }}
@@ -21,6 +26,263 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 1
+
+      # TEMPORARY: the connected GitHub tool can replace whole files but cannot
+      # apply narrow patches to the large DXC translation units. Apply the exact
+      # reviewed edits in the runner, commit them to this feature branch, and
+      # validate that same working tree. Remove this step after the fix lands.
+      - name: Apply exact raw-buffer compiler fix
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+
+          def replace_exact(path_name: str, old: str, new: str) -> None:
+              path = Path(path_name)
+              data = path.read_bytes()
+              eol = b"\r\n" if b"\r\n" in data else b"\n"
+              old_bytes = old.replace("\n", eol.decode()).encode()
+              new_bytes = new.replace("\n", eol.decode()).encode()
+              old_count = data.count(old_bytes)
+              new_count = data.count(new_bytes)
+              if old_count == 1:
+                  path.write_bytes(data.replace(old_bytes, new_bytes, 1))
+                  print(f"patched {path_name}")
+              elif old_count == 0 and new_count == 1:
+                  print(f"already patched {path_name}")
+              else:
+                  raise RuntimeError(
+                      f"{path_name}: expected one old block or one new block, "
+                      f"found old={old_count} new={new_count}"
+                  )
+
+          def replace_all_exact(path_name: str, old: str, new: str, expected: int) -> None:
+              path = Path(path_name)
+              data = path.read_bytes()
+              eol = b"\r\n" if b"\r\n" in data else b"\n"
+              old_bytes = old.replace("\n", eol.decode()).encode()
+              new_bytes = new.replace("\n", eol.decode()).encode()
+              old_count = data.count(old_bytes)
+              new_count = data.count(new_bytes)
+              if old_count == expected:
+                  path.write_bytes(data.replace(old_bytes, new_bytes))
+                  print(f"patched {path_name}: {expected} replacements")
+              elif old_count == 0 and new_count == expected:
+                  print(f"already patched {path_name}: {expected} replacements")
+              else:
+                  raise RuntimeError(
+                      f"{path_name}: expected old={expected} or new={expected}, "
+                      f"found old={old_count} new={new_count}"
+                  )
+
+          replace_exact(
+              "tools/clang/lib/SPIRV/DeclResultIdMapper.cpp",
+              '''  if (useUntypedRawBuffer) {
+            const auto *pointerType =
+                spvContext.getUntypedPointerKHRType(storageClass);
+            const auto *dataType =
+                spvContext.getByteAddressBufferType(isRWByteAddressBuffer(type));
+            auto *untypedVar = spvBuilder.createUntypedVariableKHR(
+                pointerType, storageClass, name, loc, dataType);
+          ''',
+              '''  if (useUntypedRawBuffer) {
+            // Vulkan raw buffers are storage buffers. Keep the legacy typed
+            // descriptor representation unchanged; only the opt-in untyped path
+            // uses the modern StorageBuffer storage class.
+            const auto untypedStorageClass = spv::StorageClass::StorageBuffer;
+            const auto *pointerType =
+                spvContext.getUntypedPointerKHRType(untypedStorageClass);
+            const auto *dataType =
+                spvContext.getByteAddressBufferType(isRWByteAddressBuffer(type));
+            auto *untypedVar = spvBuilder.createUntypedVariableKHR(
+                pointerType, untypedStorageClass, name, loc, dataType);
+          ''',
+          )
+
+          replace_exact(
+              "tools/clang/lib/SPIRV/LowerTypeVisitor.cpp",
+              '''  // ByteAddressBuffer and RWByteAddressBuffer types. The concrete descriptor
+            // Data Type remains the existing raw-buffer block. Resource *values* use an
+            // untyped Uniform pointer only when the extension was explicitly requested;
+            // this naturally covers local aliases, function parameters/returns, and
+            // resource fields without changing typed resource-array element layout.
+            if (name == "ByteAddressBuffer" || name == "RWByteAddressBuffer" ||
+                name == "RasterizerOrderedByteAddressBuffer") {
+              const auto *bufferType = spvContext.getByteAddressBufferType(
+                  /*isRW*/ name != "ByteAddressBuffer");
+              if (rule == SpirvLayoutRule::Void) {
+                if (!getCodeGenOptions().allowedExtensions.empty() &&
+                    spvBuilder.isExtensionEnabled(Extension::KHR_untyped_pointers))
+                  return spvContext.getUntypedPointerKHRType(spv::StorageClass::Uniform);
+                return spvContext.getPointerType(bufferType, spv::StorageClass::Uniform);
+              }
+              return bufferType;
+            }
+          ''',
+              '''  // ByteAddressBuffer and RWByteAddressBuffer types. The concrete descriptor
+            // Data Type remains the existing raw-buffer block. Resource *values* use an
+            // untyped StorageBuffer pointer only when the extension was explicitly
+            // requested; this naturally covers local aliases, function parameters/returns,
+            // and resource fields without changing typed resource-array element layout.
+            if (name == "ByteAddressBuffer" || name == "RWByteAddressBuffer" ||
+                name == "RasterizerOrderedByteAddressBuffer") {
+              const auto *bufferType = spvContext.getByteAddressBufferType(
+                  /*isRW*/ name != "ByteAddressBuffer");
+              if (rule == SpirvLayoutRule::Void) {
+                if (!getCodeGenOptions().allowedExtensions.empty() &&
+                    spvBuilder.isExtensionEnabled(Extension::KHR_untyped_pointers))
+                  return spvContext.getUntypedPointerKHRType(
+                      spv::StorageClass::StorageBuffer);
+                return spvContext.getPointerType(bufferType, spv::StorageClass::Uniform);
+              }
+              return bufferType;
+            }
+          ''',
+          )
+
+          replace_exact(
+              "tools/clang/lib/SPIRV/SpirvBuilder.cpp",
+              '''  if (pointer->containsAliasComponent() &&
+                isAKindOfStructuredOrByteBuffer(resultType)) {
+              instruction->setStorageClass(spv::StorageClass::Uniform);
+              // Now it is a pointer to the global resource, which is lvalue.
+          ''',
+              '''  if (pointer->containsAliasComponent() &&
+                isAKindOfStructuredOrByteBuffer(resultType)) {
+              const bool useUntypedRawBuffer =
+                  !spirvOptions.allowedExtensions.empty() &&
+                  featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers) &&
+                  (isByteAddressBuffer(resultType) || isRWByteAddressBuffer(resultType));
+              instruction->setStorageClass(useUntypedRawBuffer
+                                               ? spv::StorageClass::StorageBuffer
+                                               : spv::StorageClass::Uniform);
+              // Now it is a pointer to the global resource, which is lvalue.
+          ''',
+          )
+
+          replace_exact(
+              "tools/clang/lib/SPIRV/SpirvBuilder.cpp",
+              '''  if (context.hasLoweredType(pointer)) {
+              // preserve distinct node payload array types
+              auto *ptrType = dyn_cast<SpirvPointerType>(pointer->getResultType());
+              instruction->setResultType(ptrType->getPointeeType());
+              context.addToInstructionsWithLoweredType(instruction);
+            }
+          ''',
+              '''  if (context.hasLoweredType(pointer)) {
+              // Preserve distinct node payload array types. Untyped pointers have
+              // no pointee type; their load result is lowered from the AST result
+              // type by the normal type-lowering pass.
+              if (auto *ptrType =
+                      dyn_cast<SpirvPointerType>(pointer->getResultType())) {
+                instruction->setResultType(ptrType->getPointeeType());
+                context.addToInstructionsWithLoweredType(instruction);
+              } else {
+                assert(isa<UntypedPointerKHRType>(pointer->getResultType()) &&
+                       "lowered pointer must be typed or untyped");
+              }
+            }
+          ''',
+          )
+
+          replace_exact(
+              "tools/clang/lib/SPIRV/SpirvBuilder.cpp",
+              '''  if (func->constainsAliasComponent() &&
+                isAKindOfStructuredOrByteBuffer(returnType)) {
+              instruction->setStorageClass(spv::StorageClass::Uniform);
+              // Now it is a pointer to the global resource, which is lvalue.
+          ''',
+              '''  if (func->constainsAliasComponent() &&
+                isAKindOfStructuredOrByteBuffer(returnType)) {
+              const bool useUntypedRawBuffer =
+                  !spirvOptions.allowedExtensions.empty() &&
+                  featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers) &&
+                  (isByteAddressBuffer(returnType) || isRWByteAddressBuffer(returnType));
+              instruction->setStorageClass(useUntypedRawBuffer
+                                               ? spv::StorageClass::StorageBuffer
+                                               : spv::StorageClass::Uniform);
+              // Now it is a pointer to the global resource, which is lvalue.
+          ''',
+          )
+
+          probe = "utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py"
+          replace_exact(
+              probe,
+              '''    else:
+                ok = (
+                    not untyped
+                    and c["OpCompositeConstruct"] >= 1
+                    and c["OpCompositeExtract"] >= 4
+                )
+                case.classification = "typed-alias-compatible" if ok else "legacy-alias-changed"
+          ''',
+              '''    else:
+                # The optimized legacy Load4/Store4 shape is four typed scalar
+                # loads and stores; composite pack/unpack nodes need not survive.
+                ok = not untyped and c["OpLoad"] >= 4 and c["OpStore"] >= 4
+                case.classification = "typed-alias-compatible" if ok else "legacy-alias-changed"
+          ''',
+          )
+          replace_exact(
+              probe,
+              '''        ("legacy-alias", "alias"): """
+            %a=OpLoad %u %p
+            %b=OpLoad %u %p
+            %c=OpLoad %u %p
+            %d=OpLoad %u %p
+            %v=OpCompositeConstruct %v4 %a %b %c %d
+            %x0=OpCompositeExtract %u %v 0
+            %x1=OpCompositeExtract %u %v 1
+            %x2=OpCompositeExtract %u %v 2
+            %x3=OpCompositeExtract %u %v 3
+            """,
+          ''',
+              '''        ("legacy-alias", "alias"): """
+            %a=OpLoad %u %p
+            %b=OpLoad %u %p
+            %c=OpLoad %u %p
+            %d=OpLoad %u %p
+            OpStore %p %a
+            OpStore %p %b
+            OpStore %p %c
+            OpStore %p %d
+            """,
+          ''',
+          )
+          replace_all_exact(
+              probe,
+              "OpUntypedVariableKHR %up Uniform %Raw",
+              "OpUntypedVariableKHR %up StorageBuffer %Raw",
+              7,
+          )
+          replace_all_exact(
+              probe,
+              "%up=OpTypeUntypedPointerKHR Uniform",
+              "%up=OpTypeUntypedPointerKHR StorageBuffer",
+              2,
+          )
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git diff -- tools/clang/lib/SPIRV/DeclResultIdMapper.cpp tools/clang/lib/SPIRV/LowerTypeVisitor.cpp tools/clang/lib/SPIRV/SpirvBuilder.cpp utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tools/clang/lib/SPIRV/DeclResultIdMapper.cpp tools/clang/lib/SPIRV/LowerTypeVisitor.cpp tools/clang/lib/SPIRV/SpirvBuilder.cpp utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py
+          if (Test-Path -LiteralPath '.github/rawbuf-patch-trigger') {
+            git rm .github/rawbuf-patch-trigger
+          }
+          git diff --cached --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "Fix untyped raw-buffer storage and aliases"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            git push origin HEAD:amd-raw-buffer-vectorization-impl
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
 
       - name: Probe self-test
         shell: pwsh
