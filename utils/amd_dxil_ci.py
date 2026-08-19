@@ -32,6 +32,7 @@ def compile_listing(
         check=False,
     )
     if proc.returncode != 0:
+        print(f"{stem}: DXIL compilation failed", file=sys.stderr)
         print(proc.stdout, end="")
         print(proc.stderr, end="", file=sys.stderr)
         return proc.returncode or 2
@@ -92,6 +93,7 @@ def main() -> int:
         ("atomic-u64-image-shapes", tests / "dxil-atomic-u64-image-shapes.hlsl", "cs_6_6", i64_atomic, ()),
     )
 
+    failed = False
     with tempfile.TemporaryDirectory(prefix="amd_dxil_ci_") as temp_name:
         temp = Path(temp_name)
         for stem, shader, target, required, extra_flags in cases:
@@ -99,7 +101,10 @@ def main() -> int:
                 dxc, shader, target, required, temp, stem, extra_flags
             )
             if result != 0:
-                return result
+                failed = True
+
+    if failed:
+        return 1
 
     print("AMD DXIL backend contracts: PASS")
     return 0
