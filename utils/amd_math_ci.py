@@ -55,6 +55,7 @@ def main() -> int:
     )
     dxc = str(Path(args.dxc).resolve())
 
+    selection = r"\b(?:OpSelect|OpSelectionMerge)\b"
     cases = (
         Case(
             "exact core math",
@@ -102,7 +103,7 @@ def main() -> int:
         Case(
             "scalar SAD canonical structure",
             "amd.math.sad-candidates.hlsl",
-            required=(r"\bOpBitFieldUExtract\b", r"\bOpSelect\b"),
+            required=(r"\bOpBitFieldUExtract\b", selection),
             forbidden=(r"\bSAbs\b",),
         ),
         Case(
@@ -110,7 +111,7 @@ def main() -> int:
             "amd.math.qsad-candidates.hlsl",
             required=(
                 r"OpTypeInt 64 0", r"\bOpShiftRightLogical\b",
-                r"\bOpBitFieldUExtract\b", r"\bOpSelect\b",
+                r"\bOpBitFieldUExtract\b", selection,
                 r"\bOpBitwiseOr\b", r"\bOpShiftLeftLogical\b",
             ),
         ),
