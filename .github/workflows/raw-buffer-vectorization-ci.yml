@@ -4,12 +4,7 @@ on:
   push:
     branches:
       - amd-raw-buffer-vectorization-impl
-    paths-ignore:
-      - '.github/workflows/raw-buffer-vectorization-ci.yml'
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 concurrency:
   group: raw-buffer-vectorization-${{ github.ref }}
@@ -27,188 +22,11 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      # TEMPORARY: the connected GitHub tool can replace whole files but cannot
-      # apply narrow patches to the large DXC translation units. This step makes
-      # only the reviewed source edits, commits them to this feature branch, and
-      # then the normal focused compiler contract validates the resulting tree.
-      - name: Apply exact raw-buffer compiler fix
+      - name: Probe self-test
         shell: pwsh
         run: |
-          @'
-          from pathlib import Path
-          import re
-
-          def load(path_name: str):
-              path = Path(path_name)
-              raw = path.read_bytes()
-              eol = "\r\n" if b"\r\n" in raw else "\n"
-              return path, eol, raw.decode("utf-8").replace("\r\n", "\n")
-
-          def save(path: Path, eol: str, text: str) -> None:
-              path.write_bytes(text.replace("\n", eol).encode("utf-8"))
-
-          def replace_one(path_name: str, old: str, new: str) -> None:
-              path, eol, text = load(path_name)
-              old_count = text.count(old)
-              new_count = text.count(new)
-              if old_count == 1:
-                  text = text.replace(old, new, 1)
-              elif old_count == 0 and new_count == 1:
-                  print(f"already patched {path_name}: {new[:72]!r}")
-                  return
-              else:
-                  raise RuntimeError(
-                      f"{path_name}: expected old=1 or new=1; "
-                      f"found old={old_count} new={new_count} for {old[:72]!r}"
-                  )
-              save(path, eol, text)
-              print(f"patched {path_name}: {old[:72]!r}")
-
-          def regex_one(path_name: str, pattern: str, replacement: str, marker: str) -> None:
-              path, eol, text = load(path_name)
-              if marker in text:
-                  print(f"already patched {path_name}: {marker}")
-                  return
-              text, count = re.subn(pattern, replacement, text, count=1, flags=re.M)
-              if count != 1:
-                  raise RuntimeError(
-                      f"{path_name}: regex expected 1 match, found {count}: {pattern[:96]!r}"
-                  )
-              save(path, eol, text)
-              print(f"patched {path_name}: {marker}")
-
-          # Global untyped raw descriptors: keep the legacy typed path unchanged,
-          # but make the opt-in untyped variable use Vulkan StorageBuffer.
-          replace_one(
-              "tools/clang/lib/SPIRV/DeclResultIdMapper.cpp",
-              "spvContext.getUntypedPointerKHRType(storageClass);",
-              "spvContext.getUntypedPointerKHRType(spv::StorageClass::StorageBuffer);",
-          )
-          replace_one(
-              "tools/clang/lib/SPIRV/DeclResultIdMapper.cpp",
-              "pointerType, storageClass, name, loc, dataType);",
-              "pointerType, spv::StorageClass::StorageBuffer, name, loc, dataType);",
-          )
-
-          # Local/function raw resource values must agree with that descriptor
-          # storage class. The legacy typed alias remains Uniform.
-          replace_one(
-              "tools/clang/lib/SPIRV/LowerTypeVisitor.cpp",
-              "// untyped Uniform pointer only when the extension was explicitly requested;",
-              "// untyped StorageBuffer pointer only when the extension was explicitly requested;",
-          )
-          replace_one(
-              "tools/clang/lib/SPIRV/LowerTypeVisitor.cpp",
-              "return spvContext.getUntypedPointerKHRType(spv::StorageClass::Uniform);",
-              "return spvContext.getUntypedPointerKHRType(spv::StorageClass::StorageBuffer);",
-          )
-
-          builder = "tools/clang/lib/SPIRV/SpirvBuilder.cpp"
-          regex_one(
-              builder,
-              r"  if \(pointer->containsAliasComponent\(\) &&\n"
-              r"      isAKindOfStructuredOrByteBuffer\(resultType\)\) \{\n"
-              r"    instruction->setStorageClass\(spv::StorageClass::Uniform\);",
-              "  if (pointer->containsAliasComponent() &&\n"
-              "      isAKindOfStructuredOrByteBuffer(resultType)) {\n"
-              "    // Untyped raw-buffer aliases point into StorageBuffer descriptors.\n"
-              "    const bool useUntypedRawBuffer =\n"
-              "        !spirvOptions.allowedExtensions.empty() &&\n"
-              "        featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers) &&\n"
-              "        (isByteAddressBuffer(resultType) || isRWByteAddressBuffer(resultType));\n"
-              "    instruction->setStorageClass(useUntypedRawBuffer\n"
-              "                                     ? spv::StorageClass::StorageBuffer\n"
-              "                                     : spv::StorageClass::Uniform);",
-              "Untyped raw-buffer aliases point into StorageBuffer descriptors.",
-          )
-          regex_one(
-              builder,
-              r"  if \(context.hasLoweredType\(pointer\)\) \{\n"
-              r"    // preserve distinct node payload array types\n"
-              r"    auto \*ptrType = dyn_cast<SpirvPointerType>\(pointer->getResultType\(\)\);\n"
-              r"    instruction->setResultType\(ptrType->getPointeeType\(\)\);\n"
-              r"    context.addToInstructionsWithLoweredType\(instruction\);\n"
-              r"  \}",
-              "  if (context.hasLoweredType(pointer)) {\n"
-              "    // Preserve distinct node payload array types. Untyped pointers have\n"
-              "    // no pointee type, so leave their load result for normal AST lowering.\n"
-              "    if (auto *ptrType =\n"
-              "            dyn_cast<SpirvPointerType>(pointer->getResultType())) {\n"
-              "      instruction->setResultType(ptrType->getPointeeType());\n"
-              "      context.addToInstructionsWithLoweredType(instruction);\n"
-              "    } else {\n"
-              "      assert(isa<UntypedPointerKHRType>(pointer->getResultType()) &&\n"
-              "             \"lowered pointer must be typed or untyped\");\n"
-              "    }\n"
-              "  }",
-              "Untyped pointers have",
-          )
-          regex_one(
-              builder,
-              r"  if \(func->constainsAliasComponent\(\) &&\n"
-              r"      isAKindOfStructuredOrByteBuffer\(returnType\)\) \{\n"
-              r"    instruction->setStorageClass\(spv::StorageClass::Uniform\);",
-              "  if (func->constainsAliasComponent() &&\n"
-              "      isAKindOfStructuredOrByteBuffer(returnType)) {\n"
-              "    // Untyped raw-buffer function results point into StorageBuffer descriptors.\n"
-              "    const bool useUntypedRawBuffer =\n"
-              "        !spirvOptions.allowedExtensions.empty() &&\n"
-              "        featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers) &&\n"
-              "        (isByteAddressBuffer(returnType) || isRWByteAddressBuffer(returnType));\n"
-              "    instruction->setStorageClass(useUntypedRawBuffer\n"
-              "                                     ? spv::StorageClass::StorageBuffer\n"
-              "                                     : spv::StorageClass::Uniform);",
-              "Untyped raw-buffer function results point into StorageBuffer descriptors.",
-          )
-
-          # Legacy alias compatibility is about behavior, not one optimizer IR
-          # spelling: accept either scalarized memory ops or surviving composites.
-          probe = "utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py"
-          regex_one(
-              probe,
-              r"    else:\n"
-              r"        ok = \(\n"
-              r"            not untyped\n"
-              r"            and c\[\"OpCompositeConstruct\"\] >= 1\n"
-              r"            and c\[\"OpCompositeExtract\"\] >= 4\n"
-              r"        \)\n"
-              r"        case.classification = \"typed-alias-compatible\" if ok else \"legacy-alias-changed\"",
-              "    else:\n"
-              "        # Legacy aliases may remain composite or scalarize after optimization.\n"
-              "        scalarized = c[\"OpLoad\"] >= 4 and c[\"OpStore\"] >= 4\n"
-              "        composite = (\n"
-              "            c[\"OpCompositeConstruct\"] >= 1\n"
-              "            and c[\"OpCompositeExtract\"] >= 4\n"
-              "        )\n"
-              "        ok = not untyped and (scalarized or composite)\n"
-              "        case.classification = \"typed-alias-compatible\" if ok else \"legacy-alias-changed\"",
-              "Legacy aliases may remain composite or scalarize after optimization.",
-          )
-          '@ | python -
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
           python utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py --self-test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          git diff --check
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          git diff -- tools/clang/lib/SPIRV/DeclResultIdMapper.cpp tools/clang/lib/SPIRV/LowerTypeVisitor.cpp tools/clang/lib/SPIRV/SpirvBuilder.cpp utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add tools/clang/lib/SPIRV/DeclResultIdMapper.cpp tools/clang/lib/SPIRV/LowerTypeVisitor.cpp tools/clang/lib/SPIRV/SpirvBuilder.cpp utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py
-          if (Test-Path -LiteralPath '.github/rawbuf-patch-trigger') {
-            git rm .github/rawbuf-patch-trigger
-          }
-          git diff --cached --check
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          git diff --cached --quiet
-          if ($LASTEXITCODE -ne 0) {
-            git commit -m "Fix untyped raw-buffer storage and aliases"
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            git push origin HEAD:amd-raw-buffer-vectorization-impl
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
 
       - name: Configure
         shell: cmd
@@ -219,6 +37,9 @@ jobs:
           cmake -S . -B build-rawbuf -G Ninja -C cmake\caches\PredefinedParams.cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_SPIRV_CODEGEN=ON -DSPIRV_BUILD_TESTS=OFF -DSPIRV_SKIP_EXECUTABLES=OFF -DLLVM_INCLUDE_TESTS=OFF -DLLVM_BUILD_TESTS=OFF -DCLANG_INCLUDE_TESTS=OFF -DHLSL_INCLUDE_TESTS=OFF
           if errorlevel 1 exit /b %errorlevel%
 
+      # Compile the modified backend and the exact SPIRV-Tools utilities used by
+      # the contract before the full compiler so cheap source/tooling failures
+      # happen before the expensive complete DXC build.
       - name: Build SPIR-V library and validation tools first
         shell: cmd
         run: |
@@ -251,7 +72,18 @@ jobs:
           $spirv = "$env:RUNNER_TEMP\rawbuf_dxc_smoke.spv"
           & $dxc -T cs_6_6 -E main -Fo $dxil $source
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $dxc -spirv -fspv-target-env=vulkan1.2 -T cs_6_6 -E main -Fo $spirv $source
+          $spirvArgs = @(
+            '-spirv'
+            '-fspv-target-env=vulkan1.2'
+            '-T'
+            'cs_6_6'
+            '-E'
+            'main'
+            '-Fo'
+            $spirv
+            $source
+          )
+          & $dxc @spirvArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ((Get-Item -LiteralPath $dxil).Length -eq 0) { throw 'DXIL smoke output is empty' }
           if ((Get-Item -LiteralPath $spirv).Length -eq 0) { throw 'SPIR-V smoke output is empty' }
@@ -265,12 +97,20 @@ jobs:
           $spirvVal = Get-ChildItem -LiteralPath $buildRoot -Filter 'spirv-val.exe' -File -Recurse | Select-Object -First 1 -ExpandProperty FullName
           if (-not $spirvDis) { throw 'spirv-dis.exe was not produced by the configured SPIRV-Tools build' }
           if (-not $spirvVal) { throw 'spirv-val.exe was not produced by the configured SPIRV-Tools build' }
-          & python utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py `
-            --dxc $dxc `
-            --spirv-dis $spirvDis `
-            --spirv-val $spirvVal `
-            --target-env vulkan1.2 `
-            --require-untyped-contract `
-            --require-validation `
-            --out-dir (Join-Path $env:RUNNER_TEMP 'raw-buffer-vector-probe')
+          $probeArgs = @(
+            'utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py'
+            '--dxc'
+            $dxc
+            '--spirv-dis'
+            $spirvDis
+            '--spirv-val'
+            $spirvVal
+            '--target-env'
+            'vulkan1.2'
+            '--require-untyped-contract'
+            '--require-validation'
+            '--out-dir'
+            (Join-Path $env:RUNNER_TEMP 'raw-buffer-vector-probe')
+          )
+          & python @probeArgs
           exit $LASTEXITCODE
