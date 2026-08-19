@@ -170,7 +170,7 @@ bool LowerTypeVisitor::visitInstruction(SpirvInstruction *instr) {
     break;
   }
   case spv::Op::OpUntypedVariableKHR: {
-    auto *var = cast<SpirvVariableLike>(instr);
+    auto *var = cast<SpirvUntypedVariableKHR>(instr);
     if (var->hasBinding() && var->hasAstResultType() &&
         var->getHlslUserType().empty())
       var->setHlslUserType(getHlslResourceTypeName(var->getAstResultType()));
