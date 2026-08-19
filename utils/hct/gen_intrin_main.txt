@@ -419,6 +419,8 @@ void [[min_sm=6.10]] __builtin_LinAlg_VectorAccumulateToDescriptor(in RWByteAddr
 namespace VkIntrinsics {
 
 u64 [[]] ReadClock(in uint scope);
+float [[rn]] AmdVertexParameterComponent(in uint vertexIdx, in uint parameterIdx, in uint componentIdx);
+float<4> [[rn]] AmdVertexParameter(in uint vertexIdx, in uint parameterIdx);
 $funcT [[ro]] RawBufferLoad(in u64 addr);
 $funcT [[ro]] RawBufferLoad(in u64 addr, in uint alignment);
 void [[]] RawBufferStore(in u64 addr, in $funcT value);

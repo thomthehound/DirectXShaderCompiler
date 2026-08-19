@@ -886,6 +886,17 @@ void SpirvBuilder::createReturnValue(SpirvInstruction *value,
   insertPoint->addInstruction(new (context) SpirvReturn(loc, value, range));
 }
 
+SpirvInstruction *SpirvBuilder::createExtInst(
+    QualType resultType, llvm::StringRef setName, uint32_t instId,
+    llvm::ArrayRef<SpirvInstruction *> operands, SourceLocation loc,
+    SourceRange range) {
+  assert(insertPoint && "null insert point");
+  auto *extInst = new (context) SpirvExtInst(
+      resultType, loc, getExtInstSet(setName), instId, operands, range);
+  insertPoint->addInstruction(extInst);
+  return extInst;
+}
+
 SpirvInstruction *
 SpirvBuilder::createGLSLExtInst(QualType resultType, GLSLstd450 inst,
                                 llvm::ArrayRef<SpirvInstruction *> operands,

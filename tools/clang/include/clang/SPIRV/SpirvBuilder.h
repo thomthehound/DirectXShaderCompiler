@@ -431,6 +431,13 @@ public:
   void createReturnValue(SpirvInstruction *value, SourceLocation,
                          SourceRange range = {});
 
+  /// \brief Creates an OpExtInst instruction for the named extended instruction
+  /// set and returns the resulting instruction pointer.
+  SpirvInstruction *createExtInst(
+      QualType resultType, llvm::StringRef setName, uint32_t instId,
+      llvm::ArrayRef<SpirvInstruction *> operands, SourceLocation,
+      SourceRange range = {});
+
   /// \brief Creates an OpExtInst instruction for the GLSL extended instruction
   /// set, with the given instruction number, and operands. Returns the
   /// resulting instruction pointer.

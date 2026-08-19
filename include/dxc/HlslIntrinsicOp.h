@@ -253,6 +253,8 @@ enum class IntrinsicOp {
   IOP_unpack_s8s32 = 218,
   IOP_unpack_u8u16 = 219,
   IOP_unpack_u8u32 = 220,
+  IOP_VkAmdVertexParameter = 424,
+  IOP_VkAmdVertexParameterComponent = 425,
   IOP_VkRawBufferLoad = 221,
   IOP_VkRawBufferStore = 222,
   IOP_VkReadClock = 223,
@@ -430,7 +432,7 @@ enum class IntrinsicOp {
   IOP_usign = 355,
   MOP_InterlockedUMax = 356,
   MOP_InterlockedUMin = 357,
-  Num_Intrinsics = 424,
+  Num_Intrinsics = 426,
 };
 inline bool HasUnsignedIntrinsicOpcode(IntrinsicOp opcode) {
   switch (opcode) {

@@ -9670,6 +9670,12 @@ SpirvEmitter::processIntrinsicCallExpr(const CallExpr *callExpr) {
   case hlsl::IntrinsicOp::IOP_rcp:
     retVal = processIntrinsicRcp(callExpr);
     break;
+  case hlsl::IntrinsicOp::IOP_VkAmdVertexParameter:
+    retVal = processAmdVertexParameter(callExpr);
+    break;
+  case hlsl::IntrinsicOp::IOP_VkAmdVertexParameterComponent:
+    retVal = processAmdVertexParameterComponent(callExpr);
+    break;
   case hlsl::IntrinsicOp::IOP_VkReadClock:
     retVal = processIntrinsicReadClock(callExpr);
     break;
@@ -13111,6 +13117,121 @@ SpirvInstruction *SpirvEmitter::processIntrinsicRcp(const CallExpr *callExpr) {
   // For cases with scalar or vector arguments.
   return spvBuilder.createBinaryOp(spv::Op::OpFDiv, returnType,
                                    getValueOne(argType), argId, loc, range);
+}
+
+
+namespace {
+
+bool evaluateAmdImmediate(const Expr *expr, ASTContext &astContext,
+                          uint32_t *value) {
+  Expr::EvalResult eval;
+  if (!expr->EvaluateAsRValue(eval, astContext) || eval.HasSideEffects ||
+      !eval.Val.isInt())
+    return false;
+  *value = static_cast<uint32_t>(eval.Val.getInt().getZExtValue());
+  return true;
+}
+
+} // namespace
+
+SpirvInstruction *SpirvEmitter::emitAmdVertexParameterComponent(
+    uint32_t vertexIndex, uint32_t parameterIndex, uint32_t componentIndex,
+    SourceLocation loc, SourceRange range) {
+  QualType componentType;
+  auto *componentPtr = declIdMapper.getAmdVertexParameterComponentPtr(
+      parameterIndex, componentIndex, &componentType, loc);
+  if (!componentPtr)
+    return nullptr;
+
+  if (astContext.getTypeSize(componentType) != 32) {
+    emitError("AMD vertex-parameter access currently requires a 32-bit pixel "
+              "input component; narrower/wider raw-register transport is not "
+              "represented by SPV_AMD_shader_explicit_vertex_parameter",
+              loc);
+    return nullptr;
+  }
+
+  auto *vertex = spvBuilder.getConstantInt(
+      astContext.UnsignedIntTy, llvm::APInt(32, vertexIndex));
+  spvBuilder.requireCapability(spv::Capability::InterpolationFunction, loc);
+  spvBuilder.requireExtension("SPV_AMD_shader_explicit_vertex_parameter", loc);
+  auto *raw = spvBuilder.createExtInst(
+      componentType, "SPV_AMD_shader_explicit_vertex_parameter",
+      /* InterpolateAtVertexAMD */ 1, {componentPtr, vertex}, loc, range);
+
+  if (componentType->isSpecificBuiltinType(BuiltinType::Float))
+    return raw;
+  return spvBuilder.createUnaryOp(spv::Op::OpBitcast, astContext.FloatTy, raw,
+                                  loc, range);
+}
+
+SpirvInstruction *
+SpirvEmitter::processAmdVertexParameterComponent(const CallExpr *callExpr) {
+  if (!spvContext.isPS()) {
+    emitError("vk::AmdVertexParameterComponent is only valid in a pixel shader",
+              callExpr->getExprLoc());
+    return nullptr;
+  }
+  if (callExpr->getNumArgs() != 3)
+    llvm_unreachable("AmdVertexParameterComponent argument count mismatch");
+
+  uint32_t vertex = 0, parameter = 0, component = 0;
+  if (!evaluateAmdImmediate(callExpr->getArg(0), astContext, &vertex) ||
+      !evaluateAmdImmediate(callExpr->getArg(1), astContext, &parameter) ||
+      !evaluateAmdImmediate(callExpr->getArg(2), astContext, &component)) {
+    emitError("AMD vertex-parameter indices must be compile-time integer "
+              "constants",
+              callExpr->getExprLoc());
+    return nullptr;
+  }
+  if (vertex > 2 || parameter > 31 || component > 3) {
+    emitError("AMD vertex-parameter index is outside the AGS range "
+              "(vertex 0..2, parameter 0..31, component 0..3)",
+              callExpr->getExprLoc());
+    return nullptr;
+  }
+  return emitAmdVertexParameterComponent(
+      vertex, parameter, component, callExpr->getExprLoc(),
+      callExpr->getSourceRange());
+}
+
+SpirvInstruction *
+SpirvEmitter::processAmdVertexParameter(const CallExpr *callExpr) {
+  if (!spvContext.isPS()) {
+    emitError("vk::AmdVertexParameter is only valid in a pixel shader",
+              callExpr->getExprLoc());
+    return nullptr;
+  }
+  if (callExpr->getNumArgs() != 2)
+    llvm_unreachable("AmdVertexParameter argument count mismatch");
+
+  uint32_t vertex = 0, parameter = 0;
+  if (!evaluateAmdImmediate(callExpr->getArg(0), astContext, &vertex) ||
+      !evaluateAmdImmediate(callExpr->getArg(1), astContext, &parameter)) {
+    emitError("AMD vertex-parameter indices must be compile-time integer "
+              "constants",
+              callExpr->getExprLoc());
+    return nullptr;
+  }
+  if (vertex > 2 || parameter > 31) {
+    emitError("AMD vertex-parameter index is outside the AGS range "
+              "(vertex 0..2, parameter 0..31)",
+              callExpr->getExprLoc());
+    return nullptr;
+  }
+
+  llvm::SmallVector<SpirvInstruction *, 4> values;
+  for (uint32_t component = 0; component < 4; ++component) {
+    auto *value = emitAmdVertexParameterComponent(
+        vertex, parameter, component, callExpr->getExprLoc(),
+        callExpr->getSourceRange());
+    if (!value)
+      return nullptr;
+    values.push_back(value);
+  }
+  return spvBuilder.createCompositeConstruct(
+      astContext.getExtVectorType(astContext.FloatTy, 4), values,
+      callExpr->getExprLoc(), callExpr->getSourceRange());
 }
 
 SpirvInstruction *
@@ -16764,6 +16885,14 @@ SpirvEmitter::processSpvIntrinsicCallExpr(const CallExpr *expr) {
       constArg->setLiteral();
       spvArgs.push_back(constArg);
     } else {
+      if (arg->getType()->isEnumeralType()) {
+        if (auto *constArg =
+                constEvaluator.tryToEvaluateAsConst(arg, isSpecConstantMode)) {
+          constArg->setRValue();
+          spvArgs.push_back(constArg);
+          continue;
+        }
+      }
       spvArgs.push_back(loadIfGLValue(arg, argInst));
     }
   }

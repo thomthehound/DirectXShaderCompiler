@@ -245,6 +245,12 @@ public:
   bool createStageInputVar(const ParmVarDecl *paramDecl,
                            SpirvInstruction **loadedValue, bool forPCF);
 
+  /// Resolve an AGS raw D3D pixel-input register component to the actual
+  /// SPIR-V Input pointer. The returned componentType is the pointee type.
+  SpirvInstruction *getAmdVertexParameterComponentPtr(
+      uint32_t parameterIndex, uint32_t componentIndex,
+      QualType *componentType, SourceLocation loc);
+
   /// \brief Creates stage variables for raytracing.
   SpirvVariable *createRayTracingNVStageVar(spv::StorageClass sc,
                                             const VarDecl *decl);

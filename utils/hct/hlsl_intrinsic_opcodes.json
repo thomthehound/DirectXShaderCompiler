@@ -1,6 +1,6 @@
 {
   "IntrinsicOpCodes": {
-    "Num_Intrinsics": 424,
+    "Num_Intrinsics": 426,
     "IOP_AcceptHitAndEndSearch": 0,
     "IOP_AddUint64": 1,
     "IOP_AllMemoryBarrier": 2,
@@ -225,6 +225,8 @@
     "IOP_VkRawBufferLoad": 221,
     "IOP_VkRawBufferStore": 222,
     "IOP_VkReadClock": 223,
+    "IOP_VkAmdVertexParameterComponent": 425,
+    "IOP_VkAmdVertexParameter": 424,
     "IOP_Vkext_execution_mode": 224,
     "IOP_Vkext_execution_mode_id": 225,
     "MOP_Append": 226,

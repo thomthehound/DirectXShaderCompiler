@@ -90,6 +90,15 @@ def main() -> int:
     def compile_shader(shader: str, *flags: str) -> Result:
         return run([dxc, *flags, str(tests / shader)])
 
+    require_success(
+        "AMD header registration only",
+        compile_shader(
+            "amd.intrinsics.header-registration.hlsl",
+            "-T", "cs_6_2", "-E", "main", "-spirv",
+            "-fspv-extension=AMD",
+        ),
+    )
+
     extinst_ops = (
         "FMin3AMD", "UMin3AMD", "SMin3AMD",
         "FMax3AMD", "UMax3AMD", "SMax3AMD",
@@ -185,6 +194,32 @@ def main() -> int:
             r'OpExtension "SPV_AMD_shader_ballot"',
             r"\bOpExtInst\b.*\bSwizzleInvocationsMaskedAMD\b",
         ),
+    )
+
+    require_success(
+        "AMD raw vertex-parameter index parity",
+        compile_shader(
+            "amd.intrinsics.vertex-parameter-index.hlsl",
+            "-T", "ps_6_0", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-extension=AMD",
+        ),
+        required=(
+            r'OpExtension "SPV_AMD_shader_explicit_vertex_parameter"',
+            r"\bInterpolateAtVertexAMD\b",
+            r"Location 7\b",
+            r"Location 9\b",
+        ),
+        counts=((r"\bInterpolateAtVertexAMD\b", 4),),
+    )
+
+    require_failure(
+        "AMD raw vertex-parameter immediate enforcement",
+        compile_shader(
+            "amd.intrinsics.vertex-parameter-index.invalid.hlsl",
+            "-T", "ps_6_0", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-extension=AMD",
+        ),
+        "AMD vertex-parameter indices must be compile-time integer constants",
     )
 
     require_success(

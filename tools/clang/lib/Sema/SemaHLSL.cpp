@@ -3782,6 +3782,13 @@ private:
         continue;
       }
       switch (pArgs[i].uLegalComponentTypes) {
+      case LICOMPTYPE_FLOAT: {
+        QualType fixedType = GetSingleQualTypeForMapping(intrinsic, i);
+        DXASSERT(!fixedType.isNull(),
+                 "fixed float intrinsic type must have one mapping");
+        paramTypes.push_back(fixedType);
+        break;
+      }
       case LICOMPTYPE_UINT64:
         paramTypes.push_back(context.UnsignedLongLongTy);
         break;

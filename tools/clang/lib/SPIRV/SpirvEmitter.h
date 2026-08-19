@@ -647,6 +647,12 @@ private:
 
   /// Processes the 'ReadClock' intrinsic function.
   SpirvInstruction *processIntrinsicReadClock(const CallExpr *);
+  SpirvInstruction *processAmdVertexParameter(const CallExpr *callExpr);
+  SpirvInstruction *
+  processAmdVertexParameterComponent(const CallExpr *callExpr);
+  SpirvInstruction *emitAmdVertexParameterComponent(
+      uint32_t vertexIndex, uint32_t parameterIndex,
+      uint32_t componentIndex, SourceLocation loc, SourceRange range);
 
   /// Processes the 'sign' intrinsic function for unsigned integer types.
   SpirvInstruction *processIntrinsicSignUnsignedInt(const CallExpr *callExpr);

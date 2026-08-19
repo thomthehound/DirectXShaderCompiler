@@ -92,11 +92,11 @@ float ActiveMax(float value) { return WaveActiveMax(value); }
 int ActiveMax(int value) { return WaveActiveMax(value); }
 uint ActiveMax(uint value) { return WaveActiveMax(value); }
 
-int ActiveBitAnd(int value) { return WaveActiveBitAnd(value); }
+int ActiveBitAnd(int value) { return asint(WaveActiveBitAnd(asuint(value))); }
 uint ActiveBitAnd(uint value) { return WaveActiveBitAnd(value); }
-int ActiveBitOr(int value) { return WaveActiveBitOr(value); }
+int ActiveBitOr(int value) { return asint(WaveActiveBitOr(asuint(value))); }
 uint ActiveBitOr(uint value) { return WaveActiveBitOr(value); }
-int ActiveBitXor(int value) { return WaveActiveBitXor(value); }
+int ActiveBitXor(int value) { return asint(WaveActiveBitXor(asuint(value))); }
 uint ActiveBitXor(uint value) { return WaveActiveBitXor(value); }
 
 float PrefixSum(float value) { return WavePrefixSum(value); }
@@ -170,6 +170,13 @@ template <typename T>
 WriteInvocation(T inputValue, T writeValue, uint invocationIndex);
 [[vk::ext_extension("SPV_AMD_shader_ballot")]]
 [[vk::ext_instruction(4, "SPV_AMD_shader_ballot")]] uint Mbcnt(uint64_t mask);
+
+// Raw AGS signature-register forms are compiler intrinsics because their
+// indices must remain immediate values through AST emission:
+//   vk::AmdVertexParameter(vertexIdx, parameterIdx)
+//   vk::AmdVertexParameterComponent(vertexIdx, parameterIdx, componentIdx)
+// They resolve D3D parameter-register packing independently of Vulkan
+// Location and lower to the same InterpolateAtVertexAMD instruction below.
 
 // SPV_AMD_shader_explicit_vertex_parameter. The source operand must remain a
 // pointer to fragment input storage, hence ext_reference.
