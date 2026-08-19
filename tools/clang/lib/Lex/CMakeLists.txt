@@ -44,18 +44,54 @@ set(hlsl_embedded_inputs
     type_traits
     vector_utils
     dx/linalg.h
+    dx/amd/dot.h
+    dx/amd/intrinsics.h
     )
 
 if (ENABLE_SPIRV_CODEGEN)
   list(APPEND hlsl_embedded_inputs
-       vk/khr/cooperative_matrix.h
+       vk/amd/barycentric.h
+       vk/amd/bfloat16.h
+       vk/amd/clock.h
+       vk/amd/crosslane.h
+       vk/amd/dot.h
+       vk/amd/dot_f16.h
        vk/amd/intrinsics.h
+       vk/amd/math.h
+       vk/amd/mixed_dot.h
+       vk/amd/packing.h
+       vk/amd/subgroup.h
        vk/amd/swizzle.h
        vk/amd/wave.h
+       vk/khr/cooperative_matrix.h
        vk/khr/cooperative_matrix.impl
        vk/opcode_selector.h
        vk/spirv.h
        )
+endif()
+
+# AMD headers in these public include trees are part of this fork's shipped
+# compiler surface.  Keep the explicit embedding list above authoritative, but
+# make configuration fail immediately if a new public AMD header is not added
+# to it.  CONFIGURE_DEPENDS makes this a drift check rather than an input glob.
+file(GLOB amd_dx_public_headers CONFIGURE_DEPENDS
+     RELATIVE "${hlsl_headers_src_dir}"
+     "${hlsl_headers_src_dir}/dx/amd/*.h")
+foreach(rel_path ${amd_dx_public_headers})
+  if (NOT rel_path IN_LIST hlsl_embedded_inputs)
+    message(FATAL_ERROR "Public HLSL header ${rel_path} is not embedded")
+  endif()
+endforeach()
+
+if (ENABLE_SPIRV_CODEGEN)
+  file(GLOB amd_vk_public_headers CONFIGURE_DEPENDS
+       RELATIVE "${hlsl_headers_src_dir}"
+       "${hlsl_headers_src_dir}/vk/amd/*.h")
+  foreach(rel_path ${amd_vk_public_headers})
+    if (NOT rel_path IN_LIST hlsl_embedded_inputs)
+      message(FATAL_ERROR "Public HLSL header ${rel_path} is not embedded")
+    endif()
+  endforeach()
 endif()
 
 set(hlsl_embedded_inc_files)
