@@ -1,15 +1,11 @@
-// RUN: %dxc -T cs_6_6 -E main -fcgl -spirv -fspv-target-env=vulkan1.2 %s | FileCheck %s
+// RUN: not %dxc -T cs_6_6 -E main -fcgl -spirv -fspv-target-env=vulkan1.2 %s 2>&1 | FileCheck %s
 
-// CHECK: OpCapability Int64
-// CHECK: OpCapability Int64Atomics
-// CHECK: OpAtomicIAdd
-// CHECK: OpAtomicAnd
-// CHECK: OpAtomicOr
-// CHECK: OpAtomicXor
-// CHECK: OpAtomicUMin
-// CHECK: OpAtomicUMax
-// CHECK: OpAtomicExchange
-// CHECK: OpAtomicCompareExchange
+// RWByteAddressBuffer is currently represented as 32-bit uint words in the
+// SPIR-V backend. A correct 64-bit atomic requires a genuine 64-bit pointee;
+// splitting the operation across two words would violate atomicity.
+// TODO: add a legal 64-bit raw-buffer representation/alignment bridge, then
+// replace this negative contract with Int64Atomics codegen checks.
+// CHECK: error: intrinsic 'InterlockedAdd64' method unimplemented
 
 RWByteAddressBuffer Data : register(u0);
 RWStructuredBuffer<uint4> Out : register(u1);
