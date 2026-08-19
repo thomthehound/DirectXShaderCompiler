@@ -60,17 +60,41 @@ jobs:
       - name: Validate staged source
         run: |
           set -euo pipefail
-          python3 -m py_compile utils/amd_spirv_ci.py utils/amd_finalize_vertex_parameter.py
+          python3 -m py_compile \
+            utils/amd_spirv_ci.py \
+            utils/amd_math_ci.py \
+            utils/amd_subgroup_ci.py \
+            utils/amd_atomic_ci.py \
+            utils/amd_packing_ci.py \
+            utils/amd_bfloat16_ci.py \
+            utils/amd_matrix_ci.py \
+            utils/amd_mixed_dot_ci.py \
+            utils/amd_dxil_ci.py \
+            utils/amd_finalize_vertex_parameter.py
           python3 -m json.tool utils/hct/hlsl_intrinsic_opcodes.json >/dev/null
           python3 -m json.tool utils/amd_spirv_contracts.json >/dev/null
           python3 -m json.tool utils/apusr_amd_ingress_blockers.json >/dev/null
           python3 - <<'PY'
           import json
+          from pathlib import Path
+
           with open('utils/hct/hlsl_intrinsic_opcodes.json', encoding='utf-8') as f:
               ops = json.load(f)['IntrinsicOpCodes']
           assert ops['IOP_VkAmdVertexParameter'] == 424
           assert ops['IOP_VkAmdVertexParameterComponent'] == 425
           assert ops['Num_Intrinsics'] == 426
+
+          cmake = Path('tools/clang/lib/Lex/CMakeLists.txt').read_text(encoding='utf-8')
+          headers_root = Path('tools/clang/lib/Headers/hlsl')
+          missing = []
+          for public_dir in ('dx/amd', 'vk/amd'):
+              for header in sorted((headers_root / public_dir).glob('*.h')):
+                  rel = header.relative_to(headers_root).as_posix()
+                  if rel not in cmake:
+                      missing.append(rel)
+          if missing:
+              raise SystemExit('public AMD HLSL headers missing from embedded inputs: ' +
+                               ', '.join(missing))
           PY
           git diff --check
           grep -q 'IOP_VkAmdVertexParameter = 424' include/dxc/HlslIntrinsicOp.h
@@ -125,18 +149,25 @@ jobs:
 
       - name: Run Linux AMD compiler contracts
         run: |
-          set -euo pipefail
+          set -uo pipefail
           export LD_LIBRARY_PATH="$PWD/build-amd-spirv/lib:${LD_LIBRARY_PATH:-}"
           DXC="$PWD/build-amd-spirv/bin/dxc"
-          python3 utils/amd_spirv_ci.py --dxc "$DXC"
-          python3 utils/amd_math_ci.py --dxc "$DXC"
-          python3 utils/amd_subgroup_ci.py --dxc "$DXC"
-          python3 utils/amd_atomic_ci.py --dxc "$DXC"
-          python3 utils/amd_packing_ci.py --dxc "$DXC"
-          python3 utils/amd_bfloat16_ci.py --dxc "$DXC"
-          python3 utils/amd_matrix_ci.py --dxc "$DXC"
-          python3 utils/amd_mixed_dot_ci.py --dxc "$DXC"
-          python3 utils/amd_dxil_ci.py --dxc "$DXC"
+          status=0
+          for test in \
+            amd_spirv_ci.py \
+            amd_math_ci.py \
+            amd_subgroup_ci.py \
+            amd_atomic_ci.py \
+            amd_packing_ci.py \
+            amd_bfloat16_ci.py \
+            amd_matrix_ci.py \
+            amd_mixed_dot_ci.py \
+            amd_dxil_ci.py
+          do
+            echo "===== $test ====="
+            python3 "utils/$test" --dxc "$DXC" || status=1
+          done
+          exit "$status"
 
       - name: Commit final implementation
         run: |
@@ -184,7 +215,10 @@ jobs:
             'amd_atomic_ci.py','amd_packing_ci.py','amd_bfloat16_ci.py',
             'amd_matrix_ci.py','amd_mixed_dot_ci.py','amd_dxil_ci.py'
           )
+          $failed = $false
           foreach ($test in $tests) {
+            Write-Host "===== $test ====="
             python (Join-Path 'utils' $test) --dxc $dxc
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            if ($LASTEXITCODE -ne 0) { $failed = $true }
           }
+          if ($failed) { exit 1 }
