@@ -1211,14 +1211,12 @@ void SpirvBuilder::createSetMeshOutputsEXT(SpirvInstruction *vertCount,
       new (context) SpirvSetMeshOutputsEXT(vertCount, primCount, loc, range);
   insertPoint->addInstruction(inst);
 }
-SpirvArrayLength *SpirvBuilder::createArrayLength(QualType resultType,
-                                                  SourceLocation loc,
-                                                  SpirvInstruction *structure,
-                                                  uint32_t arrayMember,
-                                                  SourceRange range) {
+SpirvArrayLength *SpirvBuilder::createArrayLength(
+    QualType resultType, SourceLocation loc, SpirvInstruction *structure,
+    uint32_t arrayMember, SourceRange range, const SpirvType *structureType) {
   assert(insertPoint && "null insert point");
-  auto *inst = new (context)
-      SpirvArrayLength(resultType, loc, structure, arrayMember, range);
+  auto *inst = new (context) SpirvArrayLength(
+      resultType, loc, structure, arrayMember, range, structureType);
   insertPoint->addInstruction(inst);
   return inst;
 }
@@ -1298,7 +1296,7 @@ SpirvDebugLocalVariable *SpirvBuilder::createDebugLocalVariable(
 SpirvDebugGlobalVariable *SpirvBuilder::createDebugGlobalVariable(
     QualType debugType, llvm::StringRef varName, SpirvDebugSource *src,
     uint32_t line, uint32_t column, SpirvDebugInstruction *parentScope,
-    llvm::StringRef linkageName, SpirvVariable *var, uint32_t flags,
+    llvm::StringRef linkageName, SpirvVariableLike *var, uint32_t flags,
     llvm::Optional<SpirvInstruction *> staticMemberDebugType) {
   auto *inst = new (context) SpirvDebugGlobalVariable(
       debugType, varName, src, line, column, parentScope, linkageName, var,
@@ -1754,9 +1752,12 @@ SpirvVariable *SpirvBuilder::addModuleVar(
 
 SpirvUntypedVariableKHR *SpirvBuilder::createUntypedVariableKHR(
     const SpirvType *type, spv::StorageClass storageClass, llvm::StringRef name,
-    SourceLocation loc) {
+    SourceLocation loc, const SpirvType *dataType) {
   assert(storageClass != spv::StorageClass::Function);
-  auto *var = new (context) SpirvUntypedVariableKHR(type, loc, storageClass);
+  assert((storageClass == spv::StorageClass::UniformConstant || dataType) &&
+         "untyped variables outside UniformConstant require a data type");
+  auto *var =
+      new (context) SpirvUntypedVariableKHR(type, loc, storageClass, dataType);
   mod->addVariable(var);
   var->setDebugName(name);
   return var;
@@ -1802,7 +1803,7 @@ void SpirvBuilder::decorateIndex(SpirvInstruction *target, uint32_t index,
   mod->addDecoration(decor);
 }
 
-void SpirvBuilder::decorateDSetBinding(SpirvVariable *target,
+void SpirvBuilder::decorateDSetBinding(SpirvVariableLike *target,
                                        uint32_t setNumber,
                                        uint32_t bindingNumber) {
   const SourceLocation srcLoc = target->getSourceLocation();
@@ -1820,10 +1821,12 @@ void SpirvBuilder::decorateDSetBinding(SpirvVariable *target,
   // setNumber and bindingNumber pair to combine the image and the sampler with
   // with the pair. The combining process will be conducted by spirv-opt
   // --convert-to-sampled-image pass.
-  if (context.getVkImageFeaturesForSpirvVariable(target)
-          .isCombinedImageSampler) {
-    context.registerResourceInfoForSampledImage(target->getAstResultType(),
-                                                setNumber, bindingNumber);
+  if (auto *typedVar = dyn_cast<SpirvVariable>(target)) {
+    if (context.getVkImageFeaturesForSpirvVariable(typedVar)
+            .isCombinedImageSampler) {
+      context.registerResourceInfoForSampledImage(target->getAstResultType(),
+                                                  setNumber, bindingNumber);
+    }
   }
 
   mod->addDecoration(binding);

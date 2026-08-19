@@ -29,6 +29,72 @@ inline uint32_t roundToPow2(uint32_t val, uint32_t pow2) {
 namespace clang {
 namespace spirv {
 
+
+bool RawBufferHandler::isUntypedRawBuffer(SpirvInstruction *buffer) const {
+  if (isa<SpirvUntypedVariableKHR>(buffer))
+    return true;
+
+  if (buffer->getLayoutRule() != SpirvLayoutRule::Void ||
+      !buffer->hasAstResultType())
+    return false;
+
+  const QualType type = buffer->getAstResultType();
+  return (isByteAddressBuffer(type) || isRWByteAddressBuffer(type)) &&
+         !theEmitter.getSpirvOptions().allowedExtensions.empty() &&
+         spvBuilder.isExtensionEnabled(Extension::KHR_untyped_pointers);
+}
+
+const SpirvType *RawBufferHandler::getUntypedRawBufferDataType(
+    SpirvInstruction *buffer) const {
+  if (auto *untyped = dyn_cast<SpirvUntypedVariableKHR>(buffer)) {
+    assert(untyped->hasDataType());
+    return untyped->getDataType();
+  }
+
+  assert(isUntypedRawBuffer(buffer));
+  assert(buffer->hasAstResultType());
+  const QualType type = buffer->getAstResultType();
+  assert(isByteAddressBuffer(type) || isRWByteAddressBuffer(type));
+  return spvContext.getByteAddressBufferType(isRWByteAddressBuffer(type));
+}
+
+SpirvInstruction *RawBufferHandler::createWordPointer(
+    SpirvInstruction *buffer, SpirvInstruction *wordIndex, SourceLocation loc,
+    SourceRange range) {
+  auto *zero =
+      spvBuilder.getConstantInt(astContext.UnsignedIntTy, llvm::APInt(32, 0));
+  if (isUntypedRawBuffer(buffer)) {
+    const auto *pointerType =
+        spvContext.getUntypedPointerKHRType(buffer->getStorageClass());
+    return spvBuilder.createUntypedAccessChainKHR(
+        pointerType, getUntypedRawBufferDataType(buffer), buffer,
+        {zero, wordIndex}, loc);
+  }
+
+  return spvBuilder.createAccessChain(astContext.UnsignedIntTy, buffer,
+                                      {zero, wordIndex}, loc, range);
+}
+
+SpirvInstruction *RawBufferHandler::loadAtWord(
+    SpirvInstruction *buffer, SpirvInstruction *wordIndex, QualType valueType,
+    SourceLocation loc, SourceRange range) {
+  auto *ptr = createWordPointer(buffer, wordIndex, loc, range);
+  auto *load = spvBuilder.createLoad(valueType, ptr, loc, range);
+  if (isUntypedRawBuffer(buffer))
+    cast<SpirvLoad>(load)->setAlignment(4);
+  return load;
+}
+
+SpirvStore *RawBufferHandler::storeAtWord(
+    SpirvInstruction *buffer, SpirvInstruction *wordIndex,
+    SpirvInstruction *value, SourceLocation loc, SourceRange range) {
+  auto *ptr = createWordPointer(buffer, wordIndex, loc, range);
+  auto *store = spvBuilder.createStore(ptr, value, loc, range);
+  if (isUntypedRawBuffer(buffer))
+    store->setAlignment(4);
+  return store;
+}
+
 SpirvInstruction *RawBufferHandler::bitCastToNumericalOrBool(
     SpirvInstruction *instr, QualType fromType, QualType toType,
     SourceLocation loc, SourceRange range) {
@@ -49,8 +115,6 @@ SpirvInstruction *RawBufferHandler::load16Bits(SpirvInstruction *buffer,
                                                SourceRange range) {
   const auto loc = buffer->getSourceLocation();
   SpirvInstruction *result = nullptr;
-  auto *constUint0 =
-      spvBuilder.getConstantInt(astContext.UnsignedIntTy, llvm::APInt(32, 0));
   auto *constUint3 =
       spvBuilder.getConstantInt(astContext.UnsignedIntTy, llvm::APInt(32, 3));
   auto *constUint4 =
@@ -68,9 +132,7 @@ SpirvInstruction *RawBufferHandler::load16Bits(SpirvInstruction *buffer,
 
   // The underlying element type of the ByteAddressBuffer is uint. So we
   // need to load 32-bits at the very least.
-  auto *ptr = spvBuilder.createAccessChain(astContext.UnsignedIntTy, buffer,
-                                           {constUint0, index}, loc, range);
-  result = spvBuilder.createLoad(astContext.UnsignedIntTy, ptr, loc, range);
+  result = loadAtWord(buffer, index, astContext.UnsignedIntTy, loc, range);
   result = spvBuilder.createBinaryOp(spv::Op::OpShiftRightLogical,
                                      astContext.UnsignedIntTy, result,
                                      bitOffset, loc, range);
@@ -91,14 +153,9 @@ SpirvInstruction *RawBufferHandler::load32Bits(SpirvInstruction *buffer,
   const auto loc = buffer->getSourceLocation();
   SpirvInstruction *result = nullptr;
   // Only need to perform one 32-bit uint load.
-  auto *constUint0 =
-      spvBuilder.getConstantInt(astContext.UnsignedIntTy, llvm::APInt(32, 0));
-
   auto *index = address.getWordIndex(loc, range);
 
-  auto *loadPtr = spvBuilder.createAccessChain(astContext.UnsignedIntTy, buffer,
-                                               {constUint0, index}, loc, range);
-  result = spvBuilder.createLoad(astContext.UnsignedIntTy, loadPtr, loc, range);
+  result = loadAtWord(buffer, index, astContext.UnsignedIntTy, loc, range);
   result = bitCastToNumericalOrBool(result, astContext.UnsignedIntTy,
                                     target32BitType, loc, range);
   result->setRValue();
@@ -114,24 +171,16 @@ SpirvInstruction *RawBufferHandler::load64Bits(SpirvInstruction *buffer,
                                                SourceRange range) {
   const auto loc = buffer->getSourceLocation();
   SpirvInstruction *result = nullptr;
-  SpirvInstruction *ptr = nullptr;
-  auto *constUint0 =
-      spvBuilder.getConstantInt(astContext.UnsignedIntTy, llvm::APInt(32, 0));
-
   // Load the first word and increment index.
   auto *index = address.getWordIndex(loc, range);
-  ptr = spvBuilder.createAccessChain(astContext.UnsignedIntTy, buffer,
-                                     {constUint0, index}, loc, range);
   SpirvInstruction *word0 =
-      spvBuilder.createLoad(astContext.UnsignedIntTy, ptr, loc, range);
+      loadAtWord(buffer, index, astContext.UnsignedIntTy, loc, range);
   address.incrementWordIndex(loc, range);
 
   // Load the second word and increment index.
   index = address.getWordIndex(loc, range);
-  ptr = spvBuilder.createAccessChain(astContext.UnsignedIntTy, buffer,
-                                     {constUint0, index}, loc, range);
   SpirvInstruction *word1 =
-      spvBuilder.createLoad(astContext.UnsignedIntTy, ptr, loc, range);
+      loadAtWord(buffer, index, astContext.UnsignedIntTy, loc, range);
   address.incrementWordIndex(loc, range);
 
   // Combine the 2 words into a composite, and bitcast into the destination
@@ -151,6 +200,27 @@ SpirvInstruction *RawBufferHandler::processTemplatedLoadFromBuffer(
     SourceRange range) {
   const auto loc = buffer->getSourceLocation();
   SpirvInstruction *result = nullptr;
+
+  if (isUntypedRawBuffer(buffer)) {
+    QualType elementType = targetType;
+    uint32_t elementCount = 1;
+    const bool isVector =
+        isVectorType(targetType, &elementType, &elementCount);
+    if ((isScalarType(targetType) || isVector) &&
+        !elementType->isBooleanType()) {
+      const uint32_t bitWidth = getElementSpirvBitwidth(
+          astContext, elementType,
+          theEmitter.getSpirvOptions().enable16BitTypes);
+      if (bitWidth == 32 || bitWidth == 64) {
+        auto *index = address.getWordIndex(loc, range);
+        result = loadAtWord(buffer, index, targetType, loc, range);
+        result->setRValue();
+        address.incrementByteAddress((bitWidth / 8) * elementCount, loc,
+                                     range);
+        return result;
+      }
+    }
+  }
 
   // Scalar types
   if (isScalarType(targetType)) {
@@ -341,8 +411,6 @@ void RawBufferHandler::store16Bits(SpirvInstruction *value,
                                    SourceRange range) {
   const auto loc = buffer->getSourceLocation();
   SpirvInstruction *result = nullptr;
-  auto *constUint0 =
-      spvBuilder.getConstantInt(astContext.UnsignedIntTy, llvm::APInt(32, 0));
   auto *constUint3 =
       spvBuilder.getConstantInt(astContext.UnsignedIntTy, llvm::APInt(32, 3));
   auto *constUint4 =
@@ -361,11 +429,6 @@ void RawBufferHandler::store16Bits(SpirvInstruction *value,
   bitOffset = spvBuilder.createBinaryOp(spv::Op::OpShiftLeftLogical,
                                         astContext.UnsignedIntTy, bitOffset,
                                         constUint3, loc, range);
-
-  // The underlying element type of the ByteAddressBuffer is uint. So we
-  // need to store a 32-bit value.
-  auto *ptr = spvBuilder.createAccessChain(astContext.UnsignedIntTy, buffer,
-                                           {constUint0, index}, loc, range);
 
   result = bitCastToNumericalOrBool(value, valueType,
                                     astContext.UnsignedShortTy, loc, range);
@@ -386,13 +449,13 @@ void RawBufferHandler::store16Bits(SpirvInstruction *value,
   // Load and mask the other value in the word.
   auto *masked = spvBuilder.createBinaryOp(
       spv::Op::OpBitwiseAnd, astContext.UnsignedIntTy,
-      spvBuilder.createLoad(astContext.UnsignedIntTy, ptr, loc), mask, loc,
-      range);
+      loadAtWord(buffer, index, astContext.UnsignedIntTy, loc, range), mask,
+      loc, range);
 
   result =
       spvBuilder.createBinaryOp(spv::Op::OpBitwiseOr, astContext.UnsignedIntTy,
                                 masked, result, loc, range);
-  spvBuilder.createStore(ptr, result, loc, range);
+  storeAtWord(buffer, index, result, loc, range);
   address.incrementByteAddress(2, loc, range);
 }
 
@@ -402,18 +465,11 @@ void RawBufferHandler::store32Bits(SpirvInstruction *value,
                                    const QualType valueType,
                                    SourceRange range) {
   const auto loc = buffer->getSourceLocation();
-  auto *constUint0 =
-      spvBuilder.getConstantInt(astContext.UnsignedIntTy, llvm::APInt(32, 0));
-
   auto *index = address.getWordIndex(loc, range);
 
-  // The underlying element type of the ByteAddressBuffer is uint. So we
-  // need to store a 32-bit value.
-  auto *ptr = spvBuilder.createAccessChain(astContext.UnsignedIntTy, buffer,
-                                           {constUint0, index}, loc, range);
   value = bitCastToNumericalOrBool(value, valueType, astContext.UnsignedIntTy,
                                    loc, range);
-  spvBuilder.createStore(ptr, value, loc, range);
+  storeAtWord(buffer, index, value, loc, range);
   address.incrementWordIndex(loc, range);
 }
 
@@ -423,9 +479,6 @@ void RawBufferHandler::store64Bits(SpirvInstruction *value,
                                    const QualType valueType,
                                    SourceRange range) {
   const auto loc = buffer->getSourceLocation();
-  auto *constUint0 =
-      spvBuilder.getConstantInt(astContext.UnsignedIntTy, llvm::APInt(32, 0));
-
   // Bitcast the source into a 32-bit words composite.
   const auto uintVec2Type =
       astContext.getExtVectorType(astContext.UnsignedIntTy, 2);
@@ -440,16 +493,12 @@ void RawBufferHandler::store64Bits(SpirvInstruction *value,
 
   // Store the first word, and increment counter.
   auto *index = address.getWordIndex(loc, range);
-  auto *ptr = spvBuilder.createAccessChain(astContext.UnsignedIntTy, buffer,
-                                           {constUint0, index}, loc, range);
-  spvBuilder.createStore(ptr, A, loc, range);
+  storeAtWord(buffer, index, A, loc, range);
   address.incrementWordIndex(loc, range);
 
   // Store the second word, and increment counter.
   index = address.getWordIndex(loc, range);
-  ptr = spvBuilder.createAccessChain(astContext.UnsignedIntTy, buffer,
-                                     {constUint0, index}, loc, range);
-  spvBuilder.createStore(ptr, B, loc, range);
+  storeAtWord(buffer, index, B, loc, range);
   address.incrementWordIndex(loc, range);
 }
 
@@ -541,6 +590,26 @@ void RawBufferHandler::processTemplatedStoreToBuffer(SpirvInstruction *value,
                                                      const QualType valueType,
                                                      SourceRange range) {
   const auto loc = buffer->getSourceLocation();
+
+  if (isUntypedRawBuffer(buffer)) {
+    QualType elementType = valueType;
+    uint32_t elementCount = 1;
+    const bool isVector =
+        isVectorType(valueType, &elementType, &elementCount);
+    if ((isScalarType(valueType) || isVector) &&
+        !elementType->isBooleanType()) {
+      const uint32_t bitWidth = getElementSpirvBitwidth(
+          astContext, elementType,
+          theEmitter.getSpirvOptions().enable16BitTypes);
+      if (bitWidth == 32 || bitWidth == 64) {
+        auto *index = address.getWordIndex(loc, range);
+        storeAtWord(buffer, index, value, loc, range);
+        address.incrementByteAddress((bitWidth / 8) * elementCount, loc,
+                                     range);
+        return;
+      }
+    }
+  }
 
   // Scalar types
   if (isScalarType(valueType)) {

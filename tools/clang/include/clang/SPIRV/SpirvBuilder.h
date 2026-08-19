@@ -66,6 +66,11 @@ public:
   /// Returns the SPIR-V module being built.
   SpirvModule *getModule() { return mod.get(); }
 
+  /// Returns whether the active feature policy permits the given extension.
+  bool isExtensionEnabled(Extension ext) const {
+    return featureManager.isExtensionEnabled(ext);
+  }
+
   // === Function and Basic Block ===
 
   /// \brief Creates a SpirvFunction object with the given information and adds
@@ -519,11 +524,12 @@ public:
                                SpirvInstruction *primCount, SourceLocation loc,
                                SourceRange range = {});
 
-  /// \brief Creates an OpArrayLength instruction.
+  /// \brief Creates an OpArrayLength or OpUntypedArrayLengthKHR instruction.
   SpirvArrayLength *createArrayLength(QualType resultType, SourceLocation loc,
                                       SpirvInstruction *structure,
                                       uint32_t arrayMember,
-                                      SourceRange range = {});
+                                      SourceRange range = {},
+                                      const SpirvType *structureType = nullptr);
 
   /// \brief Creates SPIR-V instructions for NV raytracing ops.
   SpirvInstruction *
@@ -560,7 +566,7 @@ public:
   SpirvDebugGlobalVariable *createDebugGlobalVariable(
       QualType debugType, llvm::StringRef varName, SpirvDebugSource *src,
       uint32_t line, uint32_t column, SpirvDebugInstruction *parentScope,
-      llvm::StringRef linkageName, SpirvVariable *var, uint32_t flags,
+      llvm::StringRef linkageName, SpirvVariableLike *var, uint32_t flags,
       llvm::Optional<SpirvInstruction *> staticMemberDebugType = llvm::None);
 
   // Get a DebugInfoNone if exists. Otherwise, create one and return it.
@@ -724,7 +730,8 @@ public:
   SpirvUntypedVariableKHR *
   createUntypedVariableKHR(const SpirvType *valueType,
                            spv::StorageClass storageClass, llvm::StringRef name,
-                           SourceLocation loc = {});
+                           SourceLocation loc = {},
+                           const SpirvType *dataType = nullptr);
 
   /// \brief Creates an OpUntypedAccessChainKHR instruction.
   SpirvUntypedAccessChainKHR *
@@ -744,7 +751,7 @@ public:
 
   /// \brief Decorates the given target with the given descriptor set and
   /// binding number.
-  void decorateDSetBinding(SpirvVariable *target, uint32_t setNumber,
+  void decorateDSetBinding(SpirvVariableLike *target, uint32_t setNumber,
                            uint32_t bindingNumber);
 
   /// \brief Decorates the given target with the given SpecId.

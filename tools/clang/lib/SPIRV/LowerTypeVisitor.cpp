@@ -107,8 +107,15 @@ bool LowerTypeVisitor::visitInstruction(SpirvInstruction *instr) {
   const QualType astType = instr->getAstResultType();
   const SpirvType *hybridType = instr->getResultType();
 
+  // Untyped variables keep their explicit OpTypeUntypedPointerKHR result type
+  // while retaining the AST type for binding/reflection metadata.
+  if (instr->getopcode() == spv::Op::OpUntypedVariableKHR && hybridType) {
+    const SpirvType *spirvType =
+        lowerType(hybridType, instr->getLayoutRule(), instr->getSourceLocation());
+    instr->setResultType(spirvType);
+  }
   // Lower QualType to SpirvType
-  if (astType != QualType({})) {
+  else if (astType != QualType({})) {
     const SpirvType *spirvType =
         lowerType(astType, instr->getLayoutRule(), /*isRowMajor*/ llvm::None,
                   instr->getSourceLocation());
@@ -160,6 +167,13 @@ bool LowerTypeVisitor::visitInstruction(SpirvInstruction *instr) {
       instr->setResultType(
           spvContext.getSampledImageType(cast<ImageType>(resultType)));
     }
+    break;
+  }
+  case spv::Op::OpUntypedVariableKHR: {
+    auto *var = cast<SpirvVariableLike>(instr);
+    if (var->hasBinding() && var->hasAstResultType() &&
+        var->getHlslUserType().empty())
+      var->setHlslUserType(getHlslResourceTypeName(var->getAstResultType()));
     break;
   }
   // Variables and function parameters must have a pointer type.
@@ -1181,13 +1195,19 @@ LowerTypeVisitor::lowerResourceType(QualType type, SpirvLayoutRule rule,
     return spvStructType;
   }
 
-  // ByteAddressBuffer and RWByteAddressBuffer types.
+  // ByteAddressBuffer and RWByteAddressBuffer types. The concrete descriptor
+  // Data Type remains the existing raw-buffer block. Resource *values* use an
+  // untyped Uniform pointer only when the extension was explicitly requested;
+  // this naturally covers local aliases, function parameters/returns, and
+  // resource fields without changing typed resource-array element layout.
   if (name == "ByteAddressBuffer" || name == "RWByteAddressBuffer" ||
       name == "RasterizerOrderedByteAddressBuffer") {
     const auto *bufferType = spvContext.getByteAddressBufferType(
         /*isRW*/ name != "ByteAddressBuffer");
     if (rule == SpirvLayoutRule::Void) {
-      // All byte address buffers are in the Uniform storage class.
+      if (!getCodeGenOptions().allowedExtensions.empty() &&
+          spvBuilder.isExtensionEnabled(Extension::KHR_untyped_pointers))
+        return spvContext.getUntypedPointerKHRType(spv::StorageClass::Uniform);
       return spvContext.getPointerType(bufferType, spv::StorageClass::Uniform);
     }
     return bufferType;

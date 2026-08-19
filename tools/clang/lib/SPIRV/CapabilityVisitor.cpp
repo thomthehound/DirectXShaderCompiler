@@ -623,6 +623,24 @@ bool CapabilityVisitor::visitInstruction(SpirvInstruction *instr) {
 
   // Add opcode-specific capabilities
   switch (opcode) {
+  case spv::Op::OpUntypedVariableKHR: {
+    addExtension(Extension::KHR_untyped_pointers, "untyped pointers", loc);
+    addCapability(spv::Capability::UntypedPointersKHR, loc);
+    auto *var = cast<SpirvUntypedVariableKHR>(instr);
+    if (var->hasDataType())
+      addCapabilityForType(var->getDataType(), loc, var->getStorageClass());
+    if (spvOptions.enableReflect && !var->getHlslUserType().empty()) {
+      addExtension(Extension::GOOGLE_user_type, "HLSL User Type", loc);
+      addExtension(Extension::GOOGLE_hlsl_functionality1, "HLSL User Type",
+                   loc);
+    }
+    break;
+  }
+  case spv::Op::OpUntypedAccessChainKHR:
+  case spv::Op::OpUntypedArrayLengthKHR:
+    addExtension(Extension::KHR_untyped_pointers, "untyped pointers", loc);
+    addCapability(spv::Capability::UntypedPointersKHR, loc);
+    break;
   case spv::Op::OpDPdxCoarse:
   case spv::Op::OpDPdyCoarse:
   case spv::Op::OpFwidthCoarse:

@@ -34,7 +34,7 @@ class SpirvEmitter;
 
 class ResourceVar {
 public:
-  ResourceVar(SpirvVariable *var, const NamedDecl *decl, SourceLocation loc,
+  ResourceVar(SpirvVariableLike *var, const NamedDecl *decl, SourceLocation loc,
               const hlsl::RegisterAssignment *r, const VKBindingAttr *b,
               const VKCounterBindingAttr *cb, bool counter = false,
               bool globalsBuffer = false)
@@ -42,7 +42,7 @@ public:
         counterBinding(cb), isCounterVar(counter),
         isGlobalsCBuffer(globalsBuffer) {}
 
-  SpirvVariable *getSpirvInstr() const { return variable; }
+  SpirvVariableLike *getSpirvInstr() const { return variable; }
   const Decl *getDeclaration() const { return declaration; }
   SourceLocation getSourceLocation() const { return srcLoc; }
   const hlsl::RegisterAssignment *getRegister() const { return reg; }
@@ -62,7 +62,7 @@ public:
   }
 
 private:
-  SpirvVariable *variable;                    ///< The variable
+  SpirvVariableLike *variable;                ///< The variable
   const NamedDecl *declaration;               ///< The declaration
   SourceLocation srcLoc;                      ///< Source location
   const hlsl::RegisterAssignment *reg;        ///< HLSL register assignment
@@ -301,11 +301,11 @@ public:
   SpirvVariableLike *createResourceHeap(const VarDecl *var, QualType type);
 
   /// \brief Creates an external-visible variable and returns its instruction.
-  SpirvVariable *createExternVar(const VarDecl *var);
+  SpirvVariableLike *createExternVar(const VarDecl *var);
 
   /// \brief Creates an external-visible variable of type |type| and returns its
   /// instruction.
-  SpirvVariable *createExternVar(const VarDecl *var, QualType type);
+  SpirvVariableLike *createExternVar(const VarDecl *var, QualType type);
 
   /// \brief Returns an OpString instruction that represents the given VarDecl.
   /// VarDecl must be a variable of string type.
@@ -946,7 +946,7 @@ private:
 
   /// Creates DebugGlobalVariable and returns it if rich debug information
   /// generation is enabled. Otherwise, returns nullptr.
-  SpirvDebugGlobalVariable *createDebugGlobalVariable(SpirvVariable *var,
+  SpirvDebugGlobalVariable *createDebugGlobalVariable(SpirvVariableLike *var,
                                                       const QualType &type,
                                                       const SourceLocation &loc,
                                                       const StringRef &name);

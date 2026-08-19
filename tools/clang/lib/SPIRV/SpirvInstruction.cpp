@@ -312,8 +312,7 @@ SpirvVariable::SpirvVariable(QualType resultType, SourceLocation loc,
                              spv::StorageClass sc, bool precise,
                              bool isNointerp, SpirvInstruction *initializerInst)
     : SpirvVariableLike(IK_Variable, spv::Op::OpVariable, resultType, loc),
-      initializer(initializerInst), descriptorSet(-1), binding(-1),
-      hlslUserType("") {
+      initializer(initializerInst) {
   setStorageClass(sc);
   setPrecise(precise);
   setNoninterpolated(isNointerp);
@@ -323,27 +322,28 @@ SpirvVariable::SpirvVariable(const SpirvType *spvType, SourceLocation loc,
                              spv::StorageClass sc, bool precise,
                              bool isNointerp, SpirvInstruction *initializerInst)
     : SpirvVariableLike(IK_Variable, spv::Op::OpVariable, QualType(), loc),
-      initializer(initializerInst), descriptorSet(-1), binding(-1),
-      hlslUserType("") {
+      initializer(initializerInst) {
   setResultType(spvType);
   setStorageClass(sc);
   setPrecise(precise);
   setNoninterpolated(isNointerp);
 }
 
-SpirvUntypedVariableKHR::SpirvUntypedVariableKHR(QualType resultType,
-                                                 SourceLocation loc,
-                                                 spv::StorageClass sc)
+SpirvUntypedVariableKHR::SpirvUntypedVariableKHR(
+    QualType resultType, SourceLocation loc, spv::StorageClass sc,
+    const SpirvType *dataType_)
     : SpirvVariableLike(IK_UntypedVariableKHR, spv::Op::OpUntypedVariableKHR,
-                        resultType, loc) {
+                        resultType, loc),
+      dataType(dataType_) {
   setStorageClass(sc);
 }
 
-SpirvUntypedVariableKHR::SpirvUntypedVariableKHR(const SpirvType *spvType,
-                                                 SourceLocation loc,
-                                                 spv::StorageClass sc)
+SpirvUntypedVariableKHR::SpirvUntypedVariableKHR(
+    const SpirvType *spvType, SourceLocation loc, spv::StorageClass sc,
+    const SpirvType *dataType_)
     : SpirvVariableLike(IK_UntypedVariableKHR, spv::Op::OpUntypedVariableKHR,
-                        QualType(), loc) {
+                        QualType(), loc),
+      dataType(dataType_) {
   setResultType(spvType);
   setStorageClass(sc);
 }
@@ -351,7 +351,8 @@ SpirvUntypedVariableKHR::SpirvUntypedVariableKHR(const SpirvType *spvType,
 SpirvVariableLike::SpirvVariableLike(Kind kind, spv::Op opcode,
                                      QualType astResultType, SourceLocation loc,
                                      SourceRange range)
-    : SpirvInstruction(kind, opcode, astResultType, loc, range) {}
+    : SpirvInstruction(kind, opcode, astResultType, loc, range),
+      descriptorSet(-1), binding(-1), hlslUserType("") {}
 
 SpirvUntypedAccessChainKHR::SpirvUntypedAccessChainKHR(
     const SpirvType *resultType, SourceLocation loc, const SpirvType *baseType,
@@ -1084,10 +1085,15 @@ SpirvVectorShuffle::SpirvVectorShuffle(QualType resultType, SourceLocation loc,
 
 SpirvArrayLength::SpirvArrayLength(QualType resultType, SourceLocation loc,
                                    SpirvInstruction *structure_,
-                                   uint32_t memberLiteral, SourceRange range)
-    : SpirvInstruction(IK_ArrayLength, spv::Op::OpArrayLength, resultType, loc,
-                       range),
-      structure(structure_), arrayMember(memberLiteral) {}
+                                   uint32_t memberLiteral, SourceRange range,
+                                   const SpirvType *structureType_)
+    : SpirvInstruction(
+          IK_ArrayLength,
+          structureType_ ? spv::Op::OpUntypedArrayLengthKHR
+                         : spv::Op::OpArrayLength,
+          resultType, loc, range),
+      structure(structure_), arrayMember(memberLiteral),
+      structureType(structureType_) {}
 
 SpirvRayTracingOpNV::SpirvRayTracingOpNV(
     QualType resultType, spv::Op opcode,
@@ -1173,7 +1179,7 @@ SpirvDebugLocalVariable::SpirvDebugLocalVariable(
 SpirvDebugGlobalVariable::SpirvDebugGlobalVariable(
     QualType debugQualType, llvm::StringRef varName, SpirvDebugSource *src,
     uint32_t line_, uint32_t column_, SpirvDebugInstruction *parent,
-    llvm::StringRef linkageName_, SpirvVariable *var_, uint32_t flags_,
+    llvm::StringRef linkageName_, SpirvVariableLike *var_, uint32_t flags_,
     llvm::Optional<SpirvInstruction *> staticMemberDebugDecl_)
     : SpirvDebugInstruction(IK_DebugGlobalVariable, /*opcode*/ 18u),
       source(src), line(line_), column(column_), parentScope(parent),
