@@ -37,6 +37,8 @@ jobs:
           cmake -S . -B build-rawbuf -G Ninja -C cmake\caches\PredefinedParams.cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_SPIRV_CODEGEN=ON -DSPIRV_BUILD_TESTS=OFF -DLLVM_INCLUDE_TESTS=OFF -DLLVM_BUILD_TESTS=OFF -DCLANG_INCLUDE_TESTS=OFF -DHLSL_INCLUDE_TESTS=OFF
           if errorlevel 1 exit /b %errorlevel%
 
+      # Compile the modified backend before the full compiler so SPIR-V source
+      # errors fail here instead of near the end of a complete DXC build.
       - name: Build SPIR-V library first
         shell: cmd
         run: |
