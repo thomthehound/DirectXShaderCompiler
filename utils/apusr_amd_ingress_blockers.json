@@ -88,6 +88,15 @@
       "required_fix": "Run a tiny DX12 differential test over offsets 1, 2 and 4 against known memory, then encode the proven scaling in the Vulkan physical-address helper. Do not guess address+offset versus address+4*offset."
     },
     {
+      "id": "raw-byteaddress-u64-atomics",
+      "amd_intrinsics": ["RWByteAddressBuffer.InterlockedAdd64", "InterlockedMin64", "InterlockedMax64", "InterlockedAnd64", "InterlockedOr64", "InterlockedXor64", "InterlockedExchange64", "InterlockedCompareExchange64"],
+      "apusr_relevance": ["future packed metadata and global synchronization structures requiring true 64-bit raw atomics"],
+      "dxil": "DXIL has native 64-bit ByteAddressBuffer atomic operations.",
+      "spirv": "The current SPIR-V backend represents RWByteAddressBuffer as 32-bit uint words. Its raw atomic handler constructs a 32-bit pointee and cannot faithfully issue one 64-bit atomic operation; most *64 methods fail as unimplemented, while Min64/Max64 route toward that 32-bit handler and therefore are not claimed supported.",
+      "status": "blocked-ingress-partial",
+      "required_fix": "Introduce a legal 8-byte-aligned 64-bit raw-buffer pointee/alias representation that can feed Int64Atomics, then qualify every operation and Min/Max signedness. Never split one 64-bit atomic into two 32-bit atomics."
+    },
+    {
       "id": "ags-f32-to-f16-directed-rounding-value",
       "amd_intrinsics": ["AmdExtD3DShaderIntrinsics_ConvertF32toF16 round-nearest/negative-infinity/positive-infinity"],
       "apusr_relevance": ["FP16 packing, quantization boundaries and deterministic conversion paths"],
