@@ -1320,11 +1320,11 @@ SpirvVariableLike *DeclResultIdMapper::createExternVar(
   SpirvVariableLike *varInstr = nullptr;
   if (useUntypedRawBuffer) {
     const auto *pointerType =
-        spvContext.getUntypedPointerKHRType(storageClass);
+        spvContext.getUntypedPointerKHRType(spv::StorageClass::StorageBuffer);
     const auto *dataType =
         spvContext.getByteAddressBufferType(isRWByteAddressBuffer(type));
     auto *untypedVar = spvBuilder.createUntypedVariableKHR(
-        pointerType, storageClass, name, loc, dataType);
+        pointerType, spv::StorageClass::StorageBuffer, name, loc, dataType);
     // Keep the HLSL resource type for binding/reflection while the SPIR-V
     // result type remains OpTypeUntypedPointerKHR.
     untypedVar->setAstResultType(type);

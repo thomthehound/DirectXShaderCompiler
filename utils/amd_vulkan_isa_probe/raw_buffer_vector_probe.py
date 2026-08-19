@@ -244,11 +244,13 @@ def classify(case: Case) -> None:
             "untyped-alias-complete" if ok else "untyped-alias-partial"
         )
     else:
-        ok = (
-            not untyped
-            and c["OpCompositeConstruct"] >= 1
+        # Legacy aliases may remain composite or scalarize after optimization.
+        scalarized = c["OpLoad"] >= 4 and c["OpStore"] >= 4
+        composite = (
+            c["OpCompositeConstruct"] >= 1
             and c["OpCompositeExtract"] >= 4
         )
+        ok = not untyped and (scalarized or composite)
         case.classification = "typed-alias-compatible" if ok else "legacy-alias-changed"
 
 

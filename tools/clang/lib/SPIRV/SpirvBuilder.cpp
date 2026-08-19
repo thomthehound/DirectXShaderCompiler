@@ -221,7 +221,14 @@ SpirvInstruction *SpirvBuilder::createLoad(QualType resultType,
 
   if (pointer->containsAliasComponent() &&
       isAKindOfStructuredOrByteBuffer(resultType)) {
-    instruction->setStorageClass(spv::StorageClass::Uniform);
+    // Untyped raw-buffer aliases point into StorageBuffer descriptors.
+    const bool useUntypedRawBuffer =
+        !spirvOptions.allowedExtensions.empty() &&
+        featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers) &&
+        (isByteAddressBuffer(resultType) || isRWByteAddressBuffer(resultType));
+    instruction->setStorageClass(useUntypedRawBuffer
+                                     ? spv::StorageClass::StorageBuffer
+                                     : spv::StorageClass::Uniform);
     // Now it is a pointer to the global resource, which is lvalue.
     instruction->setRValue(false);
     // Set to false to indicate that we've performed dereference over the
@@ -240,10 +247,16 @@ SpirvInstruction *SpirvBuilder::createLoad(QualType resultType,
   }
 
   if (context.hasLoweredType(pointer)) {
-    // preserve distinct node payload array types
-    auto *ptrType = dyn_cast<SpirvPointerType>(pointer->getResultType());
-    instruction->setResultType(ptrType->getPointeeType());
-    context.addToInstructionsWithLoweredType(instruction);
+    // Preserve distinct node payload array types. Untyped pointers have
+    // no pointee type, so leave their load result for normal AST lowering.
+    if (auto *ptrType =
+            dyn_cast<SpirvPointerType>(pointer->getResultType())) {
+      instruction->setResultType(ptrType->getPointeeType());
+      context.addToInstructionsWithLoweredType(instruction);
+    } else {
+      assert(isa<UntypedPointerKHRType>(pointer->getResultType()) &&
+             "lowered pointer must be typed or untyped");
+    }
   }
 
   const auto &bitfieldInfo = pointer->getBitfieldInfo();
@@ -368,7 +381,14 @@ SpirvBuilder::createFunctionCall(QualType returnType, SpirvFunction *func,
 
   if (func->constainsAliasComponent() &&
       isAKindOfStructuredOrByteBuffer(returnType)) {
-    instruction->setStorageClass(spv::StorageClass::Uniform);
+    // Untyped raw-buffer function results point into StorageBuffer descriptors.
+    const bool useUntypedRawBuffer =
+        !spirvOptions.allowedExtensions.empty() &&
+        featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers) &&
+        (isByteAddressBuffer(returnType) || isRWByteAddressBuffer(returnType));
+    instruction->setStorageClass(useUntypedRawBuffer
+                                     ? spv::StorageClass::StorageBuffer
+                                     : spv::StorageClass::Uniform);
     // Now it is a pointer to the global resource, which is lvalue.
     instruction->setRValue(false);
     // Set to false to indicate that we've performed dereference over the

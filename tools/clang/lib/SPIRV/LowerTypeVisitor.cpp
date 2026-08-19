@@ -1197,7 +1197,7 @@ LowerTypeVisitor::lowerResourceType(QualType type, SpirvLayoutRule rule,
 
   // ByteAddressBuffer and RWByteAddressBuffer types. The concrete descriptor
   // Data Type remains the existing raw-buffer block. Resource *values* use an
-  // untyped Uniform pointer only when the extension was explicitly requested;
+  // untyped StorageBuffer pointer only when the extension was explicitly requested;
   // this naturally covers local aliases, function parameters/returns, and
   // resource fields without changing typed resource-array element layout.
   if (name == "ByteAddressBuffer" || name == "RWByteAddressBuffer" ||
@@ -1207,7 +1207,7 @@ LowerTypeVisitor::lowerResourceType(QualType type, SpirvLayoutRule rule,
     if (rule == SpirvLayoutRule::Void) {
       if (!getCodeGenOptions().allowedExtensions.empty() &&
           spvBuilder.isExtensionEnabled(Extension::KHR_untyped_pointers))
-        return spvContext.getUntypedPointerKHRType(spv::StorageClass::Uniform);
+        return spvContext.getUntypedPointerKHRType(spv::StorageClass::StorageBuffer);
       return spvContext.getPointerType(bufferType, spv::StorageClass::Uniform);
     }
     return bufferType;
