@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare typed and untyped ByteAddressBuffer vector-memory codegen."""
+"""Qualify typed vs. untyped ByteAddressBuffer SPIR-V codegen."""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ class CommandResult:
 @dataclass
 class CaseResult:
     name: str
+    shader: str
     flags: list[str]
     compile: CommandResult | None = None
     compile_status: str = "not-run"
@@ -33,6 +34,7 @@ class CaseResult:
     spv: str | None = None
     spvasm: str | None = None
     counts: dict[str, int] = field(default_factory=dict)
+    facts: dict[str, int | bool] = field(default_factory=dict)
     classification: str = "not-classified"
     notes: list[str] = field(default_factory=list)
 
@@ -41,7 +43,10 @@ OPS = (
     "OpTypeUntypedPointerKHR",
     "OpUntypedVariableKHR",
     "OpUntypedAccessChainKHR",
+    "OpUntypedArrayLengthKHR",
+    "OpArrayLength",
     "OpAccessChain",
+    "OpAtomicIAdd",
     "OpLoad",
     "OpStore",
     "OpCompositeConstruct",
@@ -64,12 +69,7 @@ def run(argv: list[str]) -> CommandResult:
         stderr=subprocess.PIPE,
         check=False,
     )
-    return CommandResult(
-        argv=argv,
-        returncode=proc.returncode,
-        stdout=proc.stdout,
-        stderr=proc.stderr,
-    )
+    return CommandResult(argv, proc.returncode, proc.stdout, proc.stderr)
 
 
 def resolve_tool(value: str | None, fallback: str) -> str | None:
@@ -90,57 +90,209 @@ def count_ops(text: str) -> dict[str, int]:
     return {op: len(re.findall(rf"\b{op}\b", text)) for op in OPS}
 
 
-def classify(counts: dict[str, int]) -> tuple[str, list[str]]:
+def analyze(text: str) -> tuple[dict[str, int], dict[str, int | bool]]:
+    counts = count_ops(text)
+    untyped_ids = set(
+        re.findall(r"^\s*(%\S+)\s*=\s*OpUntypedAccessChainKHR\b", text, re.MULTILINE)
+    )
+    atomic_ptrs = re.findall(
+        r"^\s*%\S+\s*=\s*OpAtomicIAdd\s+%\S+\s+(%\S+)",
+        text,
+        re.MULTILINE,
+    )
+    facts: dict[str, int | bool] = {
+        "untyped_extension": 'OpExtension "SPV_KHR_untyped_pointers"' in text,
+        "untyped_capability": bool(
+            re.search(r"\bOpCapability\s+UntypedPointersKHR\b", text)
+        ),
+        "storage_buffer_vars_with_data_type": len(
+            re.findall(
+                r"OpUntypedVariableKHR\s+%\S+\s+StorageBuffer\s+%\S+",
+                text,
+            )
+        ),
+        "aligned4_loads": len(re.findall(r"\bOpLoad\b[^\n]*\bAligned\s+4\b", text)),
+        "aligned4_stores": len(re.findall(r"\bOpStore\b[^\n]*\bAligned\s+4\b", text)),
+        "atomic_uses_untyped_pointer": bool(atomic_ptrs)
+        and all(ptr in untyped_ids for ptr in atomic_ptrs),
+    }
+    return counts, facts
+
+
+def classify_vector(
+    counts: dict[str, int], facts: dict[str, int | bool]
+) -> tuple[str, list[str]]:
     notes: list[str] = []
-    untyped_vars = counts.get("OpUntypedVariableKHR", 0)
-    untyped_access = counts.get("OpUntypedAccessChainKHR", 0)
-    loads = counts.get("OpLoad", 0)
-    stores = counts.get("OpStore", 0)
-    constructs = counts.get("OpCompositeConstruct", 0)
-    extracts = counts.get("OpCompositeExtract", 0)
+    untyped_vars = counts["OpUntypedVariableKHR"]
+    untyped_access = counts["OpUntypedAccessChainKHR"]
+    loads = counts["OpLoad"]
+    stores = counts["OpStore"]
+    constructs = counts["OpCompositeConstruct"]
+    extracts = counts["OpCompositeExtract"]
 
     if (
-        untyped_vars >= 2
+        facts["untyped_extension"]
+        and facts["untyped_capability"]
+        and untyped_vars >= 2
+        and int(facts["storage_buffer_vars_with_data_type"]) >= 2
         and untyped_access >= 4
         and loads == 2
         and stores == 2
+        and int(facts["aligned4_loads"]) == 2
+        and int(facts["aligned4_stores"]) == 2
         and constructs == 0
         and extracts == 0
     ):
         return "untyped-vectorized", notes
 
     if (
-        untyped_vars == 0
+        not facts["untyped_extension"]
+        and not facts["untyped_capability"]
+        and untyped_vars == 0
         and untyped_access == 0
         and loads >= 8
         and stores >= 8
     ):
-        if constructs < 2:
-            notes.append(
-                f"scalar load count is present but only {constructs} composite constructs"
-            )
-        if extracts < 8:
-            notes.append(
-                f"scalar store count is present but only {extracts} composite extracts"
-            )
         return "typed-scalarized", notes
 
     if untyped_vars or untyped_access:
-        notes.append(
-            "untyped-pointer codegen is present but the two vector loads/two vector "
-            "stores did not remain as four vector memory operations"
-        )
+        notes.append("untyped codegen is present but the complete vector-memory contract failed")
         return "untyped-partial", notes
 
-    notes.append(
-        "codegen does not match either the known scalarized baseline or the target "
-        "untyped vector-memory shape"
-    )
+    notes.append("codegen matches neither the legacy scalar baseline nor the untyped target")
     return "other", notes
+
+
+def classify_surface(
+    counts: dict[str, int], facts: dict[str, int | bool]
+) -> tuple[str, list[str]]:
+    notes: list[str] = []
+    if (
+        facts["untyped_extension"]
+        and facts["untyped_capability"]
+        and counts["OpUntypedVariableKHR"] >= 2
+        and int(facts["storage_buffer_vars_with_data_type"]) >= 2
+        and counts["OpUntypedAccessChainKHR"] >= 2
+        and counts["OpUntypedArrayLengthKHR"] >= 1
+        and counts["OpArrayLength"] == 0
+        and counts["OpAtomicIAdd"] >= 1
+        and facts["atomic_uses_untyped_pointer"]
+    ):
+        return "untyped-surface-complete", notes
+
+    if (
+        not facts["untyped_extension"]
+        and not facts["untyped_capability"]
+        and counts["OpUntypedVariableKHR"] == 0
+        and counts["OpUntypedAccessChainKHR"] == 0
+        and counts["OpUntypedArrayLengthKHR"] == 0
+        and counts["OpArrayLength"] >= 1
+        and counts["OpAtomicIAdd"] >= 1
+    ):
+        return "typed-surface-compatible", notes
+
+    if counts["OpUntypedVariableKHR"] or counts["OpUntypedAccessChainKHR"]:
+        notes.append("untyped resource codegen is present but GetDimensions/atomic coverage is incomplete")
+        return "untyped-surface-partial", notes
+
+    notes.append("surface codegen matches neither compatibility nor untyped target shape")
+    return "other", notes
+
+
+def classify(
+    kind: str, counts: dict[str, int], facts: dict[str, int | bool]
+) -> tuple[str, list[str]]:
+    if kind == "vector":
+        return classify_vector(counts, facts)
+    return classify_surface(counts, facts)
 
 
 def case_dict(case: CaseResult) -> dict[str, object]:
     return asdict(case)
+
+
+def run_self_test() -> int:
+    legacy_vector = """
+OpExtension "SPV_KHR_integer_dot_product"
+%p0 = OpAccessChain %ptr %input %zero %idx
+%a0 = OpLoad %uint %p0
+%p1 = OpAccessChain %ptr %input %zero %idx
+%a1 = OpLoad %uint %p1
+%p2 = OpAccessChain %ptr %input %zero %idx
+%a2 = OpLoad %uint %p2
+%p3 = OpAccessChain %ptr %input %zero %idx
+%a3 = OpLoad %uint %p3
+%v0 = OpCompositeConstruct %v4uint %a0 %a1 %a2 %a3
+%p4 = OpAccessChain %ptr %input %zero %idx
+%b0 = OpLoad %uint %p4
+%p5 = OpAccessChain %ptr %input %zero %idx
+%b1 = OpLoad %uint %p5
+%p6 = OpAccessChain %ptr %input %zero %idx
+%b2 = OpLoad %uint %p6
+%p7 = OpAccessChain %ptr %input %zero %idx
+%b3 = OpLoad %uint %p7
+%v1 = OpCompositeConstruct %v4uint %b0 %b1 %b2 %b3
+%q0 = OpCompositeExtract %uint %v0 0
+OpStore %p0 %q0
+%q1 = OpCompositeExtract %uint %v0 1
+OpStore %p1 %q1
+%q2 = OpCompositeExtract %uint %v0 2
+OpStore %p2 %q2
+%q3 = OpCompositeExtract %uint %v0 3
+OpStore %p3 %q3
+%q4 = OpCompositeExtract %uint %v1 0
+OpStore %p4 %q4
+%q5 = OpCompositeExtract %uint %v1 1
+OpStore %p5 %q5
+%q6 = OpCompositeExtract %uint %v1 2
+OpStore %p6 %q6
+%q7 = OpCompositeExtract %uint %v1 3
+OpStore %p7 %q7
+"""
+    untyped_vector = """
+OpCapability UntypedPointersKHR
+OpExtension "SPV_KHR_untyped_pointers"
+%input = OpUntypedVariableKHR %uptr StorageBuffer %RawBlock
+%output = OpUntypedVariableKHR %uptr StorageBuffer %RawBlock
+%p0 = OpUntypedAccessChainKHR %uptrv4 %RawBlock %input %zero %idx
+%a = OpLoad %v4uint %p0 Aligned 4
+%p1 = OpUntypedAccessChainKHR %uptrv4 %RawBlock %input %zero %idx
+%b = OpLoad %v4float %p1 Aligned 4
+%p2 = OpUntypedAccessChainKHR %uptrv4 %RawBlock %output %zero %idx
+OpStore %p2 %a Aligned 4
+%p3 = OpUntypedAccessChainKHR %uptrv4 %RawBlock %output %zero %idx
+OpStore %p3 %b Aligned 4
+"""
+    legacy_surface = """
+%len = OpArrayLength %uint %input 0
+%ptr = OpAccessChain %uptr %output %zero %idx
+%old = OpAtomicIAdd %uint %ptr %scope %sem %len
+"""
+    untyped_surface = """
+OpCapability UntypedPointersKHR
+OpExtension "SPV_KHR_untyped_pointers"
+%input = OpUntypedVariableKHR %uptr StorageBuffer %RawBlock
+%output = OpUntypedVariableKHR %uptr StorageBuffer %RawBlock
+%len = OpUntypedArrayLengthKHR %uint %RawBlock %input 0
+%ptr = OpUntypedAccessChainKHR %uptr32 %RawBlock %output %zero %idx
+%old = OpAtomicIAdd %uint %ptr %scope %sem %len
+%store = OpUntypedAccessChainKHR %uptr32 %RawBlock %output %zero %idx2
+OpStore %store %old Aligned 4
+"""
+    fixtures = (
+        ("vector", legacy_vector, "typed-scalarized"),
+        ("vector", untyped_vector, "untyped-vectorized"),
+        ("surface", legacy_surface, "typed-surface-compatible"),
+        ("surface", untyped_surface, "untyped-surface-complete"),
+    )
+    for kind, text, expected in fixtures:
+        counts, facts = analyze(text)
+        actual, notes = classify(kind, counts, facts)
+        if actual != expected:
+            print(f"self-test failed: {kind}: expected {expected}, got {actual}: {notes}")
+            return 1
+    print("raw-buffer SPIR-V contract parser self-test: PASS")
+    return 0
 
 
 def write_markdown(
@@ -148,53 +300,40 @@ def write_markdown(
     cases: list[CaseResult],
     shader_profile: str,
     target_env: str,
+    contract_ready: bool,
 ) -> None:
-    by_name = {case.name: case for case in cases}
-    legacy = by_name.get("legacy-restricted")
-    untyped = by_name.get("untyped-enabled")
-
     lines = [
-        "# Raw ByteAddressBuffer vector-memory comparison",
+        "# Raw ByteAddressBuffer untyped-pointer contract",
         "",
         f"Shader profile: `{shader_profile}`. SPIR-V target: `{target_env}`.",
+        f"Full untyped contract ready: `{contract_ready}`.",
         "",
-        "The shader performs exactly two 16-byte loads and two 16-byte stores:",
-        "classic `Load4`/`Store4` plus templated `Load<float4>`/vector `Store`.",
-        "The byte offsets are 4-byte aligned but intentionally not 16-byte aligned.",
+        "The vector shader performs exactly two 16-byte loads and two 16-byte stores",
+        "at byte offsets that are 4-byte aligned but intentionally not 16-byte aligned.",
+        "The surface shader independently covers resource Data Type operands,",
+        "`GetDimensions`, and an existing 32-bit raw atomic.",
         "",
-        "| Case | Classification | Loads | Stores | Untyped vars | Untyped access chains | Constructs | Extracts |",
+        "| Case | Classification | Loads | Stores | Untyped vars | Untyped access | Untyped length | Atomic add |",
         "|---|---|---:|---:|---:|---:|---:|---:|",
     ]
     for case in cases:
         c = case.counts
         lines.append(
-            f"| `{case.name}` | `{case.classification}` | "
-            f"{c.get('OpLoad', 0)} | {c.get('OpStore', 0)} | "
-            f"{c.get('OpUntypedVariableKHR', 0)} | "
+            f"| `{case.name}` | `{case.classification}` | {c.get('OpLoad', 0)} | "
+            f"{c.get('OpStore', 0)} | {c.get('OpUntypedVariableKHR', 0)} | "
             f"{c.get('OpUntypedAccessChainKHR', 0)} | "
-            f"{c.get('OpCompositeConstruct', 0)} | "
-            f"{c.get('OpCompositeExtract', 0)} |"
+            f"{c.get('OpUntypedArrayLengthKHR', 0)} | {c.get('OpAtomicIAdd', 0)} |"
         )
-
-    if legacy and untyped and legacy.counts and untyped.counts:
-        lines += [
-            "",
-            "## Delta",
-            "",
-            f"- Load instructions: {legacy.counts.get('OpLoad', 0)} -> {untyped.counts.get('OpLoad', 0)}",
-            f"- Store instructions: {legacy.counts.get('OpStore', 0)} -> {untyped.counts.get('OpStore', 0)}",
-            f"- Composite constructs: {legacy.counts.get('OpCompositeConstruct', 0)} -> {untyped.counts.get('OpCompositeConstruct', 0)}",
-            f"- Composite extracts: {legacy.counts.get('OpCompositeExtract', 0)} -> {untyped.counts.get('OpCompositeExtract', 0)}",
-        ]
-
     lines += [
         "",
         "## Contract",
         "",
-        "- `legacy-restricted` explicitly allow-lists an unrelated KHR extension, so `SPV_KHR_untyped_pointers` is forbidden. It must continue to compile through the existing typed compatibility path.",
-        "- `untyped-enabled` explicitly permits `SPV_KHR_untyped_pointers`. The target is two `OpUntypedVariableKHR` resources, untyped access chains, two vector `OpLoad`s, and two vector `OpStore`s.",
-        "- The optimized case must not depend on 16-byte HLSL address alignment; the probe offsets are only 4-byte aligned.",
-        "- Converting pointers after DXC has scalarized the operations is insufficient: the vector memory operations must survive DXC codegen itself.",
+        "- Restricted legacy cases forbid `SPV_KHR_untyped_pointers` and must retain typed compatibility codegen.",
+        "- Untyped cases require the extension and `UntypedPointersKHR` capability.",
+        "- StorageBuffer `OpUntypedVariableKHR` instructions must carry a concrete Data Type operand.",
+        "- The vector case requires exactly two aligned-4 vector loads and two aligned-4 vector stores with no composite reconstruction/extraction.",
+        "- `GetDimensions` must use `OpUntypedArrayLengthKHR` on an untyped raw buffer.",
+        "- Existing 32-bit `InterlockedAdd` must receive a pointer produced by `OpUntypedAccessChainKHR`.",
         "",
         "## Notes",
         "",
@@ -202,20 +341,12 @@ def write_markdown(
     for case in cases:
         notes = "; ".join(case.notes) if case.notes else "none"
         lines.append(f"- `{case.name}`: {notes}")
-
     lines += ["", "## Commands", ""]
     for case in cases:
         if case.compile is not None:
-            lines.append(
-                f"- `{case.name}` / DXC: `{quote_cmd(case.compile.argv)}` -> "
-                f"`{case.compile.returncode}`"
-            )
+            lines.append(f"- `{case.name}` / DXC: `{quote_cmd(case.compile.argv)}` -> `{case.compile.returncode}`")
         if case.disassemble is not None:
-            lines.append(
-                f"- `{case.name}` / spirv-dis: "
-                f"`{quote_cmd(case.disassemble.argv)}` -> "
-                f"`{case.disassemble.returncode}`"
-            )
+            lines.append(f"- `{case.name}` / spirv-dis: `{quote_cmd(case.disassemble.argv)}` -> `{case.disassemble.returncode}`")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -226,12 +357,21 @@ def main() -> int:
     parser.add_argument("--target-env", default="vulkan1.2")
     parser.add_argument("--shader-profile", default="cs_6_6")
     parser.add_argument("--out-dir", default="out/raw-buffer-vector-probe")
+    parser.add_argument("--self-test", action="store_true", help="Test the SPIR-V contract parser without DXC")
     parser.add_argument(
         "--require-untyped-vectorization",
         action="store_true",
-        help="Return nonzero unless the untyped-enabled case reaches the target shape",
+        help="Return nonzero unless the untyped vector case reaches the target shape",
+    )
+    parser.add_argument(
+        "--require-untyped-contract",
+        action="store_true",
+        help="Return nonzero unless vectorization, Data Type, GetDimensions, and atomic-pointer contracts all pass",
     )
     args = parser.parse_args()
+
+    if args.self_test:
+        return run_self_test()
 
     dxc = resolve_tool(args.dxc, "dxc")
     if not dxc:
@@ -241,33 +381,28 @@ def main() -> int:
         parser.error("spirv-dis not found; pass --spirv-dis")
 
     here = Path(__file__).resolve().parent
-    shader = here / "shaders" / "raw_buffer_vector.hlsl"
     out_dir = Path(args.out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-
+    extension_flags = {
+        "legacy": ["-fspv-extension=SPV_KHR_integer_dot_product"],
+        "untyped": ["-fspv-extension=SPV_KHR_untyped_pointers"],
+    }
     specs = (
-        (
-            "legacy-restricted",
-            ["-fspv-extension=SPV_KHR_integer_dot_product"],
-        ),
-        (
-            "untyped-enabled",
-            ["-fspv-extension=SPV_KHR_untyped_pointers"],
-        ),
+        ("legacy-restricted", "vector", "shaders/raw_buffer_vector.hlsl", extension_flags["legacy"]),
+        ("untyped-enabled", "vector", "shaders/raw_buffer_vector.hlsl", extension_flags["untyped"]),
+        ("legacy-surface", "surface", "shaders/raw_buffer_surface.hlsl", extension_flags["legacy"]),
+        ("untyped-surface", "surface", "shaders/raw_buffer_surface.hlsl", extension_flags["untyped"]),
     )
     common = [
-        "-spirv",
-        "-E",
-        "main",
-        "-T",
-        args.shader_profile,
+        "-spirv", "-E", "main", "-T", args.shader_profile,
         f"-fspv-target-env={args.target_env}",
     ]
 
     cases: list[CaseResult] = []
     failed = False
-    for name, flags in specs:
-        case = CaseResult(name=name, flags=flags)
+    for name, kind, shader_rel, flags in specs:
+        shader = here / shader_rel
+        case = CaseResult(name=name, shader=shader_rel, flags=flags)
         cases.append(case)
         spv_path = out_dir / f"{name}.spv"
         asm_path = out_dir / f"{name}.spvasm"
@@ -303,48 +438,45 @@ def main() -> int:
             print(f"[{name}] spirv-dis returned 0 but produced no output")
             failed = True
             continue
-
         case.disassembly_status = "ok"
-        case.counts = count_ops(
-            asm_path.read_text(encoding="utf-8", errors="replace")
-        )
-        case.classification, case.notes = classify(case.counts)
-        print(f"[{name}] {case.classification}: {case.counts}")
+
+        text = asm_path.read_text(encoding="utf-8", errors="replace")
+        case.counts, case.facts = analyze(text)
+        case.classification, case.notes = classify(kind, case.counts, case.facts)
+        print(f"[{name}] {case.classification}: {case.counts} {case.facts}")
 
     by_name = {case.name: case for case in cases}
-    legacy = by_name["legacy-restricted"]
-    untyped = by_name["untyped-enabled"]
-    if (
-        legacy.disassembly_status == "ok"
-        and legacy.classification != "typed-scalarized"
-    ):
-        legacy.notes.append(
-            "legacy compatibility shape changed while untyped pointers were forbidden"
-        )
+    vector_ready = by_name["untyped-enabled"].classification == "untyped-vectorized"
+    surface_ready = by_name["untyped-surface"].classification == "untyped-surface-complete"
+    legacy_ready = (
+        by_name["legacy-restricted"].classification == "typed-scalarized"
+        and by_name["legacy-surface"].classification == "typed-surface-compatible"
+    )
+    contract_ready = vector_ready and surface_ready and legacy_ready
 
-    requirement_met = untyped.classification == "untyped-vectorized"
-    if args.require_untyped_vectorization and not requirement_met:
+    if args.require_untyped_vectorization and not vector_ready:
+        failed = True
+    if args.require_untyped_contract and not contract_ready:
         failed = True
 
     report = {
-        "schema": 1,
+        "schema": 2,
         "dxc": dxc,
         "spirv_dis": spirv_dis,
         "shader_profile": args.shader_profile,
         "target_env": args.target_env,
-        "untyped_vectorization_ready": requirement_met,
+        "legacy_compatibility_ready": legacy_ready,
+        "untyped_vectorization_ready": vector_ready,
+        "untyped_surface_ready": surface_ready,
+        "untyped_raw_buffer_contract_ready": contract_ready,
         "cases": [case_dict(case) for case in cases],
     }
-    (out_dir / "report.json").write_text(
-        json.dumps(report, indent=2) + "\n", encoding="utf-8"
-    )
-    write_markdown(
-        out_dir / "REPORT.md",
-        cases,
-        args.shader_profile,
-        args.target_env,
-    )
-    print(f"untyped vectorization ready: {requirement_met}")
+    (out_dir / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    write_markdown(out_dir / "REPORT.md", cases, args.shader_profile, args.target_env, contract_ready)
+    print(f"legacy compatibility ready: {legacy_ready}")
+    print(f"untyped vectorization ready: {vector_ready}")
+    print(f"untyped surface ready: {surface_ready}")
+    print(f"untyped raw-buffer contract ready: {contract_ready}")
     print(f"report: {out_dir / 'REPORT.md'}")
     return 1 if failed else 0
 
