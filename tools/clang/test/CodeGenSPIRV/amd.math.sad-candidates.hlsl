@@ -3,10 +3,11 @@
 #include <vk/amd/math.h>
 
 // Structural contract for the canonical SAD graphs. Byte/word lanes must stay
-// explicit and masked SAD must retain four independent reference-zero selects.
+// explicit and masked SAD must retain four independent reference-zero tests.
+// Selection may be OpSelect or structured control flow in unoptimized SPIR-V.
 // This test does not claim native ISA; the installed-driver math probe does.
 // CHECK: OpBitFieldUExtract
-// CHECK-COUNT-4: OpSelect
+// CHECK: {{OpSelect|OpSelectionMerge}}
 // CHECK-COUNT-4: OpINotEqual
 // CHECK-NOT: SAbs
 
