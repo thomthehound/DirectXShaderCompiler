@@ -33,6 +33,22 @@ def require(name: str, text: str, patterns: tuple[str, ...]) -> None:
     print(f"PASS AMD atomics: {name}")
 
 
+def check_case(
+    dxc: str,
+    shader: Path,
+    name: str,
+    flags: tuple[str, ...],
+    patterns: tuple[str, ...],
+) -> bool:
+    try:
+        text = compile_shader(dxc, shader, *flags)
+        require(name, text, patterns)
+        return True
+    except RuntimeError as error:
+        print(f"FAIL {error}", file=sys.stderr)
+        return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dxc", required=True)
@@ -54,40 +70,48 @@ def main() -> int:
         r"\bOpAtomicExchange\b",
         r"\bOpAtomicCompareExchange\b",
     )
-
-    structured = compile_shader(
-        dxc, tests / "amd.intrinsics.atomic-u64.hlsl",
+    buffer_flags = (
         "-T", "cs_6_6", "-E", "main", "-fcgl", "-spirv",
         "-fspv-target-env=vulkan1.2",
     )
-    require("structured buffer", structured, common + (r"\bOpAtomicSMin\b", r"\bOpAtomicSMax\b"))
-
-    byteaddress = compile_shader(
-        dxc, tests / "amd.intrinsics.atomic-u64-byteaddress.hlsl",
-        "-T", "cs_6_6", "-E", "main", "-fcgl", "-spirv",
-        "-fspv-target-env=vulkan1.2",
-    )
-    require("byte-address buffer", byteaddress, common)
-
     image_flags = (
-        "-T", "cs_6_6", "-E", "main", "-fcgl", "-spirv",
-        "-fspv-target-env=vulkan1.2",
+        *buffer_flags,
         "-fspv-extension=SPV_EXT_shader_image_int64",
     )
-    image = compile_shader(dxc, tests / "amd.intrinsics.atomic-u64-image.hlsl", *image_flags)
-    require(
+
+    failed = False
+    if not check_case(
+        dxc,
+        tests / "amd.intrinsics.atomic-u64.hlsl",
+        "structured buffer",
+        buffer_flags,
+        common + (r"\bOpAtomicSMin\b", r"\bOpAtomicSMax\b"),
+    ):
+        failed = True
+    if not check_case(
+        dxc,
+        tests / "amd.intrinsics.atomic-u64-byteaddress.hlsl",
+        "byte-address buffer",
+        buffer_flags,
+        common,
+    ):
+        failed = True
+    if not check_case(
+        dxc,
+        tests / "amd.intrinsics.atomic-u64-image.hlsl",
         "typed image operations",
-        image,
+        image_flags,
         common + (
             r'OpExtension "SPV_EXT_shader_image_int64"',
             r"OpCapability Int64ImageEXT",
         ),
-    )
-
-    shapes = compile_shader(dxc, tests / "amd.intrinsics.atomic-u64-image-shapes.hlsl", *image_flags)
-    require(
+    ):
+        failed = True
+    if not check_case(
+        dxc,
+        tests / "amd.intrinsics.atomic-u64-image-shapes.hlsl",
         "typed image 1D/2D/3D",
-        shapes,
+        image_flags,
         (
             r'OpExtension "SPV_EXT_shader_image_int64"',
             r"OpCapability Int64ImageEXT",
@@ -96,15 +120,15 @@ def main() -> int:
             r"\bOpAtomicUMin\b",
             r"\bOpAtomicCompareExchange\b",
         ),
-    )
+    ):
+        failed = True
+
+    if failed:
+        return 1
 
     print("AMD 64-bit atomic resource-family contracts: PASS")
     return 0
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except RuntimeError as error:
-        print(f"FAIL {error}", file=sys.stderr)
-        raise SystemExit(1)
+    raise SystemExit(main())
