@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile APUSR-relevant cooperative-matrix shapes through SPIR-V and DXIL."""
+"""Qualify APUSR-relevant cooperative-matrix shapes through SPIR-V and DXIL."""
 
 from __future__ import annotations
 
@@ -24,6 +24,12 @@ CASES = (
     {"mode": 7, "name": "u8xi8-i32", "a": 20, "b": 19, "c": 4, "spv_extra": ()},
 )
 
+SPV_BYTEADDRESS_BLOCKER = (
+    "dx::linalg ByteAddressBuffer cooperative-matrix load/store needs a typed "
+    "or untyped pointer bridge at the byte offset; refusing to reinterpret a "
+    "Vulkan storage-buffer pointer illegally"
+)
+
 
 def run(argv: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -37,11 +43,10 @@ def run(argv: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
-def fail(label: str, backend: str, proc: subprocess.CompletedProcess[str], reason: str) -> int:
+def report_process(label: str, backend: str, proc: subprocess.CompletedProcess[str], reason: str) -> None:
     print(f"AMD matrix {label} / {backend}: {reason}", file=sys.stderr)
     print(proc.stdout, end="")
     print(proc.stderr, end="", file=sys.stderr)
-    return proc.returncode or 2
 
 
 def main() -> int:
@@ -52,37 +57,41 @@ def main() -> int:
     root = Path(__file__).resolve().parents[1]
     shader = root / "tools/clang/test/CodeGenSPIRV/linalg.cooperative-matrix-shapes.amd.hlsl"
     dxc = str(Path(args.dxc).resolve())
-
-    spv_required = (
-        r"OpCapability CooperativeMatrixKHR",
-        r'OpExtension "SPV_KHR_cooperative_matrix"',
-        r"\bOpTypeCooperativeMatrixKHR\b",
-        r"\bOpCooperativeMatrixLoadKHR\b",
-        r"\bOpCooperativeMatrixMulAddKHR\b",
-        r"\bOpCooperativeMatrixStoreKHR\b",
-    )
+    failed = False
 
     with tempfile.TemporaryDirectory(prefix="amd_matrix_ci_") as temp_name:
         temp = Path(temp_name)
         for case in CASES:
             label = str(case["name"])
             mode = int(case["mode"])
+
+            # This descriptor-backed ByteAddressBuffer path is intentionally not
+            # implemented for SPIR-V yet. A legal typed/untyped pointer bridge at
+            # the byte offset is required; accepting the current shader would mean
+            # we had silently reintroduced the illegal pointer reinterpretation.
             spv_proc = run([
                 dxc, "-T", "cs_6_10", "-E", "main", "-fcgl", "-spirv",
                 "-fspv-target-env=vulkan1.3", *case["spv_extra"],
                 f"-DMODE={mode}", str(shader),
             ])
-            if spv_proc.returncode != 0:
-                return fail(label, "SPIR-V", spv_proc, "compilation failed")
-            missing = [p for p in spv_required if re.search(p, spv_proc.stdout) is None]
-            if mode in (2, 3) and 'OpExtension "SPV_KHR_bfloat16"' not in spv_proc.stdout:
-                missing.append('OpExtension "SPV_KHR_bfloat16"')
-            if missing:
-                print(f"AMD matrix {label} / SPIR-V missing contracts:", file=sys.stderr)
-                for pattern in missing:
-                    print(f"  {pattern}", file=sys.stderr)
-                return 3
-            print(f"PASS AMD matrix SPIR-V: {label}")
+            spv_output = spv_proc.stdout + "\n" + spv_proc.stderr
+            if spv_proc.returncode == 0:
+                report_process(
+                    label, "SPIR-V", spv_proc,
+                    "unexpectedly accepted blocked ByteAddressBuffer pointer bridge",
+                )
+                failed = True
+            elif SPV_BYTEADDRESS_BLOCKER not in spv_output:
+                report_process(
+                    label, "SPIR-V", spv_proc,
+                    "failed for a reason other than the tracked pointer-bridge blocker",
+                )
+                failed = True
+            else:
+                print(
+                    f"PASS AMD matrix SPIR-V blocker: {label} rejects unsafe "
+                    "ByteAddressBuffer pointer reinterpretation"
+                )
 
             dxil = temp / f"{label}.dxil"
             listing = temp / f"{label}.ll"
@@ -91,10 +100,16 @@ def main() -> int:
                 str(shader), "-Fo", str(dxil), "-Fc", str(listing),
             ])
             if dxil_proc.returncode != 0:
-                return fail(label, "DXIL", dxil_proc, "compilation failed")
+                report_process(label, "DXIL", dxil_proc, "compilation failed")
+                failed = True
+                continue
             if not listing.is_file():
-                print(f"AMD matrix {label} / DXIL produced no listing", file=sys.stderr)
-                return 4
+                print(
+                    f"AMD matrix {label} / DXIL produced no listing",
+                    file=sys.stderr,
+                )
+                failed = True
+                continue
             text = listing.read_text(encoding="utf-8", errors="replace")
             dxil_required = (
                 "dx.op.linAlgMatrixMultiplyAccumulate",
@@ -107,10 +122,14 @@ def main() -> int:
                 print(f"AMD matrix {label} / DXIL missing contracts:", file=sys.stderr)
                 for needle in missing_dxil:
                     print(f"  {needle}", file=sys.stderr)
-                return 5
+                failed = True
+                continue
             print(f"PASS AMD matrix DXIL: {label}")
 
-    print("AMD cooperative matrix SPIR-V + DXIL shape contracts: PASS")
+    if failed:
+        return 1
+
+    print("AMD cooperative matrix DXIL shapes + SPIR-V pointer-bridge blocker: PASS")
     return 0
 
 
