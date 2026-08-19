@@ -283,7 +283,7 @@ def main() -> int:
             "-fspv-target-env=vulkan1.1",
         ),
         required=(
-            r'OpExtension "SPV_KHR_shader_draw_parameters"',
+            r"OpCapability DrawParameters",
             r"BuiltIn BaseVertex",
             r"BuiltIn BaseInstance",
             r"BuiltIn DrawIndex",
