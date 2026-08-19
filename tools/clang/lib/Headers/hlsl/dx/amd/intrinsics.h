@@ -48,11 +48,11 @@ uint ActiveMin(uint value) { return WaveActiveMin(value); }
 float ActiveMax(float value) { return WaveActiveMax(value); }
 int ActiveMax(int value) { return WaveActiveMax(value); }
 uint ActiveMax(uint value) { return WaveActiveMax(value); }
-int ActiveBitAnd(int value) { return WaveActiveBitAnd(value); }
+int ActiveBitAnd(int value) { return asint(WaveActiveBitAnd(asuint(value))); }
 uint ActiveBitAnd(uint value) { return WaveActiveBitAnd(value); }
-int ActiveBitOr(int value) { return WaveActiveBitOr(value); }
+int ActiveBitOr(int value) { return asint(WaveActiveBitOr(asuint(value))); }
 uint ActiveBitOr(uint value) { return WaveActiveBitOr(value); }
-int ActiveBitXor(int value) { return WaveActiveBitXor(value); }
+int ActiveBitXor(int value) { return asint(WaveActiveBitXor(asuint(value))); }
 uint ActiveBitXor(uint value) { return WaveActiveBitXor(value); }
 
 float PrefixSum(float value) { return WavePrefixSum(value); }
