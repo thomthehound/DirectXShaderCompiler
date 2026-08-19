@@ -14,6 +14,36 @@ For the included HLSL `msad4` experiment, the exact one-instruction target is
 SAD-family mnemonics are preserved in the report as specialized partial
 lowering, and ordinary arithmetic is not relabeled as native support.
 
+## APUSR optical-flow SAD/QSad probes
+
+Before comparing native code, verify the source-level arithmetic contracts:
+
+```powershell
+python utils\amd_vulkan_isa_probe\sad_semantics.py
+```
+
+This checks the current APUSR packed SWAR byte-absolute-difference helper,
+the rolling four-window QSad construction, and QSad equivalence to `msad4`
+under FidelityFX's required nonzero-luma input contract. A zero-reference-byte
+negative control is included so the test also proves why that contract matters.
+
+To compare the real APUSR optical-flow arithmetic shapes, use:
+
+```powershell
+python utils\amd_vulkan_isa_probe\apusr_qsad_probe.py `
+  --dxc <path-to-forked-dxc.exe> `
+  --spirv-dis <path-to-spirv-dis.exe> `
+  --driver-probe out\amd-vulkan-isa-probe\Release\amd_vulkan_isa_probe.exe `
+  --rga <path-to-rga.exe> `
+  --rga-target gfx1151
+```
+
+The two comparison shaders both model the hot 8-row x 2-QSad search shape. One
+uses 16 accumulated `msad4` calls; the other uses the current Vulkan fallback,
+which expands those searches into 64 packed SWAR SAD calculations followed by
+packed UDOT. The report keeps SPIR-V, installed-driver ISA, RGA live ISA, and
+RGA offline evidence separate.
+
 ## Build on Windows
 
 Use a Vulkan SDK environment (or pass `-DVulkan_ROOT=...` to CMake):
