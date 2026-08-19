@@ -14,8 +14,10 @@ RWStructuredBuffer<uint> Out : register(u0);
 
 [numthreads(64, 1, 1)]
 void main(uint3 tid : SV_DispatchThreadID) {
-  uint a = tid.x * 0x13579bdu + 0x12fedcbau;
-  uint b = tid.x * 0x2468aceu + 0xe156789au;
+  // Keep both operands dynamic without adding unrelated multiplies to the
+  // SPIR-V shape being counted below.
+  uint a = (tid.x ^ 0x13579bdu) + 0x12fedcbau;
+  uint b = ((tid.x << 7u) ^ 0x2468aceu) + 0xe156789au;
   uint u = vk::amd::MulU24(a, b);
   int s = vk::amd::MulI24(asint(a), asint(b));
   Out[tid.x] = u ^ asuint(s);
