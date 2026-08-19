@@ -8,16 +8,8 @@
   "blockers": [
     {
       "id": "async-global-to-lds",
-      "amd_intrinsics": [
-        "llvm.amdgcn.global.load.lds",
-        "llvm.amdgcn.global.load.lds.dwordx4",
-        "generation-equivalent async global-to-LDS forms"
-      ],
-      "apusr_relevance": [
-        "FSR4 tiled INT8 staging",
-        "FSR4 pre/post groupshared staging",
-        "future matrix/WMMA staging"
-      ],
+      "amd_intrinsics": ["llvm.amdgcn.global.load.lds", "llvm.amdgcn.global.load.lds.dwordx4", "generation-equivalent async global-to-LDS forms"],
+      "apusr_relevance": ["FSR4 tiled INT8 staging", "FSR4 pre/post groupshared staging", "future matrix/WMMA staging"],
       "dxil": "No shader-facing HLSL/DXIL intrinsic in this DXC fork that preserves AMD async global-to-LDS intent.",
       "spirv": "No currently used core/KHR/AMD SPIR-V instruction in the branch that carries the AMD async global-to-LDS operation as such.",
       "status": "blocked-ingress",
@@ -25,13 +17,8 @@
     },
     {
       "id": "async-lds-to-global",
-      "amd_intrinsics": [
-        "AMDGPU async LDS-to-global/store families"
-      ],
-      "apusr_relevance": [
-        "tiled output staging",
-        "future tensor/matrix output kernels"
-      ],
+      "amd_intrinsics": ["AMDGPU async LDS-to-global/store families"],
+      "apusr_relevance": ["tiled output staging", "future tensor/matrix output kernels"],
       "dxil": "No shader-facing AMD async LDS-to-global contract identified.",
       "spirv": "No exact SPIR-V ingress identified for the AMD async store operation.",
       "status": "blocked-ingress",
@@ -39,14 +26,8 @@
     },
     {
       "id": "transposed-memory-loads",
-      "amd_intrinsics": [
-        "AMDGPU transposed global/LDS load families"
-      ],
-      "apusr_relevance": [
-        "matrix tiles",
-        "convolution tensor staging",
-        "future WMMA/SWMMAC layouts"
-      ],
+      "amd_intrinsics": ["AMDGPU transposed global/LDS load families"],
+      "apusr_relevance": ["matrix tiles", "convolution tensor staging", "future WMMA/SWMMAC layouts"],
       "dxil": "No direct shader-facing DXIL contract identified for AMD transposed-load intent.",
       "spirv": "Generic vector/scalar loads express values but not the hardware transposed-load operation or layout intent.",
       "status": "blocked-ingress",
@@ -54,17 +35,8 @@
     },
     {
       "id": "shader-prefetch",
-      "amd_intrinsics": [
-        "llvm.amdgcn.s.prefetch.data",
-        "llvm.amdgcn.global.prefetch",
-        "generation-equivalent prefetch hints"
-      ],
-      "apusr_relevance": [
-        "weights",
-        "model constants",
-        "tiled input windows",
-        "future persistent kernels"
-      ],
+      "amd_intrinsics": ["llvm.amdgcn.s.prefetch.data", "llvm.amdgcn.global.prefetch", "generation-equivalent prefetch hints"],
+      "apusr_relevance": ["weights", "model constants", "tiled input windows", "future persistent kernels"],
       "dxil": "DXC has generic LLVM prefetch machinery for CPU-oriented targets but no HLSL/DXIL shader contract that preserves AMD GPU prefetch intent.",
       "spirv": "No exact shader prefetch operation is available in the branch's Vulkan contract surface.",
       "status": "blocked-ingress",
@@ -72,13 +44,8 @@
     },
     {
       "id": "async-wait-markers",
-      "amd_intrinsics": [
-        "AMDGPU async wait/fence marker families"
-      ],
-      "apusr_relevance": [
-        "async LDS/global transfer pipelines",
-        "future overlapped tensor staging"
-      ],
+      "amd_intrinsics": ["AMDGPU async wait/fence marker families"],
+      "apusr_relevance": ["async LDS/global transfer pipelines", "future overlapped tensor staging"],
       "dxil": "No shader-facing contract identified that denotes the AMD async transaction group being waited on.",
       "spirv": "Ordinary memory barriers do not identify or preserve the AMD async transfer dependency represented by these intrinsics.",
       "status": "blocked-ingress",
@@ -86,15 +53,8 @@
     },
     {
       "id": "scheduler-group-hints",
-      "amd_intrinsics": [
-        "llvm.amdgcn.sched.group.barrier",
-        "AMDGPU scheduling-group/dependency hints"
-      ],
-      "apusr_relevance": [
-        "long generated INT8 kernels",
-        "FP16 convolution kernels",
-        "future WMMA staging and overlap"
-      ],
+      "amd_intrinsics": ["llvm.amdgcn.sched.group.barrier", "AMDGPU scheduling-group/dependency hints"],
+      "apusr_relevance": ["long generated INT8 kernels", "FP16 convolution kernels", "future WMMA staging and overlap"],
       "dxil": "No HLSL/DXIL contract identified for AMD scheduler grouping hints.",
       "spirv": "No portable SPIR-V semantic operation corresponds to an AMD backend scheduling hint.",
       "status": "blocked-ingress",
@@ -102,15 +62,8 @@
     },
     {
       "id": "bf16-narrowing-rounding-and-stochastic",
-      "amd_intrinsics": [
-        "v_cvt_pk_bf16_f32",
-        "llvm.amdgcn.cvt.sr.pk.bf16.f32",
-        "llvm.amdgcn.cvt.sr.bf16.f32"
-      ],
-      "apusr_relevance": [
-        "future BF16 model kernels",
-        "mixed-precision tensor packing"
-      ],
+      "amd_intrinsics": ["v_cvt_pk_bf16_f32", "llvm.amdgcn.cvt.sr.pk.bf16.f32", "llvm.amdgcn.cvt.sr.bf16.f32"],
+      "apusr_relevance": ["future BF16 model kernels", "mixed-precision tensor packing"],
       "dxil": "Ordinary scalar/vector DXIL still has no first-class BF16 arithmetic type. SM 6.10 LinAlg BF16 is a separate matrix contract.",
       "spirv": "The branch now has genuine BFloat16KHR scalar/vector types and OpFConvert conversion ingress. BF16->F32 is exact. Vulkan does not define one universal F32->BF16 narrowing result, and SPIR-V has no seed-carrying stochastic-rounding BF16 conversion equivalent to AMD's cvt_sr forms.",
       "status": "blocked-ingress-partial",
@@ -118,12 +71,8 @@
     },
     {
       "id": "ags-load-dword-offset-unit",
-      "amd_intrinsics": [
-        "AmdExtD3DShaderIntrinsics_LoadDwordAtAddr"
-      ],
-      "apusr_relevance": [
-        "raw/stateless GPU-address access, packed metadata and future persistent/tiled kernels"
-      ],
+      "amd_intrinsics": ["AmdExtD3DShaderIntrinsics_LoadDwordAtAddr"],
+      "apusr_relevance": ["raw/stateless GPU-address access, packed metadata and future persistent/tiled kernels"],
       "dxil": "AGS defines a 64-bit GPU VA plus a separate 32-bit offset and native raw load.",
       "spirv": "DXC can express a physical-storage-buffer RawBufferLoad from a 64-bit device address, but the public AGS header does not specify whether its offset is byte-scaled or DWORD-scaled and no authoritative public call site was found.",
       "status": "blocked-semantic-proof",
@@ -131,19 +80,8 @@
     },
     {
       "id": "raw-byteaddress-u64-atomics",
-      "amd_intrinsics": [
-        "RWByteAddressBuffer.InterlockedAdd64",
-        "InterlockedMin64",
-        "InterlockedMax64",
-        "InterlockedAnd64",
-        "InterlockedOr64",
-        "InterlockedXor64",
-        "InterlockedExchange64",
-        "InterlockedCompareExchange64"
-      ],
-      "apusr_relevance": [
-        "future packed metadata and global synchronization structures requiring true 64-bit raw atomics"
-      ],
+      "amd_intrinsics": ["RWByteAddressBuffer.InterlockedAdd64", "InterlockedMin64", "InterlockedMax64", "InterlockedAnd64", "InterlockedOr64", "InterlockedXor64", "InterlockedExchange64", "InterlockedCompareExchange64"],
+      "apusr_relevance": ["future packed metadata and global synchronization structures requiring true 64-bit raw atomics"],
       "dxil": "DXIL has native 64-bit ByteAddressBuffer atomic operations.",
       "spirv": "The current SPIR-V backend represents RWByteAddressBuffer as 32-bit uint words. Its raw atomic handler constructs a 32-bit pointee and cannot faithfully issue one 64-bit atomic operation; most *64 methods fail as unimplemented, while Min64/Max64 route toward that 32-bit handler and therefore are not claimed supported.",
       "status": "blocked-ingress-partial",
@@ -151,12 +89,8 @@
     },
     {
       "id": "ags-f32-to-f16-directed-rounding-value",
-      "amd_intrinsics": [
-        "AmdExtD3DShaderIntrinsics_ConvertF32toF16 round-nearest/negative-infinity/positive-infinity"
-      ],
-      "apusr_relevance": [
-        "FP16 packing, quantization boundaries and deterministic conversion paths"
-      ],
+      "amd_intrinsics": ["AmdExtD3DShaderIntrinsics_ConvertF32toF16 round-nearest/negative-infinity/positive-infinity"],
+      "apusr_relevance": ["FP16 packing, quantization boundaries and deterministic conversion paths"],
       "dxil": "AGS provides all three modes and returns the resulting F16 encoding as a value.",
       "spirv": "SPIR-V FPRoundingMode can request RTE/RTN/RTP on OpFConvert, but Vulkan restricts the decorated narrowing conversion to specific direct-store uses. That does not represent AGS's reusable returned F16-bit value contract. Standard f32tof16 covers nearest-even only.",
       "status": "blocked-ingress-partial",
@@ -164,12 +98,8 @@
     },
     {
       "id": "ags-shader-realtime-clock-barrier",
-      "amd_intrinsics": [
-        "AmdExtD3DShaderIntrinsics_ShaderRealtimeClock"
-      ],
-      "apusr_relevance": [
-        "shader microbenchmarking and precise qualification instrumentation"
-      ],
+      "amd_intrinsics": ["AmdExtD3DShaderIntrinsics_ShaderRealtimeClock"],
+      "apusr_relevance": ["shader microbenchmarking and precise qualification instrumentation"],
       "dxil": "AGS defines a globally coherent realtime clock read that also acts as a code-motion barrier.",
       "spirv": "Device-scope OpReadClockKHR supplies a device-consistent clock value, but SPV_KHR_shader_clock explicitly does not promise a code-motion barrier.",
       "status": "blocked-ingress",
@@ -177,19 +107,8 @@
     },
     {
       "id": "legacy-fp-assists",
-      "amd_intrinsics": [
-        "rcp_legacy",
-        "rsq_legacy",
-        "fmul_legacy",
-        "fma_legacy",
-        "div_scale",
-        "div_fmas",
-        "div_fixup",
-        "trig_preop"
-      ],
-      "apusr_relevance": [
-        "low priority; modern APUSR math paths do not require legacy behavior"
-      ],
+      "amd_intrinsics": ["rcp_legacy", "rsq_legacy", "fmul_legacy", "fma_legacy", "div_scale", "div_fmas", "div_fixup", "trig_preop"],
+      "apusr_relevance": ["low priority; modern APUSR math paths do not require legacy behavior"],
       "dxil": "Ordinary HLSL arithmetic is not semantically equivalent to the legacy/assist operations.",
       "spirv": "No exact ingress established for the AMD legacy/assist semantics.",
       "status": "blocked-ingress-low-priority",
