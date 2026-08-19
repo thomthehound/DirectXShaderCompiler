@@ -136,6 +136,9 @@ def verify(samples: int, seed: int) -> None:
                 f"{fallback} != {oracle}"
             )
 
+        # This is the real fast-path contract. FFX clamps every luma byte to at
+        # least one before packing whenever FFX_OPTICALFLOW_USE_MSAD4_INSTRUCTION
+        # is active, so msad4's zero-reference-byte mask cannot alter the result.
         source0_nz = clamp_nonzero_luma(source0)
         source1_nz = clamp_nonzero_luma(source1)
         reference_nz = clamp_nonzero_luma(reference)
@@ -148,6 +151,9 @@ def verify(samples: int, seed: int) -> None:
                 f"{fallback_nz} != {native_shape}"
             )
 
+    # Guard the reason for the nonzero-luma invariant itself. Without the clamp,
+    # ordinary SAD and msad4 are deliberately not equivalent when a reference
+    # byte is zero.
     reference = 0x04030001
     source0 = 0x08070605
     source1 = 0x0C0B0A09
