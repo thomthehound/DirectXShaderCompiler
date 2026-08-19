@@ -1,0 +1,43 @@
+name: Apply raw-buffer RTTI fix
+
+on:
+  push:
+    branches:
+      - amd-raw-buffer-vectorization-impl
+    paths:
+      - .github/workflows/apply-rawbuf-rtti-fix.yml
+      - .github/rawbuf-rtti-fix.patch
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout implementation branch
+        uses: actions/checkout@v4
+        with:
+          ref: amd-raw-buffer-vectorization-impl
+          fetch-depth: 0
+
+      - name: Apply and verify focused fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check .github/rawbuf-rtti-fix.patch
+          git apply .github/rawbuf-rtti-fix.patch
+          git diff --check
+          grep -F 'cast<SpirvUntypedVariableKHR>(instr)' tools/clang/lib/SPIRV/LowerTypeVisitor.cpp
+          ! grep -F 'cast<SpirvVariableLike>(instr)' tools/clang/lib/SPIRV/LowerTypeVisitor.cpp
+
+      - name: Commit source fix and self-clean
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/rawbuf-rtti-fix.patch .github/workflows/apply-rawbuf-rtti-fix.yml
+          git add tools/clang/lib/SPIRV/LowerTypeVisitor.cpp
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Fix untyped variable cast in type lowering'
+          git push origin HEAD:amd-raw-buffer-vectorization-impl
