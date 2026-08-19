@@ -12,12 +12,18 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 
+LEGACY_ATOMIC64_DIAGNOSTIC = (
+    "64-bit RWByteAddressBuffer atomics require SPV_KHR_untyped_pointers; "
+    "the legacy raw-buffer representation cannot provide a native 64-bit atomic pointer"
+)
+
+
 @dataclass
 class Case:
     name: str
     kind: str
     shader: str
-    extension: str
+    extension: str | None = None
     compile_rc: int | None = None
     dis_rc: int | None = None
     val_rc: int | None = None
@@ -63,6 +69,44 @@ def run(argv: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def append_process_notes(
+    case: Case, label: str, cp: subprocess.CompletedProcess[str]
+) -> None:
+    if cp.stdout.strip():
+        case.notes.append(f"{label} stdout:\n{cp.stdout.strip()}")
+    if cp.stderr.strip():
+        case.notes.append(f"{label} stderr:\n{cp.stderr.strip()}")
+
+
+def print_case(case: Case) -> None:
+    print(f"[{case.name}] {case.classification}")
+    for note in case.notes:
+        print(note)
+
+
+def make_compile_command(
+    dxc: str,
+    case: Case,
+    target_env: str,
+    shader_profile: str,
+    shader_path: Path,
+    spv_path: Path,
+) -> list[str]:
+    cmd = [
+        dxc,
+        "-spirv",
+        "-E",
+        "main",
+        "-T",
+        shader_profile,
+        f"-fspv-target-env={target_env}",
+    ]
+    if case.extension:
+        cmd.append(f"-fspv-extension={case.extension}")
+    cmd.extend([str(shader_path), "-Fo", str(spv_path)])
+    return cmd
+
+
 def analyze(text: str) -> tuple[dict[str, int], dict[str, int | bool]]:
     counts = {op: len(re.findall(rf"\b{op}\b", text)) for op in OPS}
     chain_ids = set(
@@ -73,27 +117,28 @@ def analyze(text: str) -> tuple[dict[str, int], dict[str, int | bool]]:
     )
     atomic_ptrs = re.findall(
         r"^\s*%\S+\s*=\s*OpAtomic(?:IAdd|SMin|UMin|CompareExchange)\s+%\S+\s+(%\S+)",
-        text, re.M,
+        text,
+        re.M,
     )
     int64_types = set(
         re.findall(r"^\s*(%\S+)\s*=\s*OpTypeInt\s+64\s+[01]\s*$", text, re.M)
     )
     atomic64_matches = re.findall(
         r"^\s*%\S+\s*=\s*OpAtomic(?:IAdd|SMin|UMin|CompareExchange)\s+(%\S+)\s+(%\S+)",
-        text, re.M,
+        text,
+        re.M,
     )
     loaded_types = re.findall(r"^\s*%\S+\s*=\s*OpLoad\s+(%\S+)", text, re.M)
     facts: dict[str, int | bool] = {
         "extension": 'OpExtension "SPV_KHR_untyped_pointers"' in text,
         "capability": bool(re.search(r"\bOpCapability\s+UntypedPointersKHR\b", text)),
-        # Raw resources use DXC's existing Uniform descriptor storage class.
-        # The contract is that every emitted untyped raw variable has the
-        # required concrete Data Type operand, regardless of storage-class name.
         "vars_with_data_type": len(
             re.findall(r"OpUntypedVariableKHR\s+%\S+\s+\w+\s+%\S+", text)
         ),
         "aligned4_loads": len(re.findall(r"\bOpLoad\b[^\n]*\bAligned\s+4\b", text)),
-        "aligned4_stores": len(re.findall(r"\bOpStore\b[^\n]*\bAligned\s+4\b", text)),
+        "aligned4_stores": len(
+            re.findall(r"\bOpStore\b[^\n]*\bAligned\s+4\b", text)
+        ),
         "atomic_uses_untyped_chain": bool(atomic_ptrs)
         and all(ptr in chain_ids for ptr in atomic_ptrs),
         "int64_capability": bool(re.search(r"\bOpCapability\s+Int64\b", text)),
@@ -115,17 +160,21 @@ def classify(case: Case) -> None:
     if case.kind == "vector":
         if case.name.startswith("untyped-"):
             ok = (
-                f["extension"] and f["capability"]
+                f["extension"]
+                and f["capability"]
                 and c["OpUntypedVariableKHR"] >= 2
                 and int(f["vars_with_data_type"]) >= 2
                 and c["OpUntypedAccessChainKHR"] >= 4
-                and c["OpLoad"] == 2 and c["OpStore"] == 2
+                and c["OpLoad"] == 2
+                and c["OpStore"] == 2
                 and int(f["aligned4_loads"]) == 2
                 and int(f["aligned4_stores"]) == 2
                 and c["OpCompositeConstruct"] == 0
                 and c["OpCompositeExtract"] == 0
             )
-            case.classification = "untyped-vectorized" if ok else "untyped-vector-partial"
+            case.classification = (
+                "untyped-vectorized" if ok else "untyped-vector-partial"
+            )
         else:
             ok = not untyped and c["OpLoad"] >= 8 and c["OpStore"] >= 8
             case.classification = "typed-scalarized" if ok else "legacy-vector-changed"
@@ -134,8 +183,10 @@ def classify(case: Case) -> None:
     if case.kind == "atomic64":
         ok = (
             case.name.startswith("untyped-")
-            and f["extension"] and f["capability"]
-            and f["int64_capability"] and f["int64_atomics_capability"]
+            and f["extension"]
+            and f["capability"]
+            and f["int64_capability"]
+            and f["int64_atomics_capability"]
             and c["OpUntypedVariableKHR"] >= 1
             and int(f["vars_with_data_type"]) >= 1
             and c["OpUntypedAccessChainKHR"] >= 4
@@ -154,7 +205,8 @@ def classify(case: Case) -> None:
     if case.kind == "surface":
         if case.name.startswith("untyped-"):
             ok = (
-                f["extension"] and f["capability"]
+                f["extension"]
+                and f["capability"]
                 and c["OpUntypedVariableKHR"] >= 2
                 and int(f["vars_with_data_type"]) >= 2
                 and c["OpUntypedArrayLengthKHR"] >= 1
@@ -162,18 +214,25 @@ def classify(case: Case) -> None:
                 and c["OpAtomicIAdd"] >= 1
                 and f["atomic_uses_untyped_chain"]
             )
-            case.classification = "untyped-surface-complete" if ok else "untyped-surface-partial"
+            case.classification = (
+                "untyped-surface-complete" if ok else "untyped-surface-partial"
+            )
         else:
             ok = (
-                not untyped and c["OpUntypedArrayLengthKHR"] == 0
-                and c["OpArrayLength"] >= 1 and c["OpAtomicIAdd"] >= 1
+                not untyped
+                and c["OpUntypedArrayLengthKHR"] == 0
+                and c["OpArrayLength"] >= 1
+                and c["OpAtomicIAdd"] >= 1
             )
-            case.classification = "typed-surface-compatible" if ok else "legacy-surface-changed"
+            case.classification = (
+                "typed-surface-compatible" if ok else "legacy-surface-changed"
+            )
         return
 
     if case.name.startswith("untyped-"):
         ok = (
-            f["extension"] and f["capability"]
+            f["extension"]
+            and f["capability"]
             and c["OpUntypedVariableKHR"] >= 2
             and int(f["vars_with_data_type"]) >= 2
             and c["OpUntypedAccessChainKHR"] >= 2
@@ -181,10 +240,13 @@ def classify(case: Case) -> None:
             and c["OpCompositeConstruct"] == 0
             and c["OpCompositeExtract"] == 0
         )
-        case.classification = "untyped-alias-complete" if ok else "untyped-alias-partial"
+        case.classification = (
+            "untyped-alias-complete" if ok else "untyped-alias-partial"
+        )
     else:
         ok = (
-            not untyped and c["OpCompositeConstruct"] >= 1
+            not untyped
+            and c["OpCompositeConstruct"] >= 1
             and c["OpCompositeExtract"] >= 4
         )
         case.classification = "typed-alias-compatible" if ok else "legacy-alias-changed"
@@ -290,13 +352,31 @@ OpExtension "SPV_KHR_untyped_pointers"
         "untyped-atomic64": "untyped-atomic64-native",
     }
     for (name, kind), text in fixtures.items():
-        case = Case(name, kind, "fixture", "fixture")
+        case = Case(name, kind, "fixture")
         case.counts, case.facts = analyze(text)
         classify(case)
         if case.classification != expected[name]:
             print(f"FAIL {name}: {case.classification} != {expected[name]}")
             return 1
-    print("raw-buffer SPIR-V contract parser self-test: PASS")
+
+    legacy = Case("legacy-vector", "vector", "fixture")
+    untyped = Case(
+        "untyped-vector", "vector", "fixture", "SPV_KHR_untyped_pointers"
+    )
+    legacy_cmd = make_compile_command(
+        "dxc", legacy, "vulkan1.2", "cs_6_6", Path("a.hlsl"), Path("a.spv")
+    )
+    untyped_cmd = make_compile_command(
+        "dxc", untyped, "vulkan1.2", "cs_6_6", Path("a.hlsl"), Path("a.spv")
+    )
+    if any(arg.startswith("-fspv-extension=") for arg in legacy_cmd):
+        print("FAIL legacy command unexpectedly enables an extension")
+        return 1
+    if "-fspv-extension=SPV_KHR_untyped_pointers" not in untyped_cmd:
+        print("FAIL untyped command does not enable SPV_KHR_untyped_pointers")
+        return 1
+
+    print("raw-buffer SPIR-V contract parser/command self-test: PASS")
     return 0
 
 
@@ -327,17 +407,27 @@ def main() -> int:
     root = Path(__file__).resolve().parent
     out = Path(args.out_dir).resolve()
     out.mkdir(parents=True, exist_ok=True)
-    legacy_ext = "SPV_KHR_integer_dot_product"
     untyped_ext = "SPV_KHR_untyped_pointers"
     specs = (
-        Case("legacy-vector", "vector", "shaders/raw_buffer_vector.hlsl", legacy_ext),
-        Case("untyped-vector", "vector", "shaders/raw_buffer_vector.hlsl", untyped_ext),
-        Case("legacy-surface", "surface", "shaders/raw_buffer_surface.hlsl", legacy_ext),
-        Case("untyped-surface", "surface", "shaders/raw_buffer_surface.hlsl", untyped_ext),
-        Case("legacy-alias", "alias", "shaders/raw_buffer_alias.hlsl", legacy_ext),
-        Case("untyped-alias", "alias", "shaders/raw_buffer_alias.hlsl", untyped_ext),
-        Case("legacy-atomic64", "atomic64", "shaders/raw_buffer_atomic64.hlsl", legacy_ext),
-        Case("untyped-atomic64", "atomic64", "shaders/raw_buffer_atomic64.hlsl", untyped_ext),
+        Case("legacy-vector", "vector", "shaders/raw_buffer_vector.hlsl"),
+        Case(
+            "untyped-vector", "vector", "shaders/raw_buffer_vector.hlsl", untyped_ext
+        ),
+        Case("legacy-surface", "surface", "shaders/raw_buffer_surface.hlsl"),
+        Case(
+            "untyped-surface", "surface", "shaders/raw_buffer_surface.hlsl", untyped_ext
+        ),
+        Case("legacy-alias", "alias", "shaders/raw_buffer_alias.hlsl"),
+        Case(
+            "untyped-alias", "alias", "shaders/raw_buffer_alias.hlsl", untyped_ext
+        ),
+        Case("legacy-atomic64", "atomic64", "shaders/raw_buffer_atomic64.hlsl"),
+        Case(
+            "untyped-atomic64",
+            "atomic64",
+            "shaders/raw_buffer_atomic64.hlsl",
+            untyped_ext,
+        ),
     )
 
     failed = False
@@ -347,43 +437,55 @@ def main() -> int:
         for path in (spv, asm):
             if path.exists():
                 path.unlink()
-        cmd = [
-            dxc, "-spirv", "-E", "main", "-T", args.shader_profile,
-            f"-fspv-target-env={args.target_env}",
-            f"-fspv-extension={case.extension}",
-            str(root / case.shader), "-Fo", str(spv),
-        ]
+
+        cmd = make_compile_command(
+            dxc,
+            case,
+            args.target_env,
+            args.shader_profile,
+            root / case.shader,
+            spv,
+        )
         cp = run(cmd)
         case.compile_rc = cp.returncode
         if cp.returncode or not spv.exists():
-            if case.name == "legacy-atomic64" and cp.returncode:
+            append_process_notes(case, "dxc", cp)
+            if (
+                case.name == "legacy-atomic64"
+                and cp.returncode
+                and LEGACY_ATOMIC64_DIAGNOSTIC in (cp.stdout + cp.stderr)
+            ):
                 case.classification = "legacy-atomic64-rejected"
-                case.notes.append(cp.stderr.strip())
-                print(f"[{case.name}] {case.classification}")
-                continue
-            case.classification = "compile-failed"
-            case.notes.append(cp.stderr.strip())
-            failed = True
+            elif case.name == "legacy-atomic64" and cp.returncode:
+                case.classification = "legacy-atomic64-wrong-rejection"
+                failed = True
+            else:
+                case.classification = "compile-failed"
+                failed = True
+            print_case(case)
             continue
 
         if val:
             vp = run([val, "--target-env", args.target_env, str(spv)])
             case.val_rc = vp.returncode
             if vp.returncode:
-                case.notes.append("spirv-val: " + vp.stderr.strip())
+                append_process_notes(case, "spirv-val", vp)
                 failed = True
 
         dp = run([dis, str(spv), "-o", str(asm)])
         case.dis_rc = dp.returncode
         if dp.returncode or not asm.exists():
+            append_process_notes(case, "spirv-dis", dp)
             case.classification = "disassembly-failed"
-            case.notes.append(dp.stderr.strip())
             failed = True
+            print_case(case)
             continue
 
-        case.counts, case.facts = analyze(asm.read_text(encoding="utf-8", errors="replace"))
+        case.counts, case.facts = analyze(
+            asm.read_text(encoding="utf-8", errors="replace")
+        )
         classify(case)
-        print(f"[{case.name}] {case.classification}")
+        print_case(case)
 
     by_name = {c.name: c for c in specs}
     legacy_ready = all(
@@ -395,14 +497,20 @@ def main() -> int:
         )
     )
     vector_ready = by_name["untyped-vector"].classification == "untyped-vectorized"
-    surface_ready = by_name["untyped-surface"].classification == "untyped-surface-complete"
+    surface_ready = (
+        by_name["untyped-surface"].classification == "untyped-surface-complete"
+    )
     alias_ready = by_name["untyped-alias"].classification == "untyped-alias-complete"
     atomic64_ready = (
         by_name["legacy-atomic64"].classification == "legacy-atomic64-rejected"
         and by_name["untyped-atomic64"].classification == "untyped-atomic64-native"
     )
     contract_ready = (
-        legacy_ready and vector_ready and surface_ready and alias_ready and atomic64_ready
+        legacy_ready
+        and vector_ready
+        and surface_ready
+        and alias_ready
+        and atomic64_ready
     )
     validation_ready = bool(val) and all(
         c.val_rc == 0 for c in specs if c.name != "legacy-atomic64"
@@ -416,7 +524,7 @@ def main() -> int:
         failed = True
 
     report = {
-        "schema": 4,
+        "schema": 5,
         "target_env": args.target_env,
         "shader_profile": args.shader_profile,
         "legacy_compatibility_ready": legacy_ready,
@@ -428,8 +536,10 @@ def main() -> int:
         "untyped_raw_buffer_contract_ready": contract_ready,
         "cases": [asdict(c) for c in specs],
     }
-    (out / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps({k: v for k, v in report.items() if k.endswith("_ready")}, indent=2))
+    (out / "report.json").write_text(
+        json.dumps(report, indent=2) + "\n", encoding="utf-8"
+    )
+    print(json.dumps(report, indent=2))
     return 1 if failed else 0
 
 
