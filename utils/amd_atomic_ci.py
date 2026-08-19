@@ -10,8 +10,8 @@ import sys
 from pathlib import Path
 
 
-def compile_shader(dxc: str, shader: Path, *flags: str) -> str:
-    proc = subprocess.run(
+def run_shader(dxc: str, shader: Path, *flags: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
         [dxc, *flags, str(shader)],
         text=True,
         encoding="utf-8",
@@ -20,10 +20,6 @@ def compile_shader(dxc: str, shader: Path, *flags: str) -> str:
         stderr=subprocess.PIPE,
         check=False,
     )
-    if proc.returncode != 0:
-        output = (proc.stdout + "\n" + proc.stderr)[-8000:]
-        raise RuntimeError(f"{shader.name}: compilation failed\n{output}")
-    return proc.stdout
 
 
 def require(name: str, text: str, patterns: tuple[str, ...]) -> None:
@@ -40,13 +36,44 @@ def check_case(
     flags: tuple[str, ...],
     patterns: tuple[str, ...],
 ) -> bool:
+    proc = run_shader(dxc, shader, *flags)
+    if proc.returncode != 0:
+        output = (proc.stdout + "\n" + proc.stderr)[-8000:]
+        print(f"FAIL {shader.name}: compilation failed\n{output}", file=sys.stderr)
+        return False
     try:
-        text = compile_shader(dxc, shader, *flags)
-        require(name, text, patterns)
+        require(name, proc.stdout, patterns)
         return True
     except RuntimeError as error:
         print(f"FAIL {error}", file=sys.stderr)
         return False
+
+
+def check_blocked_raw_u64(
+    dxc: str,
+    shader: Path,
+    flags: tuple[str, ...],
+) -> bool:
+    proc = run_shader(dxc, shader, *flags)
+    output = proc.stdout + "\n" + proc.stderr
+    if proc.returncode == 0:
+        print(
+            "FAIL AMD atomics: raw ByteAddressBuffer 64-bit atomics unexpectedly "
+            "compiled; the raw buffer representation still lacks a genuine "
+            "64-bit atomic pointee",
+            file=sys.stderr,
+        )
+        return False
+    if "InterlockedAdd64' method unimplemented" not in output:
+        print(
+            "FAIL AMD atomics: raw ByteAddressBuffer 64-bit atomic blocker did "
+            "not fail for the known unsupported method",
+            file=sys.stderr,
+        )
+        print(output[-8000:], file=sys.stderr)
+        return False
+    print("PASS AMD atomics: raw byte-address 64-bit atomics remain explicit blocker")
+    return True
 
 
 def main() -> int:
@@ -88,12 +115,10 @@ def main() -> int:
         common + (r"\bOpAtomicSMin\b", r"\bOpAtomicSMax\b"),
     ):
         failed = True
-    if not check_case(
+    if not check_blocked_raw_u64(
         dxc,
         tests / "amd.intrinsics.atomic-u64-byteaddress.hlsl",
-        "byte-address buffer",
         buffer_flags,
-        common,
     ):
         failed = True
     if not check_case(
