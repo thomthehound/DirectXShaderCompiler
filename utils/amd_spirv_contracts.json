@@ -16,375 +16,55 @@
     "not-vulkan-applicable"
   ],
   "ags_opcodes": [
-    {
-      "opcode": "0x01",
-      "surface": "Readfirstlane",
-      "spirv": "OpGroupNonUniformBroadcastFirst",
-      "status": "native-contract",
-      "test": "amd.intrinsics.wave-parity.hlsl"
-    },
-    {
-      "opcode": "0x02",
-      "surface": "Readlane",
-      "spirv": "OpGroupNonUniformShuffle with uniform lane index",
-      "status": "native-contract",
-      "test": "amd.intrinsics.wave-parity.hlsl"
-    },
-    {
-      "opcode": "0x03",
-      "surface": "LaneId",
-      "spirv": "SubgroupLocalInvocationId via WaveGetLaneIndex",
-      "status": "native-contract",
-      "test": "amd.intrinsics.wave-parity.hlsl"
-    },
-    {
-      "opcode": "0x04",
-      "surface": "Swizzle",
-      "spirv": "SPV_AMD_shader_ballot SwizzleInvocationsMaskedAMD; AGS 15-bit control decodes as 5-bit AND/OR/XOR masks",
-      "status": "native-contract",
-      "test": "amd.intrinsics.swizzle-parity.hlsl",
-      "note": "Generic template accepts the AGS immediate rather than only named swap/reverse/broadcast aliases."
-    },
-    {
-      "opcode": "0x05",
-      "surface": "Ballot",
-      "spirv": "OpGroupNonUniformBallot",
-      "status": "native-contract",
-      "test": "amd.intrinsics.wave-parity.hlsl"
-    },
-    {
-      "opcode": "0x06",
-      "surface": "MBCnt",
-      "spirv": "SPV_AMD_shader_ballot MbcntAMD with 64-bit mask",
-      "status": "native-contract",
-      "test": "amd.intrinsics.header.hlsl"
-    },
-    {
-      "opcode": "0x07",
-      "surface": "Min3U",
-      "spirv": "SPV_AMD_shader_trinary_minmax UMin3AMD",
-      "status": "native-contract",
-      "test": "amd.intrinsics.header.hlsl"
-    },
-    {
-      "opcode": "0x08",
-      "surface": "Min3F",
-      "spirv": "SPV_AMD_shader_trinary_minmax FMin3AMD",
-      "status": "native-contract",
-      "test": "amd.intrinsics.header.hlsl"
-    },
-    {
-      "opcode": "0x09",
-      "surface": "Med3U",
-      "spirv": "SPV_AMD_shader_trinary_minmax UMid3AMD",
-      "status": "native-contract",
-      "test": "amd.intrinsics.header.hlsl"
-    },
-    {
-      "opcode": "0x0a",
-      "surface": "Med3F",
-      "spirv": "SPV_AMD_shader_trinary_minmax FMid3AMD",
-      "status": "native-contract",
-      "test": "amd.intrinsics.header.hlsl"
-    },
-    {
-      "opcode": "0x0b",
-      "surface": "Max3U",
-      "spirv": "SPV_AMD_shader_trinary_minmax UMax3AMD",
-      "status": "native-contract",
-      "test": "amd.intrinsics.header.hlsl"
-    },
-    {
-      "opcode": "0x0c",
-      "surface": "Max3F",
-      "spirv": "SPV_AMD_shader_trinary_minmax FMax3AMD",
-      "status": "native-contract",
-      "test": "amd.intrinsics.header.hlsl"
-    },
-    {
-      "opcode": "0x0d",
-      "surface": "BaryCoord",
-      "spirv": "SPV_KHR_fragment_shader_barycentric BaryCoordKHR/BaryCoordNoPerspKHR for center/centroid/sample modes plus SPV_AMD_shader_explicit_vertex_parameter BaryCoordPullModelAMD for pull model",
-      "status": "native-contract",
-      "test": "amd.intrinsics.barycentric.hlsl + amd.intrinsics.pull-model-barycentric.hlsl"
-    },
-    {
-      "opcode": "0x0e",
-      "surface": "VertexParameter",
-      "spirv": "SPV_AMD_shader_explicit_vertex_parameter InterpolateAtVertexAMD, including compiler-native AGS D3D parameter-register/component index resolution independent of Vulkan Location",
-      "status": "native-contract",
-      "test": "amd.intrinsics.explicit-vertex.hlsl + amd.intrinsics.vertex-parameter-index.hlsl",
-      "note": "vk::AmdVertexParameter and vk::AmdVertexParameterComponent enforce AGS immediate index ranges and reproduce DXC prefix-stable D3D input-register packing before selecting the actual SPIR-V Input pointer."
-    },
-    {
-      "opcode": "0x12",
-      "surface": "WaveReduce",
-      "spirv": "OpGroupNonUniform* Reduce for add/mul/min/max float/int/uint and bitwise AND/OR/XOR int/uint; scalar and vector2/3/4 forms",
-      "status": "native-contract",
-      "test": "amd.intrinsics.wave-reduce-scan.hlsl + amd.intrinsics.wave-scan-full.hlsl"
-    },
-    {
-      "opcode": "0x13",
-      "surface": "WaveScan",
-      "spirv": "OpGroupNonUniform* InclusiveScan/ExclusiveScan matching AGS postfix/prefix for add/mul/min/max float/int/uint; scalar and vector2/3/4 forms",
-      "status": "native-contract",
-      "test": "amd.intrinsics.wave-scan-full.hlsl"
-    },
-    {
-      "opcode": "0x14",
-      "surface": "LoadDwAtAddr",
-      "spirv": "vk::RawBufferLoad from a 64-bit physical device address can preserve the load, but the public AGS header does not specify whether its separate 32-bit offset argument is byte- or DWORD-scaled",
-      "status": "blocked-semantic-proof",
-      "test": "future DX12-vs-Vulkan address-offset differential corpus",
-      "note": "Do not guess address + offset versus address + 4*offset."
-    },
-    {
-      "opcode": "0x17",
-      "surface": "DrawIndex",
-      "spirv": "DrawIndex builtin via SPV_KHR_shader_draw_parameters",
-      "status": "native-contract",
-      "test": "amd.intrinsics.draw-parameters.hlsl"
-    },
-    {
-      "opcode": "0x18",
-      "surface": "AtomicU64 family",
-      "spirv": "Int64Atomics for structured buffers and SPV_EXT_shader_image_int64 Int64ImageEXT for typed 1D/2D/3D storage images; RWByteAddressBuffer 64-bit atomics remain blocked because the SPIR-V raw-buffer representation is an array of 32-bit uint words with no genuine 64-bit atomic pointee",
-      "status": "partial-native-contract",
-      "test": "amd.intrinsics.atomic-u64.hlsl + amd.intrinsics.atomic-u64-image*.hlsl + amd.intrinsics.atomic-u64-byteaddress.hlsl (negative) + amd_atomic_ci.py",
-      "note": "Structured-buffer and image add/min/max/and/or/xor/exchange/CAS are native contracts. Raw 64-bit atomics must not be split into two 32-bit atomics; Min64/Max64 currently route toward the 32-bit raw atomic handler and are not claimed supported until a legal 64-bit representation/alignment bridge exists."
-    },
-    {
-      "opcode": "0x19",
-      "surface": "GetWaveSize",
-      "spirv": "SubgroupSize via WaveGetLaneCount",
-      "status": "native-contract",
-      "test": "amd.intrinsics.wave-parity.hlsl"
-    },
-    {
-      "opcode": "0x1a",
-      "surface": "BaseInstance",
-      "spirv": "BaseInstance builtin via SPV_KHR_shader_draw_parameters",
-      "status": "native-contract",
-      "test": "amd.intrinsics.draw-parameters.hlsl"
-    },
-    {
-      "opcode": "0x1b",
-      "surface": "BaseVertex",
-      "spirv": "BaseVertex builtin via SPV_KHR_shader_draw_parameters",
-      "status": "native-contract",
-      "test": "amd.intrinsics.draw-parameters.hlsl"
-    },
-    {
-      "opcode": "0x1c",
-      "surface": "FloatConversion F32->F16 nearest/-inf/+inf",
-      "spirv": "nearest-even value conversion is available through standard half packing; Vulkan FPRoundingMode can express RTN/RTP on OpFConvert only under storage-use restrictions that do not match AGS's returned F16-bit value contract",
-      "status": "partial-native-contract",
-      "test": "half conversion probe + future rounding-boundary corpus",
-      "note": "Directional round-to-F16-as-bits remains missing exact Vulkan ingress. Do not replace it with software bit emulation and call it native."
-    },
-    {
-      "opcode": "0x1d",
-      "surface": "ReadlaneAt with non-uniform index",
-      "spirv": "OpGroupNonUniformShuffle",
-      "status": "native-contract",
-      "test": "amd.intrinsics.wave-parity.hlsl"
-    },
-    {
-      "opcode": "0x1f",
-      "surface": "ShaderClock",
-      "spirv": "SPV_KHR_shader_clock OpReadClockKHR at Subgroup scope",
-      "status": "native-contract",
-      "test": "amd.intrinsics.shader-clock.hlsl"
-    },
-    {
-      "opcode": "0x20",
-      "surface": "ShaderRealtimeClock",
-      "spirv": "device-scope OpReadClockKHR provides a device-consistent clock value but SPV_KHR_shader_clock explicitly does not provide AGS's code-motion-barrier semantics",
-      "status": "missing-spv-ingress",
-      "test": "amd.intrinsics.shader-clock.hlsl exercises DeviceClockNoBarrier only as qualification instrumentation",
-      "note": "Do not label DeviceClockNoBarrier as ShaderRealtimeClock parity."
-    }
+    {"opcode":"0x01","surface":"Readfirstlane","spirv":"OpGroupNonUniformBroadcastFirst","status":"native-contract","test":"amd.intrinsics.wave-parity.hlsl"},
+    {"opcode":"0x02","surface":"Readlane","spirv":"OpGroupNonUniformShuffle with uniform lane index","status":"native-contract","test":"amd.intrinsics.wave-parity.hlsl"},
+    {"opcode":"0x03","surface":"LaneId","spirv":"SubgroupLocalInvocationId via WaveGetLaneIndex","status":"native-contract","test":"amd.intrinsics.wave-parity.hlsl"},
+    {"opcode":"0x04","surface":"Swizzle","spirv":"SPV_AMD_shader_ballot SwizzleInvocationsMaskedAMD; AGS 15-bit control decodes as 5-bit AND/OR/XOR masks","status":"native-contract","test":"amd.intrinsics.swizzle-parity.hlsl","note":"Generic template accepts the AGS immediate rather than only named swap/reverse/broadcast aliases."},
+    {"opcode":"0x05","surface":"Ballot","spirv":"OpGroupNonUniformBallot","status":"native-contract","test":"amd.intrinsics.wave-parity.hlsl"},
+    {"opcode":"0x06","surface":"MBCnt","spirv":"SPV_AMD_shader_ballot MbcntAMD with 64-bit mask","status":"native-contract","test":"amd.intrinsics.header.hlsl"},
+    {"opcode":"0x07","surface":"Min3U","spirv":"SPV_AMD_shader_trinary_minmax UMin3AMD","status":"native-contract","test":"amd.intrinsics.header.hlsl"},
+    {"opcode":"0x08","surface":"Min3F","spirv":"SPV_AMD_shader_trinary_minmax FMin3AMD","status":"native-contract","test":"amd.intrinsics.header.hlsl"},
+    {"opcode":"0x09","surface":"Med3U","spirv":"SPV_AMD_shader_trinary_minmax UMid3AMD","status":"native-contract","test":"amd.intrinsics.header.hlsl"},
+    {"opcode":"0x0a","surface":"Med3F","spirv":"SPV_AMD_shader_trinary_minmax FMid3AMD","status":"native-contract","test":"amd.intrinsics.header.hlsl"},
+    {"opcode":"0x0b","surface":"Max3U","spirv":"SPV_AMD_shader_trinary_minmax UMax3AMD","status":"native-contract","test":"amd.intrinsics.header.hlsl"},
+    {"opcode":"0x0c","surface":"Max3F","spirv":"SPV_AMD_shader_trinary_minmax FMax3AMD","status":"native-contract","test":"amd.intrinsics.header.hlsl"},
+    {"opcode":"0x0d","surface":"BaryCoord","spirv":"SPV_KHR_fragment_shader_barycentric BaryCoordKHR/BaryCoordNoPerspKHR for center/centroid/sample modes plus SPV_AMD_shader_explicit_vertex_parameter BaryCoordPullModelAMD for pull model","status":"native-contract","test":"amd.intrinsics.barycentric.hlsl + amd.intrinsics.pull-model-barycentric.hlsl"},
+    {"opcode":"0x0e","surface":"VertexParameter","spirv":"SPV_AMD_shader_explicit_vertex_parameter InterpolateAtVertexAMD, including compiler-native AGS D3D parameter-register/component index resolution independent of Vulkan Location","status":"native-contract","test":"amd.intrinsics.explicit-vertex.hlsl + amd.intrinsics.vertex-parameter-index.hlsl","note":"vk::AmdVertexParameter and vk::AmdVertexParameterComponent enforce AGS immediate index ranges and reproduce DXC prefix-stable D3D input-register packing before selecting the actual SPIR-V Input pointer."},
+    {"opcode":"0x12","surface":"WaveReduce","spirv":"OpGroupNonUniform* Reduce for add/mul/min/max float/int/uint and bitwise AND/OR/XOR int/uint; scalar and vector2/3/4 forms","status":"native-contract","test":"amd.intrinsics.wave-reduce-scan.hlsl + amd.intrinsics.wave-scan-full.hlsl"},
+    {"opcode":"0x13","surface":"WaveScan","spirv":"OpGroupNonUniform* InclusiveScan/ExclusiveScan matching AGS postfix/prefix for add/mul/min/max float/int/uint; scalar and vector2/3/4 forms","status":"native-contract","test":"amd.intrinsics.wave-scan-full.hlsl"},
+    {"opcode":"0x14","surface":"LoadDwAtAddr","spirv":"vk::RawBufferLoad from a 64-bit physical device address can preserve the load, but the public AGS header does not specify whether its separate 32-bit offset argument is byte- or DWORD-scaled","status":"blocked-semantic-proof","test":"future DX12-vs-Vulkan address-offset differential corpus","note":"Do not guess address + offset versus address + 4*offset."},
+    {"opcode":"0x17","surface":"DrawIndex","spirv":"DrawIndex builtin via SPV_KHR_shader_draw_parameters","status":"native-contract","test":"amd.intrinsics.draw-parameters.hlsl"},
+    {"opcode":"0x18","surface":"AtomicU64 family","spirv":"Int64Atomics for structured buffers and SPV_EXT_shader_image_int64 Int64ImageEXT for typed 1D/2D/3D storage images; RWByteAddressBuffer 64-bit atomics remain blocked because the SPIR-V raw-buffer representation is an array of 32-bit uint words with no genuine 64-bit atomic pointee","status":"partial-native-contract","test":"amd.intrinsics.atomic-u64.hlsl + amd.intrinsics.atomic-u64-image*.hlsl + amd.intrinsics.atomic-u64-byteaddress.hlsl (negative) + amd_atomic_ci.py","note":"Structured-buffer and image add/min/max/and/or/xor/exchange/CAS are native contracts. Raw 64-bit atomics must not be split into two 32-bit atomics; Min64/Max64 currently route toward the 32-bit raw atomic handler and are not claimed supported until a legal 64-bit representation/alignment bridge exists."},
+    {"opcode":"0x19","surface":"GetWaveSize","spirv":"SubgroupSize via WaveGetLaneCount","status":"native-contract","test":"amd.intrinsics.wave-parity.hlsl"},
+    {"opcode":"0x1a","surface":"BaseInstance","spirv":"BaseInstance builtin via SPV_KHR_shader_draw_parameters","status":"native-contract","test":"amd.intrinsics.draw-parameters.hlsl"},
+    {"opcode":"0x1b","surface":"BaseVertex","spirv":"BaseVertex builtin via SPV_KHR_shader_draw_parameters","status":"native-contract","test":"amd.intrinsics.draw-parameters.hlsl"},
+    {"opcode":"0x1c","surface":"FloatConversion F32->F16 nearest/-inf/+inf","spirv":"nearest-even value conversion is available through standard half packing; Vulkan FPRoundingMode can express RTN/RTP on OpFConvert only under storage-use restrictions that do not match AGS's returned F16-bit value contract","status":"partial-native-contract","test":"half conversion probe + future rounding-boundary corpus","note":"Directional round-to-F16-as-bits remains missing exact Vulkan ingress. Do not replace it with software bit emulation and call it native."},
+    {"opcode":"0x1d","surface":"ReadlaneAt with non-uniform index","spirv":"OpGroupNonUniformShuffle","status":"native-contract","test":"amd.intrinsics.wave-parity.hlsl"},
+    {"opcode":"0x1f","surface":"ShaderClock","spirv":"SPV_KHR_shader_clock OpReadClockKHR at Subgroup scope","status":"native-contract","test":"amd.intrinsics.shader-clock.hlsl"},
+    {"opcode":"0x20","surface":"ShaderRealtimeClock","spirv":"device-scope OpReadClockKHR provides a device-consistent clock value but SPV_KHR_shader_clock explicitly does not provide AGS's code-motion-barrier semantics","status":"missing-spv-ingress","test":"amd.intrinsics.shader-clock.hlsl exercises DeviceClockNoBarrier only as qualification instrumentation","note":"Do not label DeviceClockNoBarrier as ShaderRealtimeClock parity."}
   ],
   "low_level_math": [
-    {
-      "surface": "ubfe / sbfe",
-      "amd_native": "v_bfe_u32 / v_bfe_i32 family",
-      "spirv": "OpBitFieldUExtract / OpBitFieldSExtract",
-      "status": "native-contract",
-      "strict_native": true,
-      "test": "amd.math.core.hlsl + math ISA probe"
-    },
-    {
-      "surface": "bitreverse / bitcount",
-      "amd_native": "AMD bit-manipulation VALU family",
-      "spirv": "OpBitReverse / OpBitCount",
-      "status": "native-contract",
-      "strict_native": true,
-      "test": "amd.math.core.hlsl + math ISA probe"
-    },
-    {
-      "surface": "fmed3",
-      "amd_native": "v_med3_f16/f32 family",
-      "spirv": "SPV_AMD_shader_trinary_minmax FMid3AMD",
-      "status": "native-contract",
-      "strict_native": true,
-      "test": "amd.math.core.hlsl + AMD extinst tests"
-    },
-    {
-      "surface": "rcp / sqrt / rsq / sin / cos / log2 / exp2 / fract / tanh / pow / frexp / ldexp (non-legacy)",
-      "amd_native": "AMD native transcendental/decomposition families where available",
-      "spirv": "standard mathematical SPIR-V/GLSL.std.450 semantics with direct-vs-canonical empirical probes",
-      "status": "legal-specialized-candidate",
-      "strict_native": false,
-      "test": "math_probe.py + transcendental_probe.py",
-      "note": "Promote individual spellings only after installed-driver ISA and numerical qualification."
-    },
-    {
-      "surface": "rcp_legacy / rsq_legacy / fmul_legacy / fma_legacy / fmad_ftz",
-      "amd_native": "legacy/FTZ AMD VALU operations",
-      "spirv": null,
-      "status": "missing-spv-ingress",
-      "strict_native": false,
-      "test": "semantic edge corpus required",
-      "note": "Ordinary reciprocal/multiply/FMA is not equivalent; do not emulate or relabel."
-    },
-    {
-      "surface": "rsq_clamp / log_clamp",
-      "amd_native": "AMD clamped transcendental family",
-      "spirv": null,
-      "status": "semantic-review",
-      "strict_native": false,
-      "test": "NaN/Inf/denorm/clamp edge corpus + ISA probe"
-    },
-    {
-      "surface": "div_scale / div_fmas / div_fixup / trig_preop",
-      "amd_native": "AMD division/trig assist instructions",
-      "spirv": null,
-      "status": "missing-spv-ingress",
-      "strict_native": false,
-      "test": "special-value semantic corpus + ISA probe"
-    },
-    {
-      "surface": "cubeid / cubema / cubesc / cubetc",
-      "amd_native": "AMD cube helper instructions",
-      "spirv": "SPV_AMD_gcn_shader exposes CubeFaceIndexAMD and CubeFaceCoordAMD, not every raw helper independently",
-      "status": "semantic-review",
-      "strict_native": false,
-      "test": "pending face/tie/sign corpus + ISA probe"
-    },
-    {
-      "surface": "alignbit / alignbyte / permute",
-      "amd_native": "v_alignbit_b32 / v_alignbyte_b32 / v_perm_b32 families",
-      "spirv": "canonical concatenation/shift/or and byte-routing search corpus",
-      "status": "legal-specialized-candidate",
-      "strict_native": false,
-      "test": "candidate_zoo.py + amd_vulkan_candidate_verify"
-    },
-    {
-      "surface": "mul_i24 / mul_u24 / mulhi_i24 / mulhi_u24 / mad_i24 / mad_u24",
-      "amd_native": "24-bit multiply/MAD family",
-      "spirv": "masked/sign-extended integer arithmetic candidate",
-      "status": "legal-specialized-candidate",
-      "strict_native": false,
-      "test": "math semantic verifier + math ISA probe"
-    },
-    {
-      "surface": "lerp_u8 and fused integer/Boolean VALU forms",
-      "amd_native": "v_lerp_u8 / v_bfi_b32 / v_xad_u32 / fused shift-add-or families",
-      "spirv": "exact canonical packed/integer graphs",
-      "status": "legal-specialized-candidate",
-      "strict_native": false,
-      "test": "math semantic verifier + candidate/ISA probes"
-    },
-    {
-      "surface": "sad_u8 / sad_hi_u8 / sad_u16 / sad_u32 / msad_u8 / qsad_pk_u16_u8 / mqsad_pk_u16_u8 / mqsad_u32_u8",
-      "amd_native": "v_sad*/v_msad*/v_qsad*/v_mqsad*",
-      "spirv": "no direct SAD-family opcode; exact canonical arithmetic/dot candidates",
-      "status": "legal-specialized-candidate",
-      "strict_native": false,
-      "test": "math execution verifier + native_probe.py",
-      "note": "No family member is called native until installed-driver ISA proves the intended instruction."
-    },
-    {
-      "surface": "sdot2/4, udot2/4, sudot4 and accumulated/saturating variants",
-      "amd_native": "AMD packed dot family",
-      "spirv": "OpSDot/OpUDot/OpSUDot and *AccSat where widths/packing match; canonical A/B where they do not",
-      "status": "legal-specialized-candidate",
-      "strict_native": false,
-      "test": "amd.dot.math.hlsl + dot_probe.py + dot_saturation_probe.py"
-    },
-    {
-      "surface": "sdot8 / udot8 / sudot8 packed i4/u4",
-      "amd_native": "AMD 8x4-bit dot family",
-      "spirv": "exact nibble extraction/multiply/accumulate recovery candidate; no standardized packed-i4 dot ingress used",
-      "status": "legal-specialized-candidate",
-      "strict_native": false,
-      "test": "amd.dot.math.hlsl + dot_probe.py"
-    },
-    {
-      "surface": "fdot2 f16",
-      "amd_native": "v_dot2_f32_f16 / generation-equivalent FP16 dot family",
-      "spirv": "packed-half conversion plus FP32 accumulation candidate; first-class Float16 probe available separately",
-      "status": "legal-specialized-candidate",
-      "strict_native": false,
-      "test": "dot_probe.py + dot_f16_probe.py"
-    },
-    {
-      "surface": "BF16 dot/conversion",
-      "amd_native": "AMD BF16 dot/conversion families",
-      "spirv": "first-class BFloat16KHR scalar/vector types, exact BF16 mixed-dot contracts, and scalar/vector OpFConvert ingress",
-      "status": "native-contract",
-      "strict_native": false,
-      "test": "amd.bfloat16.convert.hlsl + amd.mixed-dot.hlsl + BF16 compiler/ISA probes",
-      "note": "Specific bit-exact F32->BF16 directed/stochastic rounding guarantees remain separately tracked; basic BF16 type/conversion ingress is implemented."
-    },
-    {
-      "surface": "F32/F16 packing and conversion",
-      "amd_native": "v_cvt_f16_f32 / v_cvt_f32_f16 / packed conversion families",
-      "spirv": "standard HLSL conversion plus scalar-vs-packed spelling A/B",
-      "status": "legal-specialized-candidate",
-      "strict_native": false,
-      "test": "conversion_probe.py + half boundary qualification corpus"
-    },
-    {
-      "surface": "sffbh and other bit-scan forms",
-      "amd_native": "AMD find-first-bit family",
-      "spirv": "standard HLSL bit-scan semantics; native recovery probe",
-      "status": "legal-specialized-candidate",
-      "strict_native": false,
-      "test": "amd.math.apusr-fp-bit.hlsl + math_probe.py"
-    },
-    {
-      "surface": "DPP / DPP8 / permlane16 / permlanex16 / permlane64 / perm / DS swizzle-permute",
-      "amd_native": "AMD cross-lane/permutation families",
-      "spirv": "subgroup shuffle/XOR/neighbor/row-rotate plus registered AMD swizzle contracts",
-      "status": "legal-specialized-candidate",
-      "strict_native": false,
-      "test": "crosslane_probe.py + reduction_probe.py + amd.crosslane.neighbor.hlsl"
-    },
-    {
-      "surface": "WMMA/SWMMAC FP16/BF16 and IU8/IU4 operations",
-      "amd_native": "AMD WMMA/SWMMAC family",
-      "spirv": "SPV_KHR_cooperative_matrix where shape/type/accumulation semantics match",
-      "status": "semantic-review",
-      "strict_native": false,
-      "test": "linalg.cooperative-matrix.amd.hlsl + pending per-shape ISA/numerical corpus"
-    },
-    {
-      "surface": "LDS access shape and barrier codegen",
-      "amd_native": "wider/fewer DS operations and improved scheduling where legal",
-      "spirv": "scalar-vs-vector workgroup-memory A/B with identical synchronization semantics",
-      "status": "legal-specialized-candidate",
-      "strict_native": false,
-      "test": "lds_probe.py + future APUSR tile integrity corpus"
-    },
-    {
-      "surface": "FP8/BF8/FP6/BF6/FP4 format conversion, packing and dot operations",
-      "amd_native": "new low-precision AMDGPU families",
-      "spirv": "evolving EXT/KHR low-precision contracts",
-      "status": "deferred-hardware",
-      "strict_native": false,
-      "test": "deferred until suitable test hardware is available"
-    }
+    {"surface":"ubfe / sbfe","amd_native":"v_bfe_u32 / v_bfe_i32 family","spirv":"OpBitFieldUExtract / OpBitFieldSExtract","status":"native-contract","strict_native":true,"test":"amd.math.core.hlsl + math ISA probe"},
+    {"surface":"bitreverse / bitcount","amd_native":"AMD bit-manipulation VALU family","spirv":"OpBitReverse / OpBitCount","status":"native-contract","strict_native":true,"test":"amd.math.core.hlsl + math ISA probe"},
+    {"surface":"fmed3","amd_native":"v_med3_f16/f32 family","spirv":"SPV_AMD_shader_trinary_minmax FMid3AMD","status":"native-contract","strict_native":true,"test":"amd.math.core.hlsl + AMD extinst tests"},
+    {"surface":"rcp / sqrt / rsq / sin / cos / log2 / exp2 / fract / tanh / pow / frexp / ldexp (non-legacy)","amd_native":"AMD native transcendental/decomposition families where available","spirv":"standard mathematical SPIR-V/GLSL.std.450 semantics with direct-vs-canonical empirical probes","status":"legal-specialized-candidate","strict_native":false,"test":"math_probe.py + transcendental_probe.py","note":"Promote individual spellings only after installed-driver ISA and numerical qualification."},
+    {"surface":"rcp_legacy / rsq_legacy / fmul_legacy / fma_legacy / fmad_ftz","amd_native":"legacy/FTZ AMD VALU operations","spirv":null,"status":"missing-spv-ingress","strict_native":false,"test":"semantic edge corpus required","note":"Ordinary reciprocal/multiply/FMA is not equivalent; do not emulate or relabel."},
+    {"surface":"rsq_clamp / log_clamp","amd_native":"AMD clamped transcendental family","spirv":null,"status":"semantic-review","strict_native":false,"test":"NaN/Inf/denorm/clamp edge corpus + ISA probe"},
+    {"surface":"div_scale / div_fmas / div_fixup / trig_preop","amd_native":"AMD division/trig assist instructions","spirv":null,"status":"missing-spv-ingress","strict_native":false,"test":"special-value semantic corpus + ISA probe"},
+    {"surface":"cubeid / cubema / cubesc / cubetc","amd_native":"AMD cube helper instructions","spirv":"SPV_AMD_gcn_shader exposes CubeFaceIndexAMD and CubeFaceCoordAMD, not every raw helper independently","status":"semantic-review","strict_native":false,"test":"pending face/tie/sign corpus + ISA probe"},
+    {"surface":"alignbit / alignbyte / permute","amd_native":"v_alignbit_b32 / v_alignbyte_b32 / v_perm_b32 families","spirv":"canonical concatenation/shift/or and byte-routing search corpus","status":"legal-specialized-candidate","strict_native":false,"test":"candidate_zoo.py + amd_vulkan_candidate_verify"},
+    {"surface":"mul_i24 / mul_u24 / mulhi_i24 / mulhi_u24 / mad_i24 / mad_u24","amd_native":"24-bit multiply/MAD family","spirv":"masked/sign-extended integer arithmetic candidate","status":"legal-specialized-candidate","strict_native":false,"test":"math semantic verifier + math ISA probe"},
+    {"surface":"lerp_u8 and fused integer/Boolean VALU forms","amd_native":"v_lerp_u8 / v_bfi_b32 / v_xad_u32 / fused shift-add-or families","spirv":"exact canonical packed/integer graphs","status":"legal-specialized-candidate","strict_native":false,"test":"math semantic verifier + candidate/ISA probes"},
+    {"surface":"sad_u8 / sad_hi_u8 / sad_u16 / sad_u32 / msad_u8 / qsad_pk_u16_u8 / mqsad_pk_u16_u8 / mqsad_u32_u8","amd_native":"v_sad*/v_msad*/v_qsad*/v_mqsad*","spirv":"no direct SAD-family opcode; exact canonical arithmetic/dot candidates","status":"legal-specialized-candidate","strict_native":false,"test":"math execution verifier + native_probe.py","note":"No family member is called native until installed-driver ISA proves the intended instruction."},
+    {"surface":"sdot2/4, udot2/4, sudot4 and accumulated/saturating variants","amd_native":"AMD packed dot family","spirv":"OpSDot/OpUDot/OpSUDot and *AccSat where widths/packing match; canonical A/B where they do not","status":"legal-specialized-candidate","strict_native":false,"test":"amd.dot.math.hlsl + dot_probe.py + dot_saturation_probe.py"},
+    {"surface":"sdot8 / udot8 / sudot8 packed i4/u4","amd_native":"AMD 8x4-bit dot family","spirv":"exact nibble extraction/multiply/accumulate recovery candidate; no standardized packed-i4 dot ingress used","status":"legal-specialized-candidate","strict_native":false,"test":"amd.dot.math.hlsl + dot_probe.py"},
+    {"surface":"fdot2 f16","amd_native":"v_dot2_f32_f16 / generation-equivalent FP16 dot family","spirv":"packed-half conversion plus FP32 accumulation candidate; first-class Float16 probe available separately","status":"legal-specialized-candidate","strict_native":false,"test":"dot_probe.py + dot_f16_probe.py"},
+    {"surface":"BF16 dot/conversion","amd_native":"AMD BF16 dot/conversion families","spirv":"first-class BFloat16KHR scalar/vector types, exact BF16 mixed-dot contracts, and scalar/vector OpFConvert ingress","status":"native-contract","strict_native":false,"test":"amd.bfloat16.convert.hlsl + amd.mixed-dot.hlsl + BF16 compiler/ISA probes","note":"Specific bit-exact F32->BF16 directed/stochastic rounding guarantees remain separately tracked; basic BF16 type/conversion ingress is implemented."},
+    {"surface":"F32/F16 packing and conversion","amd_native":"v_cvt_f16_f32 / v_cvt_f32_f16 / packed conversion families","spirv":"standard HLSL conversion plus scalar-vs-packed spelling A/B","status":"legal-specialized-candidate","strict_native":false,"test":"conversion_probe.py + half boundary qualification corpus"},
+    {"surface":"sffbh and other bit-scan forms","amd_native":"AMD find-first-bit family","spirv":"standard HLSL bit-scan semantics; native recovery probe","status":"legal-specialized-candidate","strict_native":false,"test":"amd.math.apusr-fp-bit.hlsl + math_probe.py"},
+    {"surface":"DPP / DPP8 / permlane16 / permlanex16 / permlane64 / perm / DS swizzle-permute","amd_native":"AMD cross-lane/permutation families","spirv":"subgroup shuffle/XOR/neighbor/row-rotate plus registered AMD swizzle contracts","status":"legal-specialized-candidate","strict_native":false,"test":"crosslane_probe.py + reduction_probe.py + amd.crosslane.neighbor.hlsl"},
+    {"surface":"WMMA/SWMMAC FP16/BF16 and IU8/IU4 operations","amd_native":"AMD WMMA/SWMMAC family","spirv":"SPV_KHR_cooperative_matrix where shape/type/accumulation semantics match","status":"semantic-review","strict_native":false,"test":"linalg.cooperative-matrix.amd.hlsl + pending per-shape ISA/numerical corpus"},
+    {"surface":"LDS access shape and barrier codegen","amd_native":"wider/fewer DS operations and improved scheduling where legal","spirv":"scalar-vs-vector workgroup-memory A/B with identical synchronization semantics","status":"legal-specialized-candidate","strict_native":false,"test":"lds_probe.py + future APUSR tile integrity corpus"},
+    {"surface":"FP8/BF8/FP6/BF6/FP4 format conversion, packing and dot operations","amd_native":"new low-precision AMDGPU families","spirv":"evolving EXT/KHR low-precision contracts","status":"deferred-hardware","strict_native":false,"test":"deferred until suitable test hardware is available"}
   ]
 }
