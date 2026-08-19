@@ -38,18 +38,21 @@ python utils\amd_vulkan_isa_probe\apusr_qsad_probe.py `
   --rga-target gfx1151
 ```
 
-The two comparison shaders both model the hot 8-row x 2-QSad search shape. One
-uses 16 accumulated `msad4` calls; the other uses the current Vulkan fallback,
-which expands those searches into 64 packed SWAR SAD calculations followed by
-packed UDOT. The report keeps SPIR-V, installed-driver ISA, RGA live ISA, and
-RGA offline evidence separate.
+The probe runs three cases over the same hot 8-row x 2-QSad search shape. The
+same 16-call `msad4` shader is compiled once through DXC's ordinary scalar
+expansion and once through the AMD-oriented packed-UDOT expansion; the third
+case is APUSR's current Vulkan SWAR path, which expands the search into 64 packed
+SAD calculations followed by packed UDOT. This isolates whether packed UDOT
+helps or destroys Radeon SAD-family recognition before comparing either form
+with the production workaround. The report keeps SPIR-V, installed-driver ISA,
+RGA live ISA, and RGA offline evidence separate.
 
 ## Build on Windows
 
 Use a Vulkan SDK environment (or pass `-DVulkan_ROOT=...` to CMake):
 
 ```powershell
-cmake -S utils/amd_vulkan_isa_probe -B out/amd-vulkan-isa-probe -A x64
+cmake -S utils/amd-vulkan-isa-probe -B out/amd-vulkan-isa-probe -A x64
 cmake --build out/amd-vulkan-isa-probe --config Release
 ```
 
