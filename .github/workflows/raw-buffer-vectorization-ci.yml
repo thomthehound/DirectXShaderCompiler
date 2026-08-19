@@ -28,238 +28,195 @@ jobs:
           fetch-depth: 1
 
       # TEMPORARY: the connected GitHub tool can replace whole files but cannot
-      # apply narrow patches to the large DXC translation units. Apply the exact
-      # reviewed edits in the runner, commit them to this feature branch, and
-      # validate that same working tree. Remove this step after the fix lands.
+      # apply narrow patches to the large DXC translation units. Apply only the
+      # exact reviewed edits, commit them to this feature branch, and validate
+      # that same working tree. Remove this step after the fix lands.
       - name: Apply exact raw-buffer compiler fix
         shell: pwsh
         run: |
           @'
           from pathlib import Path
 
-          def replace_exact(path_name: str, old: str, new: str) -> None:
+          def edit(path_name: str, replacements: list[tuple[str, str, int]]) -> None:
               path = Path(path_name)
-              data = path.read_bytes()
-              eol = b"\r\n" if b"\r\n" in data else b"\n"
-              old_bytes = old.replace("\n", eol.decode()).encode()
-              new_bytes = new.replace("\n", eol.decode()).encode()
-              old_count = data.count(old_bytes)
-              new_count = data.count(new_bytes)
-              if old_count == 1:
-                  path.write_bytes(data.replace(old_bytes, new_bytes, 1))
-                  print(f"patched {path_name}")
-              elif old_count == 0 and new_count == 1:
-                  print(f"already patched {path_name}")
-              else:
-                  raise RuntimeError(
-                      f"{path_name}: expected one old block or one new block, "
-                      f"found old={old_count} new={new_count}"
-                  )
+              raw = path.read_bytes()
+              eol = "\r\n" if b"\r\n" in raw else "\n"
+              text = raw.decode("utf-8").replace("\r\n", "\n")
+              for old, new, expected in replacements:
+                  old_count = text.count(old)
+                  new_count = text.count(new)
+                  if old_count == expected:
+                      text = text.replace(old, new)
+                  elif old_count == 0 and new_count == expected:
+                      pass
+                  else:
+                      raise RuntimeError(
+                          f"{path_name}: expected old={expected} or new={expected}; "
+                          f"found old={old_count} new={new_count} for {old[:80]!r}"
+                      )
+              path.write_bytes(text.replace("\n", eol).encode("utf-8"))
+              print(f"verified/patched {path_name}")
 
-          def replace_all_exact(path_name: str, old: str, new: str, expected: int) -> None:
-              path = Path(path_name)
-              data = path.read_bytes()
-              eol = b"\r\n" if b"\r\n" in data else b"\n"
-              old_bytes = old.replace("\n", eol.decode()).encode()
-              new_bytes = new.replace("\n", eol.decode()).encode()
-              old_count = data.count(old_bytes)
-              new_count = data.count(new_bytes)
-              if old_count == expected:
-                  path.write_bytes(data.replace(old_bytes, new_bytes))
-                  print(f"patched {path_name}: {expected} replacements")
-              elif old_count == 0 and new_count == expected:
-                  print(f"already patched {path_name}: {expected} replacements")
-              else:
-                  raise RuntimeError(
-                      f"{path_name}: expected old={expected} or new={expected}, "
-                      f"found old={old_count} new={new_count}"
-                  )
-
-          replace_exact(
+          edit(
               "tools/clang/lib/SPIRV/DeclResultIdMapper.cpp",
-              '''  if (useUntypedRawBuffer) {
-            const auto *pointerType =
-                spvContext.getUntypedPointerKHRType(storageClass);
-            const auto *dataType =
-                spvContext.getByteAddressBufferType(isRWByteAddressBuffer(type));
-            auto *untypedVar = spvBuilder.createUntypedVariableKHR(
-                pointerType, storageClass, name, loc, dataType);
-          ''',
-              '''  if (useUntypedRawBuffer) {
-            // Vulkan raw buffers are storage buffers. Keep the legacy typed
-            // descriptor representation unchanged; only the opt-in untyped path
-            // uses the modern StorageBuffer storage class.
-            const auto untypedStorageClass = spv::StorageClass::StorageBuffer;
-            const auto *pointerType =
-                spvContext.getUntypedPointerKHRType(untypedStorageClass);
-            const auto *dataType =
-                spvContext.getByteAddressBufferType(isRWByteAddressBuffer(type));
-            auto *untypedVar = spvBuilder.createUntypedVariableKHR(
-                pointerType, untypedStorageClass, name, loc, dataType);
-          ''',
+              [(
+                  "  if (useUntypedRawBuffer) {\n"
+                  "    const auto *pointerType =\n"
+                  "        spvContext.getUntypedPointerKHRType(storageClass);\n"
+                  "    const auto *dataType =\n"
+                  "        spvContext.getByteAddressBufferType(isRWByteAddressBuffer(type));\n"
+                  "    auto *untypedVar = spvBuilder.createUntypedVariableKHR(\n"
+                  "        pointerType, storageClass, name, loc, dataType);",
+                  "  if (useUntypedRawBuffer) {\n"
+                  "    // Vulkan raw buffers are storage buffers. Keep the legacy typed\n"
+                  "    // descriptor representation unchanged; only the opt-in untyped path\n"
+                  "    // uses the modern StorageBuffer storage class.\n"
+                  "    const auto untypedStorageClass = spv::StorageClass::StorageBuffer;\n"
+                  "    const auto *pointerType =\n"
+                  "        spvContext.getUntypedPointerKHRType(untypedStorageClass);\n"
+                  "    const auto *dataType =\n"
+                  "        spvContext.getByteAddressBufferType(isRWByteAddressBuffer(type));\n"
+                  "    auto *untypedVar = spvBuilder.createUntypedVariableKHR(\n"
+                  "        pointerType, untypedStorageClass, name, loc, dataType);",
+                  1,
+              )],
           )
 
-          replace_exact(
+          edit(
               "tools/clang/lib/SPIRV/LowerTypeVisitor.cpp",
-              '''  // ByteAddressBuffer and RWByteAddressBuffer types. The concrete descriptor
-            // Data Type remains the existing raw-buffer block. Resource *values* use an
-            // untyped Uniform pointer only when the extension was explicitly requested;
-            // this naturally covers local aliases, function parameters/returns, and
-            // resource fields without changing typed resource-array element layout.
-            if (name == "ByteAddressBuffer" || name == "RWByteAddressBuffer" ||
-                name == "RasterizerOrderedByteAddressBuffer") {
-              const auto *bufferType = spvContext.getByteAddressBufferType(
-                  /*isRW*/ name != "ByteAddressBuffer");
-              if (rule == SpirvLayoutRule::Void) {
-                if (!getCodeGenOptions().allowedExtensions.empty() &&
-                    spvBuilder.isExtensionEnabled(Extension::KHR_untyped_pointers))
-                  return spvContext.getUntypedPointerKHRType(spv::StorageClass::Uniform);
-                return spvContext.getPointerType(bufferType, spv::StorageClass::Uniform);
-              }
-              return bufferType;
-            }
-          ''',
-              '''  // ByteAddressBuffer and RWByteAddressBuffer types. The concrete descriptor
-            // Data Type remains the existing raw-buffer block. Resource *values* use an
-            // untyped StorageBuffer pointer only when the extension was explicitly
-            // requested; this naturally covers local aliases, function parameters/returns,
-            // and resource fields without changing typed resource-array element layout.
-            if (name == "ByteAddressBuffer" || name == "RWByteAddressBuffer" ||
-                name == "RasterizerOrderedByteAddressBuffer") {
-              const auto *bufferType = spvContext.getByteAddressBufferType(
-                  /*isRW*/ name != "ByteAddressBuffer");
-              if (rule == SpirvLayoutRule::Void) {
-                if (!getCodeGenOptions().allowedExtensions.empty() &&
-                    spvBuilder.isExtensionEnabled(Extension::KHR_untyped_pointers))
-                  return spvContext.getUntypedPointerKHRType(
-                      spv::StorageClass::StorageBuffer);
-                return spvContext.getPointerType(bufferType, spv::StorageClass::Uniform);
-              }
-              return bufferType;
-            }
-          ''',
+              [
+                  (
+                      "  // untyped Uniform pointer only when the extension was explicitly requested;",
+                      "  // untyped StorageBuffer pointer only when the extension was explicitly requested;",
+                      1,
+                  ),
+                  (
+                      "    if (!getCodeGenOptions().allowedExtensions.empty() &&\n"
+                      "        spvBuilder.isExtensionEnabled(Extension::KHR_untyped_pointers))\n"
+                      "      return spvContext.getUntypedPointerKHRType(spv::StorageClass::Uniform);\n"
+                      "    return spvContext.getPointerType(bufferType, spv::StorageClass::Uniform);",
+                      "    if (!getCodeGenOptions().allowedExtensions.empty() &&\n"
+                      "        spvBuilder.isExtensionEnabled(Extension::KHR_untyped_pointers))\n"
+                      "      return spvContext.getUntypedPointerKHRType(\n"
+                      "          spv::StorageClass::StorageBuffer);\n"
+                      "    return spvContext.getPointerType(bufferType, spv::StorageClass::Uniform);",
+                      1,
+                  ),
+              ],
           )
 
-          replace_exact(
+          edit(
               "tools/clang/lib/SPIRV/SpirvBuilder.cpp",
-              '''  if (pointer->containsAliasComponent() &&
-                isAKindOfStructuredOrByteBuffer(resultType)) {
-              instruction->setStorageClass(spv::StorageClass::Uniform);
-              // Now it is a pointer to the global resource, which is lvalue.
-          ''',
-              '''  if (pointer->containsAliasComponent() &&
-                isAKindOfStructuredOrByteBuffer(resultType)) {
-              const bool useUntypedRawBuffer =
-                  !spirvOptions.allowedExtensions.empty() &&
-                  featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers) &&
-                  (isByteAddressBuffer(resultType) || isRWByteAddressBuffer(resultType));
-              instruction->setStorageClass(useUntypedRawBuffer
-                                               ? spv::StorageClass::StorageBuffer
-                                               : spv::StorageClass::Uniform);
-              // Now it is a pointer to the global resource, which is lvalue.
-          ''',
-          )
-
-          replace_exact(
-              "tools/clang/lib/SPIRV/SpirvBuilder.cpp",
-              '''  if (context.hasLoweredType(pointer)) {
-              // preserve distinct node payload array types
-              auto *ptrType = dyn_cast<SpirvPointerType>(pointer->getResultType());
-              instruction->setResultType(ptrType->getPointeeType());
-              context.addToInstructionsWithLoweredType(instruction);
-            }
-          ''',
-              '''  if (context.hasLoweredType(pointer)) {
-              // Preserve distinct node payload array types. Untyped pointers have
-              // no pointee type; their load result is lowered from the AST result
-              // type by the normal type-lowering pass.
-              if (auto *ptrType =
-                      dyn_cast<SpirvPointerType>(pointer->getResultType())) {
-                instruction->setResultType(ptrType->getPointeeType());
-                context.addToInstructionsWithLoweredType(instruction);
-              } else {
-                assert(isa<UntypedPointerKHRType>(pointer->getResultType()) &&
-                       "lowered pointer must be typed or untyped");
-              }
-            }
-          ''',
-          )
-
-          replace_exact(
-              "tools/clang/lib/SPIRV/SpirvBuilder.cpp",
-              '''  if (func->constainsAliasComponent() &&
-                isAKindOfStructuredOrByteBuffer(returnType)) {
-              instruction->setStorageClass(spv::StorageClass::Uniform);
-              // Now it is a pointer to the global resource, which is lvalue.
-          ''',
-              '''  if (func->constainsAliasComponent() &&
-                isAKindOfStructuredOrByteBuffer(returnType)) {
-              const bool useUntypedRawBuffer =
-                  !spirvOptions.allowedExtensions.empty() &&
-                  featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers) &&
-                  (isByteAddressBuffer(returnType) || isRWByteAddressBuffer(returnType));
-              instruction->setStorageClass(useUntypedRawBuffer
-                                               ? spv::StorageClass::StorageBuffer
-                                               : spv::StorageClass::Uniform);
-              // Now it is a pointer to the global resource, which is lvalue.
-          ''',
+              [
+                  (
+                      "  if (pointer->containsAliasComponent() &&\n"
+                      "      isAKindOfStructuredOrByteBuffer(resultType)) {\n"
+                      "    instruction->setStorageClass(spv::StorageClass::Uniform);",
+                      "  if (pointer->containsAliasComponent() &&\n"
+                      "      isAKindOfStructuredOrByteBuffer(resultType)) {\n"
+                      "    const bool useUntypedRawBuffer =\n"
+                      "        !spirvOptions.allowedExtensions.empty() &&\n"
+                      "        featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers) &&\n"
+                      "        (isByteAddressBuffer(resultType) || isRWByteAddressBuffer(resultType));\n"
+                      "    instruction->setStorageClass(useUntypedRawBuffer\n"
+                      "                                     ? spv::StorageClass::StorageBuffer\n"
+                      "                                     : spv::StorageClass::Uniform);",
+                      1,
+                  ),
+                  (
+                      "  if (context.hasLoweredType(pointer)) {\n"
+                      "    // preserve distinct node payload array types\n"
+                      "    auto *ptrType = dyn_cast<SpirvPointerType>(pointer->getResultType());\n"
+                      "    instruction->setResultType(ptrType->getPointeeType());\n"
+                      "    context.addToInstructionsWithLoweredType(instruction);\n"
+                      "  }",
+                      "  if (context.hasLoweredType(pointer)) {\n"
+                      "    // Preserve distinct node payload array types. Untyped pointers have\n"
+                      "    // no pointee type; their load result is lowered from the AST result\n"
+                      "    // type by the normal type-lowering pass.\n"
+                      "    if (auto *ptrType =\n"
+                      "            dyn_cast<SpirvPointerType>(pointer->getResultType())) {\n"
+                      "      instruction->setResultType(ptrType->getPointeeType());\n"
+                      "      context.addToInstructionsWithLoweredType(instruction);\n"
+                      "    } else {\n"
+                      "      assert(isa<UntypedPointerKHRType>(pointer->getResultType()) &&\n"
+                      "             \"lowered pointer must be typed or untyped\");\n"
+                      "    }\n"
+                      "  }",
+                      1,
+                  ),
+                  (
+                      "  if (func->constainsAliasComponent() &&\n"
+                      "      isAKindOfStructuredOrByteBuffer(returnType)) {\n"
+                      "    instruction->setStorageClass(spv::StorageClass::Uniform);",
+                      "  if (func->constainsAliasComponent() &&\n"
+                      "      isAKindOfStructuredOrByteBuffer(returnType)) {\n"
+                      "    const bool useUntypedRawBuffer =\n"
+                      "        !spirvOptions.allowedExtensions.empty() &&\n"
+                      "        featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers) &&\n"
+                      "        (isByteAddressBuffer(returnType) || isRWByteAddressBuffer(returnType));\n"
+                      "    instruction->setStorageClass(useUntypedRawBuffer\n"
+                      "                                     ? spv::StorageClass::StorageBuffer\n"
+                      "                                     : spv::StorageClass::Uniform);",
+                      1,
+                  ),
+              ],
           )
 
           probe = "utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py"
-          replace_exact(
+          edit(
               probe,
-              '''    else:
-                ok = (
-                    not untyped
-                    and c["OpCompositeConstruct"] >= 1
-                    and c["OpCompositeExtract"] >= 4
-                )
-                case.classification = "typed-alias-compatible" if ok else "legacy-alias-changed"
-          ''',
-              '''    else:
-                # The optimized legacy Load4/Store4 shape is four typed scalar
-                # loads and stores; composite pack/unpack nodes need not survive.
-                ok = not untyped and c["OpLoad"] >= 4 and c["OpStore"] >= 4
-                case.classification = "typed-alias-compatible" if ok else "legacy-alias-changed"
-          ''',
-          )
-          replace_exact(
-              probe,
-              '''        ("legacy-alias", "alias"): """
-            %a=OpLoad %u %p
-            %b=OpLoad %u %p
-            %c=OpLoad %u %p
-            %d=OpLoad %u %p
-            %v=OpCompositeConstruct %v4 %a %b %c %d
-            %x0=OpCompositeExtract %u %v 0
-            %x1=OpCompositeExtract %u %v 1
-            %x2=OpCompositeExtract %u %v 2
-            %x3=OpCompositeExtract %u %v 3
-            """,
-          ''',
-              '''        ("legacy-alias", "alias"): """
-            %a=OpLoad %u %p
-            %b=OpLoad %u %p
-            %c=OpLoad %u %p
-            %d=OpLoad %u %p
-            OpStore %p %a
-            OpStore %p %b
-            OpStore %p %c
-            OpStore %p %d
-            """,
-          ''',
-          )
-          replace_all_exact(
-              probe,
-              "OpUntypedVariableKHR %up Uniform %Raw",
-              "OpUntypedVariableKHR %up StorageBuffer %Raw",
-              7,
-          )
-          replace_all_exact(
-              probe,
-              "%up=OpTypeUntypedPointerKHR Uniform",
-              "%up=OpTypeUntypedPointerKHR StorageBuffer",
-              2,
+              [
+                  (
+                      "    else:\n"
+                      "        ok = (\n"
+                      "            not untyped\n"
+                      "            and c[\"OpCompositeConstruct\"] >= 1\n"
+                      "            and c[\"OpCompositeExtract\"] >= 4\n"
+                      "        )\n"
+                      "        case.classification = \"typed-alias-compatible\" if ok else \"legacy-alias-changed\"",
+                      "    else:\n"
+                      "        # The optimized legacy Load4/Store4 shape is four typed scalar\n"
+                      "        # loads and stores; composite pack/unpack nodes need not survive.\n"
+                      "        ok = not untyped and c[\"OpLoad\"] >= 4 and c[\"OpStore\"] >= 4\n"
+                      "        case.classification = \"typed-alias-compatible\" if ok else \"legacy-alias-changed\"",
+                      1,
+                  ),
+                  (
+                      "        (\"legacy-alias\", \"alias\"): \"\"\"\n"
+                      "%a=OpLoad %u %p\n"
+                      "%b=OpLoad %u %p\n"
+                      "%c=OpLoad %u %p\n"
+                      "%d=OpLoad %u %p\n"
+                      "%v=OpCompositeConstruct %v4 %a %b %c %d\n"
+                      "%x0=OpCompositeExtract %u %v 0\n"
+                      "%x1=OpCompositeExtract %u %v 1\n"
+                      "%x2=OpCompositeExtract %u %v 2\n"
+                      "%x3=OpCompositeExtract %u %v 3\n"
+                      "\"\"\"",
+                      "        (\"legacy-alias\", \"alias\"): \"\"\"\n"
+                      "%a=OpLoad %u %p\n"
+                      "%b=OpLoad %u %p\n"
+                      "%c=OpLoad %u %p\n"
+                      "%d=OpLoad %u %p\n"
+                      "OpStore %p %a\n"
+                      "OpStore %p %b\n"
+                      "OpStore %p %c\n"
+                      "OpStore %p %d\n"
+                      "\"\"\"",
+                      1,
+                  ),
+                  (
+                      "OpUntypedVariableKHR %up Uniform %Raw",
+                      "OpUntypedVariableKHR %up StorageBuffer %Raw",
+                      7,
+                  ),
+                  (
+                      "%up=OpTypeUntypedPointerKHR Uniform",
+                      "%up=OpTypeUntypedPointerKHR StorageBuffer",
+                      2,
+                  ),
+              ],
           )
           '@ | python -
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
