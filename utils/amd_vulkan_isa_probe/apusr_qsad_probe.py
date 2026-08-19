@@ -130,8 +130,9 @@ def write_markdown(path: Path, cases: list[CaseResult]) -> None:
     lines = [
         "# APUSR QSad native-lowering comparison",
         "",
-        "The two shaders model the same 8-row x 2-QSad optical-flow search shape:",
-        "the intended accumulated `msad4` path and APUSR's current SWAR+packed-UDOT Vulkan path.",
+        "The three cases model the same 8-row x 2-QSad optical-flow search shape:",
+        "ordinary DXC `msad4` expansion, the AMD-oriented packed-UDOT `msad4` expansion,",
+        "and APUSR's current SWAR+packed-UDOT Vulkan path.",
         "",
         "| Case | SPIR-V nonzero ops | Installed driver SAD-family | RGA live | RGA offline |",
         "|---|---|---|---|---|",
@@ -147,7 +148,8 @@ def write_markdown(path: Path, cases: list[CaseResult]) -> None:
         "",
         "## Interpretation",
         "",
-        "- Installed-driver ISA is the result that decides whether the current Radeon stack recovers `v_msad*`/`v_mqsad*` from either SPIR-V shape.",
+        "- Installed-driver ISA decides whether the current Radeon stack recovers `v_msad*`/`v_mqsad*` from any legal SPIR-V spelling.",
+        "- Comparing the two `msad4` cases isolates whether packed UDOT helps or destroys native SAD-family recognition.",
         "- RGA offline is useful target evidence but is not substituted for installed-driver proof.",
         "- No SAD-family mnemonic is a valid negative result when the corresponding disassembly command succeeds.",
         "- Compare instruction counts as well as mnemonic presence: APUSR executes this search shape at high multiplicity, so partial recovery can still leave substantial integer work.",
@@ -193,7 +195,8 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     specs = (
-        ("apusr.qsad.msad4", shaders / "apusr_qsad_msad4.hlsl",
+        ("apusr.qsad.msad4-scalar", shaders / "apusr_qsad_msad4.hlsl", []),
+        ("apusr.qsad.msad4-udot", shaders / "apusr_qsad_msad4.hlsl",
          ["-fspv-enable-amd-intrinsics"]),
         ("apusr.qsad.swar-udot", shaders / "apusr_qsad_swar.hlsl", []),
     )
