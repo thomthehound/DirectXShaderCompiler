@@ -3,11 +3,12 @@
 #include <vk/amd/math.h>
 
 // Keep all four rolling windows and all four packed accumulator lanes visible.
-// The source is 64-bit and every window shifts by exactly one byte.
+// The source is 64-bit and every window shifts by exactly one byte. Selection
+// may be OpSelect or structured control flow in unoptimized SPIR-V.
 // CHECK: OpTypeInt 64 0
 // CHECK: OpShiftRightLogical
 // CHECK: OpBitFieldUExtract
-// CHECK: OpSelect
+// CHECK: {{OpSelect|OpSelectionMerge}}
 // CHECK: OpBitwiseOr
 // CHECK: OpShiftLeftLogical
 
