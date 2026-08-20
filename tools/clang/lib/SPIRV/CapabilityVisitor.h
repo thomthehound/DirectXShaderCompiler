@@ -66,7 +66,8 @@ private:
   /// The restricted StorageBuffer capability is sufficient; do not request the
   /// broader VariablePointers capability.
   void addVariablePointersStorageBufferCapability(SpirvInstruction *instr) {
-    const auto *holderType = dyn_cast<SpirvPointerType>(instr->getResultType());
+    const auto *holderType =
+        dyn_cast_or_null<SpirvPointerType>(instr->getResultType());
     if (!holderType ||
         holderType->getStorageClass() != spv::StorageClass::Function)
       return;
