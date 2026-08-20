@@ -10,6 +10,7 @@
 #ifndef LLVM_CLANG_LIB_SPIRV_CAPABILITYVISITOR_H
 #define LLVM_CLANG_LIB_SPIRV_CAPABILITYVISITOR_H
 
+#include "clang/SPIRV/AstTypeProbe.h"
 #include "clang/SPIRV/FeatureManager.h"
 #include "clang/SPIRV/SpirvContext.h"
 #include "clang/SPIRV/SpirvVisitor.h"
@@ -61,21 +62,18 @@ public:
   bool visitInstruction(SpirvInstruction *instr) override;
 
 private:
-  /// Adds VariablePointersStorageBuffer for the native raw-buffer alias shape:
-  /// a Function-scope holder containing an untyped StorageBuffer pointer.
-  /// The restricted StorageBuffer capability is sufficient; do not request the
-  /// broader VariablePointers capability.
+  /// Adds VariablePointersStorageBuffer for native untyped raw-buffer aliases.
+  /// Alias intent and the HLSL resource type are stable before SPIR-V type
+  /// lowering completes, so do not inspect partially lowered parameter types
+  /// here.
   void addVariablePointersStorageBufferCapability(SpirvInstruction *instr) {
-    const auto *holderType =
-        dyn_cast_or_null<SpirvPointerType>(instr->getResultType());
-    if (!holderType ||
-        holderType->getStorageClass() != spv::StorageClass::Function)
+    if (!instr->containsAliasComponent() ||
+        !featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers))
       return;
 
-    const auto *untypedPtr =
-        dyn_cast<UntypedPointerKHRType>(holderType->getPointeeType());
-    if (untypedPtr &&
-        untypedPtr->getStorageClass() == spv::StorageClass::StorageBuffer)
+    const QualType astType = instr->getAstResultType();
+    if (!astType.isNull() &&
+        (isByteAddressBuffer(astType) || isRWByteAddressBuffer(astType)))
       addCapability(spv::Capability::VariablePointersStorageBuffer,
                     instr->getSourceLocation());
   }
