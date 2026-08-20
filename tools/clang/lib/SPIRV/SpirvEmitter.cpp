@@ -156,15 +156,19 @@ spv::Op translateAtomicHlslOpcodeToSpirvOpcode(hlsl::IntrinsicOp opcode) {
   switch (opcode) {
   case IntrinsicOp::IOP_InterlockedAdd:
   case IntrinsicOp::MOP_InterlockedAdd:
+  case IntrinsicOp::MOP_InterlockedAdd64:
     return Op::OpAtomicIAdd;
   case IntrinsicOp::IOP_InterlockedAnd:
   case IntrinsicOp::MOP_InterlockedAnd:
+  case IntrinsicOp::MOP_InterlockedAnd64:
     return Op::OpAtomicAnd;
   case IntrinsicOp::IOP_InterlockedOr:
   case IntrinsicOp::MOP_InterlockedOr:
+  case IntrinsicOp::MOP_InterlockedOr64:
     return Op::OpAtomicOr;
   case IntrinsicOp::IOP_InterlockedXor:
   case IntrinsicOp::MOP_InterlockedXor:
+  case IntrinsicOp::MOP_InterlockedXor64:
     return Op::OpAtomicXor;
   case IntrinsicOp::IOP_InterlockedUMax:
   case IntrinsicOp::MOP_InterlockedUMax:
@@ -174,12 +178,15 @@ spv::Op translateAtomicHlslOpcodeToSpirvOpcode(hlsl::IntrinsicOp opcode) {
     return Op::OpAtomicUMin;
   case IntrinsicOp::IOP_InterlockedMax:
   case IntrinsicOp::MOP_InterlockedMax:
+  case IntrinsicOp::MOP_InterlockedMax64:
     return Op::OpAtomicSMax;
   case IntrinsicOp::IOP_InterlockedMin:
   case IntrinsicOp::MOP_InterlockedMin:
+  case IntrinsicOp::MOP_InterlockedMin64:
     return Op::OpAtomicSMin;
   case IntrinsicOp::IOP_InterlockedExchange:
   case IntrinsicOp::MOP_InterlockedExchange:
+  case IntrinsicOp::MOP_InterlockedExchange64:
     return Op::OpAtomicExchange;
   default:
     // Only atomic opcodes are relevant.
@@ -2178,7 +2185,7 @@ void SpirvEmitter::doVarDecl(const VarDecl *decl) {
     }
   }
 
-  SpirvVariable *var = nullptr;
+  SpirvVariableLike *var = nullptr;
 
   // The contents in externally visible variables can be updated via the
   // pipeline. They should be handled differently from file and function scope
@@ -2210,7 +2217,8 @@ void SpirvEmitter::doVarDecl(const VarDecl *decl) {
     // We should only evaluate the initializer once for a static variable.
     if (isFileScopeVar) {
       if (decl->isStaticLocal()) {
-        initOnce(decl->getType(), decl->getName(), var, decl->getInit());
+        initOnce(decl->getType(), decl->getName(),
+                 cast<SpirvVariable>(var), decl->getInit());
       } else {
         // Defer to initialize these global variables at the beginning of the
         // entry function.
@@ -3337,6 +3345,24 @@ SpirvInstruction *SpirvEmitter::processCall(const CallExpr *callExpr) {
       return nullptr;
     }
 
+    const bool nativeUntypedRawParam =
+        !spirvOptions.allowedExtensions.empty() &&
+        featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers) &&
+        (isByteAddressBuffer(paramType) || isRWByteAddressBuffer(paramType));
+    if (nativeUntypedRawParam) {
+      // Native raw resources cross a function boundary as StorageBuffer
+      // pointer values. A local alias is a Function-scope holder, so load that
+      // pointer exactly once; globals and nested native raw parameters are
+      // already pointer values and pass through unchanged.
+      auto *argInst = loadIfAliasVarRef(arg);
+      if (!argInst)
+        return nullptr;
+      vars.push_back(argInst);
+      isTempVar.push_back(false);
+      args.push_back(argInst);
+      continue;
+    }
+
     // Get the evaluation info if this argument is referencing some variable
     // *as a whole*, in which case we can avoid creating the temporary variable
     // for it if it can act as out parameter.
@@ -4170,10 +4196,16 @@ SpirvEmitter::processByteAddressBufferStructuredBufferGetDimensions(
   assert(isBABuf || isStructuredBuf);
 
   // (RW)ByteAddressBuffers/(RW)StructuredBuffers are represented as a structure
-  // with only one member that is a runtime array. We need to perform
-  // OpArrayLength on member 0.
+  // with only one member that is a runtime array. Untyped raw buffers carry
+  // that concrete structure as the Structure operand of OpUntypedArrayLengthKHR.
+  const SpirvType *untypedStructureType = nullptr;
+  RawBufferHandler rawBufferHandler(*this);
+  if (isBABuf && rawBufferHandler.isUntypedRawBuffer(objectInstr))
+    untypedStructureType =
+        rawBufferHandler.getUntypedRawBufferDataType(objectInstr);
   SpirvInstruction *length = spvBuilder.createArrayLength(
-      astContext.UnsignedIntTy, expr->getExprLoc(), objectInstr, 0, range);
+      astContext.UnsignedIntTy, expr->getExprLoc(), objectInstr, 0, range,
+      untypedStructureType);
   // For (RW)ByteAddressBuffers, GetDimensions() must return the array length
   // in bytes, but OpArrayLength returns the number of uints in the runtime
   // array. Therefore we must multiply the results by 4.
@@ -4207,70 +4239,87 @@ SpirvEmitter::processByteAddressBufferStructuredBufferGetDimensions(
 
 SpirvInstruction *SpirvEmitter::processRWByteAddressBufferAtomicMethods(
     hlsl::IntrinsicOp opcode, const CXXMemberCallExpr *expr) {
-  // The signature of RWByteAddressBuffer atomic methods are largely:
-  // void Interlocked*(in UINT dest, in UINT value);
-  // void Interlocked*(in UINT dest, in UINT value, out UINT original_value);
+  // RWByteAddressBuffer exposes both 32-bit Interlocked* methods and native
+  // 64-bit Interlocked*64 methods. The legacy raw-buffer representation has
+  // a typed uint32 runtime array and therefore cannot provide a genuine
+  // atomic 64-bit pointer. The explicitly enabled untyped-pointer path can.
   const auto *object = expr->getImplicitObjectArgument();
   auto *objectInfo = loadIfAliasVarRef(object);
+  RawBufferHandler rawBufferHandler(*this);
 
-  auto *zero =
-      spvBuilder.getConstantInt(astContext.UnsignedIntTy, llvm::APInt(32, 0));
+  const bool isCompareExchange =
+      opcode == hlsl::IntrinsicOp::MOP_InterlockedCompareExchange ||
+      opcode == hlsl::IntrinsicOp::MOP_InterlockedCompareExchange64;
+  const bool isCompareStore =
+      opcode == hlsl::IntrinsicOp::MOP_InterlockedCompareStore ||
+      opcode == hlsl::IntrinsicOp::MOP_InterlockedCompareStore64;
+
+  const unsigned valueArgIndex =
+      (isCompareExchange || isCompareStore) ? 2u : 1u;
+  const Expr *value = expr->getArg(valueArgIndex);
+  const QualType valueType = value->getType()->getCanonicalTypeUnqualified();
+  const bool is64BitAtomic =
+      valueType->isIntegerType() && astContext.getTypeSize(valueType) == 64;
+
+  if (is64BitAtomic && !rawBufferHandler.isUntypedRawBuffer(objectInfo)) {
+    emitError(
+        "64-bit RWByteAddressBuffer atomics require "
+        "SPV_KHR_untyped_pointers; the legacy raw-buffer representation "
+        "cannot provide a native 64-bit atomic pointer",
+        expr->getCallee()->getExprLoc());
+    return nullptr;
+  }
+
+  // Preserve the existing uint32 representation for legacy atomics. Untyped
+  // 64-bit atomics can use the frontend-selected signed/unsigned integer type
+  // directly because their pointer does not encode a pointee type.
+  const QualType atomicType =
+      is64BitAtomic ? valueType : astContext.UnsignedIntTy;
+
   auto *offset = doExpr(expr->getArg(0));
 
-  // Right shift by 2 to convert the byte offset to uint32_t offset
+  // The raw-buffer Data Type remains a runtime array of uint32 words, so the
+  // access-chain index is byteOffset / 4 even when the atomic operation is
+  // 64-bit. A legal 64-bit atomic offset is therefore an even word index.
   const auto range = expr->getSourceRange();
   auto *address = spvBuilder.createBinaryOp(
       spv::Op::OpShiftRightLogical, astContext.UnsignedIntTy, offset,
       spvBuilder.getConstantInt(astContext.UnsignedIntTy, llvm::APInt(32, 2)),
       expr->getExprLoc(), range);
-  auto *ptr = spvBuilder.createAccessChain(astContext.UnsignedIntTy, objectInfo,
-                                           {zero, address},
-                                           object->getLocStart(), range);
+  auto *ptr = rawBufferHandler.createWordPointer(
+      objectInfo, address, object->getLocStart(), range);
 
-  const bool isCompareExchange =
-      opcode == hlsl::IntrinsicOp::MOP_InterlockedCompareExchange;
-  const bool isCompareStore =
-      opcode == hlsl::IntrinsicOp::MOP_InterlockedCompareStore;
+  const auto castAtomicArg = [&](const Expr *arg) {
+    auto *instr = doExpr(arg);
+    return castToType(instr, arg->getType(), atomicType, arg->getExprLoc(),
+                      range);
+  };
 
   if (isCompareExchange || isCompareStore) {
-    auto *comparator = doExpr(expr->getArg(1));
+    auto *comparator = castAtomicArg(expr->getArg(1));
+    auto *valueInstr = castAtomicArg(expr->getArg(2));
     SpirvInstruction *originalVal = spvBuilder.createAtomicCompareExchange(
-        astContext.UnsignedIntTy, ptr, spv::Scope::Device,
+        atomicType, ptr, spv::Scope::Device,
         spv::MemorySemanticsMask::MaskNone, spv::MemorySemanticsMask::MaskNone,
-        doExpr(expr->getArg(2)), comparator, expr->getCallee()->getExprLoc(),
-        range);
+        valueInstr, comparator, expr->getCallee()->getExprLoc(), range);
     if (isCompareExchange) {
       auto *resultAddress = expr->getArg(3);
-      QualType resultType = resultAddress->getType();
-      if (resultType != astContext.UnsignedIntTy)
-        originalVal = castToInt(originalVal, astContext.UnsignedIntTy,
-                                resultType, expr->getArg(3)->getLocStart());
-      spvBuilder.createStore(doExpr(expr->getArg(3)), originalVal,
-                             expr->getArg(3)->getLocStart(), range);
+      const QualType resultType = resultAddress->getType();
+      if (resultType != atomicType)
+        originalVal = castToType(originalVal, atomicType, resultType,
+                                 resultAddress->getLocStart(), range);
+      spvBuilder.createStore(doExpr(resultAddress), originalVal,
+                             resultAddress->getLocStart(), range);
     }
   } else {
-    const Expr *value = expr->getArg(1);
-    SpirvInstruction *valueInstr = doExpr(expr->getArg(1));
-
-    // Since a RWAB is represented by an array of 32-bit unsigned integers, the
-    // destination pointee type will always be unsigned, and thus the SPIR-V
-    // instruction's result type and value type must also be unsigned. The
-    // signedness of the opcode is determined correctly by frontend and will
-    // correctly determine the signedness of the actual operation, but the
-    // necessary argument type cast will not be added by the frontend in the
-    // case of a signed value.
-    valueInstr =
-        castToType(valueInstr, value->getType(), astContext.UnsignedIntTy,
-                   value->getExprLoc(), range);
-
+    SpirvInstruction *valueInstr = castAtomicArg(value);
     SpirvInstruction *originalVal = spvBuilder.createAtomicOp(
-        translateAtomicHlslOpcodeToSpirvOpcode(opcode),
-        astContext.UnsignedIntTy, ptr, spv::Scope::Device,
-        spv::MemorySemanticsMask::MaskNone, valueInstr,
+        translateAtomicHlslOpcodeToSpirvOpcode(opcode), atomicType, ptr,
+        spv::Scope::Device, spv::MemorySemanticsMask::MaskNone, valueInstr,
         expr->getCallee()->getExprLoc(), range);
     if (expr->getNumArgs() > 2) {
-      originalVal = castToType(originalVal, astContext.UnsignedIntTy,
-                               expr->getArg(2)->getType(),
+      const QualType resultType = expr->getArg(2)->getType();
+      originalVal = castToType(originalVal, atomicType, resultType,
                                expr->getArg(2)->getLocStart(), range);
       spvBuilder.createStore(doExpr(expr->getArg(2)), originalVal,
                              expr->getArg(2)->getLocStart(), range);
@@ -4932,10 +4981,34 @@ SpirvInstruction *SpirvEmitter::processByteAddressBufferLoadStore(
     beginInvocationInterlock(expr->getLocStart(), range);
   }
 
-  // Perform access chain into the RWByteAddressBuffer.
-  // First index must be zero (member 0 of the struct is a
-  // runtimeArray). The second index passed to OpAccessChain should be
-  // the address.
+  RawBufferHandler rawBufferHandler(*this);
+  if (rawBufferHandler.isUntypedRawBuffer(objectInfo)) {
+    auto *ptr = rawBufferHandler.createWordPointer(
+        objectInfo, address, object->getLocStart(), range);
+    const QualType valueType =
+        numWords == 1
+            ? astContext.UnsignedIntTy
+            : astContext.getExtVectorType(astContext.UnsignedIntTy, numWords);
+
+    if (doStore) {
+      auto *store = spvBuilder.createStore(
+          ptr, doExpr(expr->getArg(1)), expr->getCallee()->getExprLoc(), range);
+      store->setAlignment(4);
+    } else {
+      auto *load = spvBuilder.createLoad(
+          valueType, ptr, expr->getCallee()->getExprLoc(), range);
+      cast<SpirvLoad>(load)->setAlignment(4);
+      load->setRValue();
+      result = load;
+    }
+
+    if (rasterizerOrder)
+      spvBuilder.createEndInvocationInterlockEXT(expr->getLocStart(), range);
+    return result;
+  }
+
+  // Legacy raw buffers use a struct containing RuntimeArray<uint>.
+  // First index is member 0; the second is the 32-bit word address.
   auto *constUint0 =
       spvBuilder.getConstantInt(astContext.UnsignedIntTy, llvm::APInt(32, 0));
   if (doStore) {
@@ -5715,16 +5788,25 @@ SpirvEmitter::processIntrinsicMemberCall(const CXXMemberCallExpr *expr,
     retVal = processStreamOutputRestart(expr);
     break;
   case IntrinsicOp::MOP_InterlockedAdd:
+  case IntrinsicOp::MOP_InterlockedAdd64:
   case IntrinsicOp::MOP_InterlockedAnd:
+  case IntrinsicOp::MOP_InterlockedAnd64:
   case IntrinsicOp::MOP_InterlockedOr:
+  case IntrinsicOp::MOP_InterlockedOr64:
   case IntrinsicOp::MOP_InterlockedXor:
+  case IntrinsicOp::MOP_InterlockedXor64:
   case IntrinsicOp::MOP_InterlockedUMax:
   case IntrinsicOp::MOP_InterlockedUMin:
   case IntrinsicOp::MOP_InterlockedMax:
+  case IntrinsicOp::MOP_InterlockedMax64:
   case IntrinsicOp::MOP_InterlockedMin:
+  case IntrinsicOp::MOP_InterlockedMin64:
   case IntrinsicOp::MOP_InterlockedExchange:
+  case IntrinsicOp::MOP_InterlockedExchange64:
   case IntrinsicOp::MOP_InterlockedCompareExchange:
+  case IntrinsicOp::MOP_InterlockedCompareExchange64:
   case IntrinsicOp::MOP_InterlockedCompareStore:
+  case IntrinsicOp::MOP_InterlockedCompareStore64:
     retVal = processRWByteAddressBufferAtomicMethods(opcode, expr);
     break;
   case IntrinsicOp::MOP_GetSamplePosition:
@@ -7336,13 +7418,20 @@ void SpirvEmitter::storeValue(SpirvInstruction *lhsPtr,
     spvBuilder.createStore(lhsPtr, rhsVal, loc, range);
     needsLegalization = true;
   } else if (isAKindOfStructuredOrByteBuffer(lhsValType)) {
-    // The rhs should be a pointer and the lhs should be a pointer-to-pointer.
-    // Directly store the pointer here and let SPIRV-Tools opt to do the clean
-    // up.
-    //
-    // Note: legalization specific code
+    const bool nativeUntypedRawAlias =
+        lhsPtr->containsAliasComponent() &&
+        !spirvOptions.allowedExtensions.empty() &&
+        featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers) &&
+        (isByteAddressBuffer(lhsValType) ||
+         isRWByteAddressBuffer(lhsValType));
+
+    // Native raw aliases store a StorageBuffer pointer value in their
+    // Function-scope holder and are already valid variable-pointer SPIR-V.
+    // Legacy structured/raw resources retain the pointer-to-pointer form that
+    // SPIRV-Tools HLSL legalization removes.
     spvBuilder.createStore(lhsPtr, rhsVal, loc, range);
-    needsLegalization = true;
+    if (!nativeUntypedRawAlias)
+      needsLegalization = true;
 
     // For ConstantBuffers/TextureBuffers, we decompose and assign each field
     // recursively like normal structs using the following logic.

@@ -46,14 +46,23 @@ if (${ENABLE_SPIRV_CODEGEN})
       if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         add_compile_options(-Wno-implicit-fallthrough)
       endif()
-      # We only need the library from SPIRV-Tools.
+      # DXC normally only needs the SPIRV-Tools libraries. Callers that need
+      # the command-line tools may override this cache option explicitly.
       set(SPIRV_SKIP_EXECUTABLES ON CACHE BOOL "Skip building SPIRV-Tools executables")
       if (NOT HLSL_ENABLE_DEBUG_ITERATORS)
         set(SPIRV_TOOLS_EXTRA_DEFINITIONS /D_ITERATOR_DEBUG_LEVEL=0)
       endif()
+
+      # DXC globally enables CMAKE_INCLUDE_CURRENT_DIR. SPIRV-Tools is designed
+      # to build without it, and inheriting it makes tools/io.h shadow the MSVC
+      # CRT <io.h> when the command-line tools are enabled.
+      set(DXC_SAVED_CMAKE_INCLUDE_CURRENT_DIR ${CMAKE_INCLUDE_CURRENT_DIR})
+      set(CMAKE_INCLUDE_CURRENT_DIR OFF)
       add_subdirectory(${DXC_SPIRV_TOOLS_DIR}
           "${CMAKE_BINARY_DIR}/external/SPIRV-Tools"
           EXCLUDE_FROM_ALL)
+      set(CMAKE_INCLUDE_CURRENT_DIR ${DXC_SAVED_CMAKE_INCLUDE_CURRENT_DIR})
+      unset(DXC_SAVED_CMAKE_INCLUDE_CURRENT_DIR)
     endif()
   endif()
   if (NOT TARGET SPIRV-Tools)

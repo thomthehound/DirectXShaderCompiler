@@ -11,6 +11,8 @@
 class ASTContext;
 class SpirvBuilder;
 class SpirvInstruction;
+class SpirvStore;
+class SpirvContext;
 
 #include "SpirvEmitter.h"
 
@@ -21,7 +23,8 @@ class RawBufferHandler {
 public:
   RawBufferHandler(SpirvEmitter &emitter)
       : theEmitter(emitter), astContext(emitter.getASTContext()),
-        spvBuilder(emitter.getSpirvBuilder()) {}
+        spvBuilder(emitter.getSpirvBuilder()),
+        spvContext(emitter.getSpirvContext()) {}
 
   /// \brief Performs (RW)ByteAddressBuffer.Load<T>(byteAddress).
   /// (RW)ByteAddressBuffers are represented as structs with only one member
@@ -52,6 +55,25 @@ public:
                                      SpirvInstruction *&byteAddress,
                                      const QualType valueType,
                                      SourceRange range = {});
+
+  bool isUntypedRawBuffer(SpirvInstruction *buffer) const;
+  const SpirvType *getUntypedRawBufferDataType(SpirvInstruction *buffer) const;
+
+  /// Returns a pointer to a 32-bit-word position in a raw buffer. Untyped raw
+  /// buffers use OpUntypedAccessChainKHR; legacy buffers retain OpAccessChain.
+  SpirvInstruction *createWordPointer(SpirvInstruction *buffer,
+                                      SpirvInstruction *wordIndex,
+                                      SourceLocation loc,
+                                      SourceRange range = {});
+
+  SpirvInstruction *loadAtWord(SpirvInstruction *buffer,
+                               SpirvInstruction *wordIndex, QualType valueType,
+                               SourceLocation loc, SourceRange range = {});
+
+  SpirvStore *storeAtWord(SpirvInstruction *buffer,
+                          SpirvInstruction *wordIndex,
+                          SpirvInstruction *value, SourceLocation loc,
+                          SourceRange range = {});
 
 private:
   class BufferAddress {
@@ -136,6 +158,7 @@ private:
   SpirvEmitter &theEmitter;
   ASTContext &astContext;
   SpirvBuilder &spvBuilder;
+  SpirvContext &spvContext;
 };
 
 } // namespace spirv

@@ -71,19 +71,35 @@ SpirvBuilder::addFnParam(QualType ptrType, bool isPrecise, bool isNointerp,
                          SourceLocation loc, llvm::StringRef name) {
   assert(function && "found detached parameter");
   SpirvFunctionParameter *param = nullptr;
-  if (isBindlessOpaqueArray(ptrType)) {
+  const bool useUntypedRawBuffer =
+      !spirvOptions.allowedExtensions.empty() &&
+      featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers) &&
+      (isByteAddressBuffer(ptrType) || isRWByteAddressBuffer(ptrType));
+  if (useUntypedRawBuffer) {
+    // Native untyped raw-buffer parameters are StorageBuffer pointer values,
+    // not Function pointer-to-pointer aliases for the legacy legalizer.
+    param = new (context)
+        SpirvFunctionParameter(ptrType, isPrecise, isNointerp, loc);
+    param->setResultType(
+        context.getUntypedPointerKHRType(spv::StorageClass::StorageBuffer));
+    param->setStorageClass(spv::StorageClass::StorageBuffer);
+    context.addToInstructionsWithLoweredType(param);
+  } else if (isBindlessOpaqueArray(ptrType)) {
     // If it is a bindless array of an opaque type, we have to use
     // a pointer to a pointer of the runtime array.
     param = new (context) SpirvFunctionParameter(
         context.getPointerType(ptrType, spv::StorageClass::UniformConstant),
         isPrecise, isNointerp, loc);
+    param->setStorageClass(hlsl::IsHLSLNodeInputType(ptrType)
+                               ? spv::StorageClass::NodePayloadAMDX
+                               : spv::StorageClass::Function);
   } else {
     param = new (context)
         SpirvFunctionParameter(ptrType, isPrecise, isNointerp, loc);
+    param->setStorageClass(hlsl::IsHLSLNodeInputType(ptrType)
+                               ? spv::StorageClass::NodePayloadAMDX
+                               : spv::StorageClass::Function);
   }
-  param->setStorageClass(hlsl::IsHLSLNodeInputType(ptrType)
-                             ? spv::StorageClass::NodePayloadAMDX
-                             : spv::StorageClass::Function);
   param->setDebugName(name);
   function->addParameter(param);
   return param;
@@ -199,6 +215,7 @@ SpirvInstruction *SpirvBuilder::createLoad(QualType resultType,
                                            SourceLocation loc,
                                            SourceRange range) {
   assert(insertPoint && "null insert point");
+
   auto *instruction = new (context) SpirvLoad(resultType, loc, pointer, range);
   instruction->setStorageClass(pointer->getStorageClass());
   instruction->setLayoutRule(pointer->getLayoutRule());
@@ -221,7 +238,14 @@ SpirvInstruction *SpirvBuilder::createLoad(QualType resultType,
 
   if (pointer->containsAliasComponent() &&
       isAKindOfStructuredOrByteBuffer(resultType)) {
-    instruction->setStorageClass(spv::StorageClass::Uniform);
+    // Untyped raw-buffer aliases point into StorageBuffer descriptors.
+    const bool useUntypedRawBuffer =
+        !spirvOptions.allowedExtensions.empty() &&
+        featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers) &&
+        (isByteAddressBuffer(resultType) || isRWByteAddressBuffer(resultType));
+    instruction->setStorageClass(useUntypedRawBuffer
+                                     ? spv::StorageClass::StorageBuffer
+                                     : spv::StorageClass::Uniform);
     // Now it is a pointer to the global resource, which is lvalue.
     instruction->setRValue(false);
     // Set to false to indicate that we've performed dereference over the
@@ -240,10 +264,16 @@ SpirvInstruction *SpirvBuilder::createLoad(QualType resultType,
   }
 
   if (context.hasLoweredType(pointer)) {
-    // preserve distinct node payload array types
-    auto *ptrType = dyn_cast<SpirvPointerType>(pointer->getResultType());
-    instruction->setResultType(ptrType->getPointeeType());
-    context.addToInstructionsWithLoweredType(instruction);
+    // Preserve distinct node payload array types. Untyped pointers have
+    // no pointee type, so leave their load result for normal AST lowering.
+    if (auto *ptrType =
+            dyn_cast<SpirvPointerType>(pointer->getResultType())) {
+      instruction->setResultType(ptrType->getPointeeType());
+      context.addToInstructionsWithLoweredType(instruction);
+    } else {
+      assert(isa<UntypedPointerKHRType>(pointer->getResultType()) &&
+             "lowered pointer must be typed or untyped");
+    }
   }
 
   const auto &bitfieldInfo = pointer->getBitfieldInfo();
@@ -361,6 +391,7 @@ SpirvBuilder::createFunctionCall(QualType returnType, SpirvFunction *func,
                                  llvm::ArrayRef<SpirvInstruction *> params,
                                  SourceLocation loc, SourceRange range) {
   assert(insertPoint && "null insert point");
+
   auto *instruction =
       new (context) SpirvFunctionCall(returnType, loc, func, params, range);
   instruction->setRValue(func->isRValue());
@@ -368,7 +399,14 @@ SpirvBuilder::createFunctionCall(QualType returnType, SpirvFunction *func,
 
   if (func->constainsAliasComponent() &&
       isAKindOfStructuredOrByteBuffer(returnType)) {
-    instruction->setStorageClass(spv::StorageClass::Uniform);
+    // Untyped raw-buffer function results point into StorageBuffer descriptors.
+    const bool useUntypedRawBuffer =
+        !spirvOptions.allowedExtensions.empty() &&
+        featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers) &&
+        (isByteAddressBuffer(returnType) || isRWByteAddressBuffer(returnType));
+    instruction->setStorageClass(useUntypedRawBuffer
+                                     ? spv::StorageClass::StorageBuffer
+                                     : spv::StorageClass::Uniform);
     // Now it is a pointer to the global resource, which is lvalue.
     instruction->setRValue(false);
     // Set to false to indicate that we've performed dereference over the
@@ -966,8 +1004,9 @@ SpirvInstruction *SpirvBuilder::createAllocateNodePayloads(
     SpirvInstruction *shaderIndex, SpirvInstruction *recordCount,
     SourceLocation loc) {
   assert(insertPoint && "null insert point");
-  auto *inst = new (context) SpirvAllocateNodePayloads(
-      resultType, loc, allocationScope, shaderIndex, recordCount);
+  auto *inst = new (context)
+      SpirvAllocateNodePayloads(resultType, loc, allocationScope, shaderIndex,
+                                recordCount);
   insertPoint->addInstruction(inst);
   return inst;
 }
@@ -1211,14 +1250,12 @@ void SpirvBuilder::createSetMeshOutputsEXT(SpirvInstruction *vertCount,
       new (context) SpirvSetMeshOutputsEXT(vertCount, primCount, loc, range);
   insertPoint->addInstruction(inst);
 }
-SpirvArrayLength *SpirvBuilder::createArrayLength(QualType resultType,
-                                                  SourceLocation loc,
-                                                  SpirvInstruction *structure,
-                                                  uint32_t arrayMember,
-                                                  SourceRange range) {
+SpirvArrayLength *SpirvBuilder::createArrayLength(
+    QualType resultType, SourceLocation loc, SpirvInstruction *structure,
+    uint32_t arrayMember, SourceRange range, const SpirvType *structureType) {
   assert(insertPoint && "null insert point");
-  auto *inst = new (context)
-      SpirvArrayLength(resultType, loc, structure, arrayMember, range);
+  auto *inst = new (context) SpirvArrayLength(
+      resultType, loc, structure, arrayMember, range, structureType);
   insertPoint->addInstruction(inst);
   return inst;
 }
@@ -1298,7 +1335,7 @@ SpirvDebugLocalVariable *SpirvBuilder::createDebugLocalVariable(
 SpirvDebugGlobalVariable *SpirvBuilder::createDebugGlobalVariable(
     QualType debugType, llvm::StringRef varName, SpirvDebugSource *src,
     uint32_t line, uint32_t column, SpirvDebugInstruction *parentScope,
-    llvm::StringRef linkageName, SpirvVariable *var, uint32_t flags,
+    llvm::StringRef linkageName, SpirvVariableLike *var, uint32_t flags,
     llvm::Optional<SpirvInstruction *> staticMemberDebugType) {
   auto *inst = new (context) SpirvDebugGlobalVariable(
       debugType, varName, src, line, column, parentScope, linkageName, var,
@@ -1754,9 +1791,12 @@ SpirvVariable *SpirvBuilder::addModuleVar(
 
 SpirvUntypedVariableKHR *SpirvBuilder::createUntypedVariableKHR(
     const SpirvType *type, spv::StorageClass storageClass, llvm::StringRef name,
-    SourceLocation loc) {
+    SourceLocation loc, const SpirvType *dataType) {
   assert(storageClass != spv::StorageClass::Function);
-  auto *var = new (context) SpirvUntypedVariableKHR(type, loc, storageClass);
+  assert((storageClass == spv::StorageClass::UniformConstant || dataType) &&
+         "untyped variables outside UniformConstant require a data type");
+  auto *var =
+      new (context) SpirvUntypedVariableKHR(type, loc, storageClass, dataType);
   mod->addVariable(var);
   var->setDebugName(name);
   return var;
@@ -1802,7 +1842,7 @@ void SpirvBuilder::decorateIndex(SpirvInstruction *target, uint32_t index,
   mod->addDecoration(decor);
 }
 
-void SpirvBuilder::decorateDSetBinding(SpirvVariable *target,
+void SpirvBuilder::decorateDSetBinding(SpirvVariableLike *target,
                                        uint32_t setNumber,
                                        uint32_t bindingNumber) {
   const SourceLocation srcLoc = target->getSourceLocation();
@@ -1820,10 +1860,12 @@ void SpirvBuilder::decorateDSetBinding(SpirvVariable *target,
   // setNumber and bindingNumber pair to combine the image and the sampler with
   // with the pair. The combining process will be conducted by spirv-opt
   // --convert-to-sampled-image pass.
-  if (context.getVkImageFeaturesForSpirvVariable(target)
-          .isCombinedImageSampler) {
-    context.registerResourceInfoForSampledImage(target->getAstResultType(),
-                                                setNumber, bindingNumber);
+  if (auto *typedVar = dyn_cast<SpirvVariable>(target)) {
+    if (context.getVkImageFeaturesForSpirvVariable(typedVar)
+            .isCombinedImageSampler) {
+      context.registerResourceInfoForSampledImage(target->getAstResultType(),
+                                                  setNumber, bindingNumber);
+    }
   }
 
   mod->addDecoration(binding);

@@ -1,0 +1,116 @@
+name: Raw Buffer Vectorization CI
+
+on:
+  push:
+    branches:
+      - amd-raw-buffer-vectorization-impl
+  workflow_dispatch:
+
+concurrency:
+  group: raw-buffer-vectorization-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows focused compiler validation
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout source and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Probe self-test
+        shell: pwsh
+        run: |
+          python utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py --self-test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Configure
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%i"
+          if not defined VSINSTALL exit /b 1
+          call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -no_logo -arch=amd64 -host_arch=amd64
+          cmake -S . -B build-rawbuf -G Ninja -C cmake\caches\PredefinedParams.cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_SPIRV_CODEGEN=ON -DSPIRV_BUILD_TESTS=OFF -DSPIRV_SKIP_EXECUTABLES=OFF -DLLVM_INCLUDE_TESTS=OFF -DLLVM_BUILD_TESTS=OFF -DCLANG_INCLUDE_TESTS=OFF -DHLSL_INCLUDE_TESTS=OFF
+          if errorlevel 1 exit /b %errorlevel%
+
+      # Compile the modified backend and the exact SPIRV-Tools utilities used by
+      # the contract before the full compiler so cheap source/tooling failures
+      # happen before the expensive complete DXC build.
+      - name: Build SPIR-V library and validation tools first
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%i"
+          if not defined VSINSTALL exit /b 1
+          call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -no_logo -arch=amd64 -host_arch=amd64
+          cmake --build build-rawbuf --target clangSPIRV spirv-dis spirv-val --parallel 4
+          if errorlevel 1 exit /b %errorlevel%
+
+      - name: Build DXC
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%i"
+          if not defined VSINSTALL exit /b 1
+          call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -no_logo -arch=amd64 -host_arch=amd64
+          cmake --build build-rawbuf --target dxc dxcompiler dxildll --parallel 4
+          if errorlevel 1 exit /b %errorlevel%
+
+      - name: Smoke DXIL and SPIR-V
+        shell: pwsh
+        run: |
+          @'
+          RWStructuredBuffer<uint> Out : register(u0);
+          [numthreads(1,1,1)]
+          void main(uint3 tid : SV_DispatchThreadID) { Out[0] = tid.x + 1; }
+          '@ | Set-Content -LiteralPath "$env:RUNNER_TEMP\rawbuf_dxc_smoke.hlsl" -Encoding Ascii
+          $dxc = (Resolve-Path (Join-Path $PWD 'build-rawbuf\bin\dxc.exe')).Path
+          $source = "$env:RUNNER_TEMP\rawbuf_dxc_smoke.hlsl"
+          $dxil = "$env:RUNNER_TEMP\rawbuf_dxc_smoke.dxil"
+          $spirv = "$env:RUNNER_TEMP\rawbuf_dxc_smoke.spv"
+          & $dxc -T cs_6_6 -E main -Fo $dxil $source
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $spirvArgs = @(
+            '-spirv'
+            '-fspv-target-env=vulkan1.2'
+            '-T'
+            'cs_6_6'
+            '-E'
+            'main'
+            '-Fo'
+            $spirv
+            $source
+          )
+          & $dxc @spirvArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ((Get-Item -LiteralPath $dxil).Length -eq 0) { throw 'DXIL smoke output is empty' }
+          if ((Get-Item -LiteralPath $spirv).Length -eq 0) { throw 'SPIR-V smoke output is empty' }
+
+      - name: Raw-buffer SPIR-V contract
+        shell: pwsh
+        run: |
+          $buildRoot = (Resolve-Path (Join-Path $PWD 'build-rawbuf')).Path
+          $dxc = (Resolve-Path (Join-Path $buildRoot 'bin\dxc.exe')).Path
+          $spirvDis = Get-ChildItem -LiteralPath $buildRoot -Filter 'spirv-dis.exe' -File -Recurse | Select-Object -First 1 -ExpandProperty FullName
+          $spirvVal = Get-ChildItem -LiteralPath $buildRoot -Filter 'spirv-val.exe' -File -Recurse | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $spirvDis) { throw 'spirv-dis.exe was not produced by the configured SPIRV-Tools build' }
+          if (-not $spirvVal) { throw 'spirv-val.exe was not produced by the configured SPIRV-Tools build' }
+          $probeArgs = @(
+            'utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py'
+            '--dxc'
+            $dxc
+            '--spirv-dis'
+            $spirvDis
+            '--spirv-val'
+            $spirvVal
+            '--target-env'
+            'vulkan1.2'
+            '--require-untyped-contract'
+            '--require-validation'
+            '--out-dir'
+            (Join-Path $env:RUNNER_TEMP 'raw-buffer-vector-probe')
+          )
+          & python @probeArgs
+          exit $LASTEXITCODE

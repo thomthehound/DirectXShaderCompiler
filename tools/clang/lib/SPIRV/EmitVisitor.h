@@ -334,6 +334,8 @@ public:
   std::vector<uint32_t> takeBinary();
 
 private:
+  void emitHlslUserType(SpirvVariableLike *inst);
+
   // Returns the next available result-id.
   uint32_t takeNextId() { return ++id; }
 

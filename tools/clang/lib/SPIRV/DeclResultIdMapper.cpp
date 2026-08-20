@@ -512,6 +512,14 @@ inline uint32_t getNumBaseClasses(QualType type) {
 
 /// Returns the appropriate storage class for an extern variable of the given
 /// type.
+bool shouldUseUntypedRawBuffer(const SpirvCodeGenOptions &opts,
+                               const FeatureManager &featureManager,
+                               QualType type) {
+  return !opts.allowedExtensions.empty() &&
+         featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers) &&
+         (isByteAddressBuffer(type) || isRWByteAddressBuffer(type));
+}
+
 spv::StorageClass getStorageClassForExternVar(QualType type,
                                               bool hasGroupsharedAttr) {
   // For CS groupshared variables
@@ -1069,7 +1077,8 @@ DeclResultIdMapper::createFnParam(const ParmVarDecl *param,
       type, param->hasAttr<HLSLPreciseAttr>(),
       param->hasAttr<HLSLNoInterpolationAttr>(), loc, param->getName());
   bool isAlias = false;
-  (void)getTypeAndCreateCounterForPotentialAliasVar(param, &isAlias);
+  if (!shouldUseUntypedRawBuffer(spirvOptions, featureManager, type))
+    (void)getTypeAndCreateCounterForPotentialAliasVar(param, &isAlias);
   fnParamInstr->setContainsAliasComponent(isAlias);
 
   if (isConstantBuffer(type))
@@ -1140,7 +1149,7 @@ DeclResultIdMapper::createFnVar(const VarDecl *var,
 }
 
 SpirvDebugGlobalVariable *DeclResultIdMapper::createDebugGlobalVariable(
-    SpirvVariable *var, const QualType &type, const SourceLocation &loc,
+    SpirvVariableLike *var, const QualType &type, const SourceLocation &loc,
     const StringRef &name) {
   if (spirvOptions.debugInfoRich) {
     // Add DebugGlobalVariable information
@@ -1239,12 +1248,12 @@ DeclResultIdMapper::createResourceHeap(const VarDecl *var,
   return createEmulatedDescriptorHeap(var, resourceType);
 }
 
-SpirvVariable *DeclResultIdMapper::createExternVar(const VarDecl *var) {
+SpirvVariableLike *DeclResultIdMapper::createExternVar(const VarDecl *var) {
   return createExternVar(var, var->getType());
 }
 
-SpirvVariable *DeclResultIdMapper::createExternVar(const VarDecl *var,
-                                                   QualType type) {
+SpirvVariableLike *DeclResultIdMapper::createExternVar(
+    const VarDecl *var, QualType type) {
   const bool isGroupShared = var->hasAttr<HLSLGroupSharedAttr>();
   const bool hasInlineSpirvSC = var->hasAttr<VKStorageClassExtAttr>();
   const bool isACSBuffer =
@@ -1305,9 +1314,30 @@ SpirvVariable *DeclResultIdMapper::createExternVar(const VarDecl *var,
   }
 
   const auto name = var->getName();
-  SpirvVariable *varInstr = spvBuilder.addModuleVar(
-      type, storageClass, var->hasAttr<HLSLPreciseAttr>(),
-      var->hasAttr<HLSLNoInterpolationAttr>(), name, llvm::None, loc);
+  const bool useUntypedRawBuffer =
+      !hasInlineSpirvSC &&
+      shouldUseUntypedRawBuffer(spirvOptions, featureManager, type);
+
+  SpirvVariableLike *varInstr = nullptr;
+  if (useUntypedRawBuffer) {
+    const auto *pointerType =
+        spvContext.getUntypedPointerKHRType(spv::StorageClass::StorageBuffer);
+    const auto *dataType =
+        spvContext.getByteAddressBufferType(isRWByteAddressBuffer(type));
+    auto *untypedVar = spvBuilder.createUntypedVariableKHR(
+        pointerType, spv::StorageClass::StorageBuffer, name, loc, dataType);
+    // Keep the HLSL resource type for binding/reflection while the SPIR-V
+    // result type remains OpTypeUntypedPointerKHR.
+    untypedVar->setAstResultType(type);
+    untypedVar->setPrecise(var->hasAttr<HLSLPreciseAttr>());
+    untypedVar->setNoninterpolated(
+        var->hasAttr<HLSLNoInterpolationAttr>());
+    varInstr = untypedVar;
+  } else {
+    varInstr = spvBuilder.addModuleVar(
+        type, storageClass, var->hasAttr<HLSLPreciseAttr>(),
+        var->hasAttr<HLSLNoInterpolationAttr>(), name, llvm::None, loc);
+  }
   varInstr->setLayoutRule(rule);
 
   // If this variable has [[vk::combinedImageSampler]] and/or
@@ -1338,7 +1368,9 @@ SpirvVariable *DeclResultIdMapper::createExternVar(const VarDecl *var,
   }
 
   if (vkImgFeatures.isCombinedImageSampler || vkImgFeatures.format) {
-    spvContext.registerVkImageFeaturesForSpvVariable(varInstr, vkImgFeatures);
+    auto *typedVar = dyn_cast<SpirvVariable>(varInstr);
+    assert(typedVar && "image resources must use typed variables");
+    spvContext.registerVkImageFeaturesForSpvVariable(typedVar, vkImgFeatures);
   }
 
   if (const auto *recordType = type->getAs<RecordType>()) {
@@ -5430,7 +5462,13 @@ QualType DeclResultIdMapper::getTypeAndCreateCounterForPotentialAliasVar(
     *shouldBeAlias = genAlias;
 
   if (genAlias) {
-    needsLegalization = true;
+    // Native untyped raw-buffer aliases are already emitted as legal
+    // variable-pointer SPIR-V and must not enter the typed HLSL legalizer.
+    const bool nativeUntypedRawAlias =
+        !isa<FunctionDecl>(decl) &&
+        shouldUseUntypedRawBuffer(spirvOptions, featureManager, type);
+    if (!nativeUntypedRawAlias)
+      needsLegalization = true;
     createCounterVarForDecl(decl);
   }
 

@@ -299,10 +299,22 @@ protected:
 
 /// \brief class wrapping OpVariable and OpUntypedVariableKHR
 class SpirvVariableLike : public SpirvInstruction {
+public:
+  bool hasBinding() const { return descriptorSet >= 0 || binding >= 0; }
+  llvm::StringRef getHlslUserType() const { return hlslUserType; }
+
+  void setDescriptorSetNo(int32_t dset) { descriptorSet = dset; }
+  void setBindingNo(int32_t b) { binding = b; }
+  void setHlslUserType(llvm::StringRef userType) { hlslUserType = userType; }
 
 protected:
   SpirvVariableLike(Kind kind, spv::Op opcode, QualType astResultType,
                     SourceLocation loc, SourceRange range = {});
+
+private:
+  int32_t descriptorSet;
+  int32_t binding;
+  std::string hlslUserType;
 };
 
 /// \brief OpCapability instruction
@@ -640,28 +652,21 @@ public:
 
   bool hasInitializer() const { return initializer != nullptr; }
   SpirvInstruction *getInitializer() const { return initializer; }
-  bool hasBinding() const { return descriptorSet >= 0 || binding >= 0; }
-  llvm::StringRef getHlslUserType() const { return hlslUserType; }
-
-  void setDescriptorSetNo(int32_t dset) { descriptorSet = dset; }
-  void setBindingNo(int32_t b) { binding = b; }
-  void setHlslUserType(llvm::StringRef userType) { hlslUserType = userType; }
 
 private:
   SpirvInstruction *initializer;
-  int32_t descriptorSet;
-  int32_t binding;
-  std::string hlslUserType;
 };
 
 /// \brief OpUntypedVariableKHR instruction
 class SpirvUntypedVariableKHR : public SpirvVariableLike {
 public:
   SpirvUntypedVariableKHR(QualType resultType, SourceLocation loc,
-                          spv::StorageClass sc);
+                          spv::StorageClass sc,
+                          const SpirvType *dataType = nullptr);
 
   SpirvUntypedVariableKHR(const SpirvType *spvType, SourceLocation loc,
-                          spv::StorageClass sc);
+                          spv::StorageClass sc,
+                          const SpirvType *dataType = nullptr);
 
   DEFINE_RELEASE_MEMORY_FOR_CLASS(SpirvUntypedVariableKHR)
 
@@ -671,6 +676,12 @@ public:
   }
 
   bool invokeVisitor(Visitor *v) override;
+
+  bool hasDataType() const { return dataType != nullptr; }
+  const SpirvType *getDataType() const { return dataType; }
+
+private:
+  const SpirvType *dataType;
 };
 
 /// \brief Untyped Access Chain instruction representation
@@ -2435,7 +2446,8 @@ class SpirvArrayLength : public SpirvInstruction {
 public:
   SpirvArrayLength(QualType resultType, SourceLocation loc,
                    SpirvInstruction *structure, uint32_t arrayMember,
-                   SourceRange range = {});
+                   SourceRange range = {},
+                   const SpirvType *structureType = nullptr);
 
   DEFINE_RELEASE_MEMORY_FOR_CLASS(SpirvArrayLength)
 
@@ -2448,10 +2460,13 @@ public:
 
   SpirvInstruction *getStructure() const { return structure; }
   uint32_t getArrayMember() const { return arrayMember; }
+  bool hasStructureType() const { return structureType != nullptr; }
+  const SpirvType *getStructureType() const { return structureType; }
 
 private:
   SpirvInstruction *structure;
   uint32_t arrayMember;
+  const SpirvType *structureType;
 };
 
 /// \brief Base class for all NV raytracing instructions.
@@ -2932,7 +2947,7 @@ public:
   SpirvDebugGlobalVariable(
       QualType debugQualType, llvm::StringRef varName, SpirvDebugSource *src,
       uint32_t line, uint32_t column, SpirvDebugInstruction *parentScope,
-      llvm::StringRef linkageName, SpirvVariable *var, uint32_t flags,
+      llvm::StringRef linkageName, SpirvVariableLike *var, uint32_t flags,
       llvm::Optional<SpirvInstruction *> staticMemberDebugType = llvm::None);
 
   DEFINE_RELEASE_MEMORY_FOR_CLASS(SpirvDebugGlobalVariable)
@@ -2960,7 +2975,7 @@ private:
   uint32_t column;
   SpirvDebugInstruction *parentScope;
   std::string linkageName;
-  SpirvVariable *var;
+  SpirvVariableLike *var;
   // TODO: Replace this with an enum, when it is available in SPIRV-Headers
   uint32_t flags;
   llvm::Optional<SpirvInstruction *> staticMemberDebugDecl;
