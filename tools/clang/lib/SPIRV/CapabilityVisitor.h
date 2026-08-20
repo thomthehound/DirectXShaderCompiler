@@ -41,6 +41,16 @@ public:
   bool visit(SpirvIsHelperInvocationEXT *) override;
   bool visit(SpirvReadClock *) override;
 
+  bool visit(SpirvVariable *var) override {
+    addVariablePointersStorageBufferCapability(var);
+    return visitInstruction(var);
+  }
+
+  bool visit(SpirvFunctionParameter *param) override {
+    addVariablePointersStorageBufferCapability(param);
+    return visitInstruction(param);
+  }
+
   using Visitor::visit;
 
   /// The "sink" visit function for all instructions.
@@ -51,6 +61,24 @@ public:
   bool visitInstruction(SpirvInstruction *instr) override;
 
 private:
+  /// Adds VariablePointersStorageBuffer for the native raw-buffer alias shape:
+  /// a Function-scope holder containing an untyped StorageBuffer pointer.
+  /// The restricted StorageBuffer capability is sufficient; do not request the
+  /// broader VariablePointers capability.
+  void addVariablePointersStorageBufferCapability(SpirvInstruction *instr) {
+    const auto *holderType = dyn_cast<SpirvPointerType>(instr->getResultType());
+    if (!holderType ||
+        holderType->getStorageClass() != spv::StorageClass::Function)
+      return;
+
+    const auto *untypedPtr =
+        dyn_cast<UntypedPointerKHRType>(holderType->getPointeeType());
+    if (untypedPtr &&
+        untypedPtr->getStorageClass() == spv::StorageClass::StorageBuffer)
+      addCapability(spv::Capability::VariablePointersStorageBuffer,
+                    instr->getSourceLocation());
+  }
+
   /// Adds necessary capabilities for using the given type.
   /// The called may also provide the storage class for variable types, because
   /// in the case of variable types, the storage class may affect the capability

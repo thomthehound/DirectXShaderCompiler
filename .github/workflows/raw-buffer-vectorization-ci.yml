@@ -6,9 +6,6 @@ on:
       - amd-raw-buffer-vectorization-impl
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 concurrency:
   group: raw-buffer-vectorization-${{ github.ref }}
   cancel-in-progress: true
@@ -23,186 +20,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-          fetch-depth: 0
-
-      # TEMPORARY DELIVERY BOOTSTRAP. This is not a compiler fallback.
-      # It exists only because the connector has no narrow patch primitive for
-      # the large mapper translation unit. The source commit below restores this
-      # workflow and deletes the trigger before the actual compiler build runs.
-      - name: Apply native untyped raw-buffer alias fix
-        if: github.event_name == 'push' && github.event.head_commit.message == 'TRIGGER native raw-buffer alias fix'
-        shell: pwsh
-        run: |
-          @'
-          from pathlib import Path
-
-          def replace_exact(path: str, old: str, new: str, count: int = 1) -> None:
-              p = Path(path)
-              text = p.read_text(encoding="utf-8")
-              actual = text.count(old)
-              if actual != count:
-                  raise SystemExit(
-                      f"{path}: expected {count} occurrence(s), found {actual}: {old[:80]!r}"
-                  )
-              p.write_text(text.replace(old, new), encoding="utf-8", newline="\n")
-
-          replace_exact(
-              "tools/clang/lib/SPIRV/DeclResultIdMapper.cpp",
-              """  if (genAlias) {
-              needsLegalization = true;
-              createCounterVarForDecl(decl);
-            }
-          """,
-              """  if (genAlias) {
-              // Raw-buffer aliases using SPV_KHR_untyped_pointers are native
-              // StorageBuffer variable pointers. Do not send them through the
-              // legacy HLSL legalizer, whose typed-pointer storage-class pass
-              // cannot represent OpTypeUntypedPointerKHR.
-              const bool useNativeUntypedRawAlias =
-                  !spirvOptions.allowedExtensions.empty() &&
-                  featureManager.isExtensionEnabled(
-                      Extension::KHR_untyped_pointers) &&
-                  (isByteAddressBuffer(type) || isRWByteAddressBuffer(type));
-              if (!useNativeUntypedRawAlias)
-                needsLegalization = true;
-              createCounterVarForDecl(decl);
-            }
-          """,
-          )
-
-          replace_exact(
-              "tools/clang/lib/SPIRV/CapabilityVisitor.cpp",
-              """  else if (const auto *ptrType = dyn_cast<SpirvPointerType>(type)) {
-              addCapabilityForType(ptrType->getPointeeType(), loc,
-                                   ptrType->getStorageClass());
-              if (ptrType->getStorageClass() ==
-                  spv::StorageClass::PhysicalStorageBuffer) {
-          """,
-              """  else if (const auto *ptrType = dyn_cast<SpirvPointerType>(type)) {
-              const SpirvType *pointeeType = ptrType->getPointeeType();
-
-              // A Function-scope holder containing an untyped StorageBuffer
-              // pointer is a SPIR-V variable pointer. The restricted
-              // StorageBuffer capability is sufficient; do not request the
-              // broader VariablePointers capability.
-              if (ptrType->getStorageClass() == spv::StorageClass::Function) {
-                if (const auto *untypedPtr =
-                        dyn_cast<UntypedPointerKHRType>(pointeeType)) {
-                  if (untypedPtr->getStorageClass() ==
-                      spv::StorageClass::StorageBuffer)
-                    addCapability(
-                        spv::Capability::VariablePointersStorageBuffer, loc);
-                }
-              }
-
-              addCapabilityForType(pointeeType, loc, ptrType->getStorageClass());
-              if (ptrType->getStorageClass() ==
-                  spv::StorageClass::PhysicalStorageBuffer) {
-          """,
-          )
-
-          probe = Path("utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py")
-          text = probe.read_text(encoding="utf-8")
-
-          old = '        "capability": bool(re.search(r"\\bOpCapability\\s+UntypedPointersKHR\\b", text)),\n'
-          new = '''        "capability": bool(re.search(r"\\bOpCapability\\s+UntypedPointersKHR\\b", text)),
-                  "variable_pointers_storage_buffer_capability": bool(
-                      re.search(
-                          r"\\bOpCapability\\s+VariablePointersStorageBuffer\\b", text
-                      )
-                  ),
-          '''
-          if text.count(old) != 1:
-              raise SystemExit("probe: UntypedPointersKHR capability fact cardinality changed")
-          text = text.replace(old, new)
-
-          old = '''            f["extension"]
-                      and f["capability"]
-                      and c["OpUntypedVariableKHR"] >= 2
-                      and int(f["vars_with_data_type"]) >= 2
-                      and c["OpUntypedAccessChainKHR"] >= 2
-          '''
-          new = '''            f["extension"]
-                      and f["capability"]
-                      and f["variable_pointers_storage_buffer_capability"]
-                      and c["OpUntypedVariableKHR"] >= 2
-                      and int(f["vars_with_data_type"]) >= 2
-                      and c["OpUntypedAccessChainKHR"] >= 2
-          '''
-          if text.count(old) != 1:
-              raise SystemExit("probe: untyped alias classifier cardinality changed")
-          text = text.replace(old, new)
-
-          if text.count("OpUntypedVariableKHR %up Uniform %Raw") != 7:
-              raise SystemExit("probe: expected seven stale Uniform untyped fixtures")
-          text = text.replace(
-              "OpUntypedVariableKHR %up Uniform %Raw",
-              "OpUntypedVariableKHR %up StorageBuffer %Raw",
-          )
-
-          if text.count("%up=OpTypeUntypedPointerKHR Uniform") != 2:
-              raise SystemExit("probe: expected two stale Uniform untyped pointer fixtures")
-          text = text.replace(
-              "%up=OpTypeUntypedPointerKHR Uniform",
-              "%up=OpTypeUntypedPointerKHR StorageBuffer",
-          )
-
-          old = '        ("untyped-alias", "alias"): """\nOpCapability UntypedPointersKHR\nOpExtension "SPV_KHR_untyped_pointers"\n'
-          new = '        ("untyped-alias", "alias"): """\nOpCapability UntypedPointersKHR\nOpCapability VariablePointersStorageBuffer\nOpExtension "SPV_KHR_untyped_pointers"\n'
-          if text.count(old) != 1:
-              raise SystemExit("probe: untyped alias fixture header cardinality changed")
-          text = text.replace(old, new)
-
-          probe.write_text(text, encoding="utf-8", newline="\n")
-          '@ | python -
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          git checkout 3a447b1a34a0935d320431d7b82343d74a97b815 -- .github/workflows/raw-buffer-vectorization-ci.yml
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          git rm -- .github/rawbuf-patch-trigger
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          python utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py --self-test
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          git diff --check
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          git add -- `
-            tools/clang/lib/SPIRV/DeclResultIdMapper.cpp `
-            tools/clang/lib/SPIRV/CapabilityVisitor.cpp `
-            utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py `
-            .github/workflows/raw-buffer-vectorization-ci.yml
-
-          @'
-          import subprocess
-
-          expected = {
-              ".github/rawbuf-patch-trigger",
-              ".github/workflows/raw-buffer-vectorization-ci.yml",
-              "tools/clang/lib/SPIRV/CapabilityVisitor.cpp",
-              "tools/clang/lib/SPIRV/DeclResultIdMapper.cpp",
-              "utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py",
-          }
-          actual = set(
-              subprocess.check_output(
-                  ["git", "diff", "--cached", "--name-only"], text=True
-              ).splitlines()
-          )
-          if actual != expected:
-              raise SystemExit(f"unexpected staged paths: {sorted(actual)}")
-          '@ | python -
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          git diff --cached --check
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Fix native untyped raw-buffer aliases [skip ci]"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          git push origin HEAD:amd-raw-buffer-vectorization-impl
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          fetch-depth: 1
 
       - name: Probe self-test
         shell: pwsh
@@ -219,6 +37,9 @@ jobs:
           cmake -S . -B build-rawbuf -G Ninja -C cmake\caches\PredefinedParams.cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_SPIRV_CODEGEN=ON -DSPIRV_BUILD_TESTS=OFF -DSPIRV_SKIP_EXECUTABLES=OFF -DLLVM_INCLUDE_TESTS=OFF -DLLVM_BUILD_TESTS=OFF -DCLANG_INCLUDE_TESTS=OFF -DHLSL_INCLUDE_TESTS=OFF
           if errorlevel 1 exit /b %errorlevel%
 
+      # Compile the modified backend and the exact SPIRV-Tools utilities used by
+      # the contract before the full compiler so cheap source/tooling failures
+      # happen before the expensive complete DXC build.
       - name: Build SPIR-V library and validation tools first
         shell: cmd
         run: |

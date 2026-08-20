@@ -132,6 +132,9 @@ def analyze(text: str) -> tuple[dict[str, int], dict[str, int | bool]]:
     facts: dict[str, int | bool] = {
         "extension": 'OpExtension "SPV_KHR_untyped_pointers"' in text,
         "capability": bool(re.search(r"\bOpCapability\s+UntypedPointersKHR\b", text)),
+        "variable_pointers_storage_buffer_capability": bool(
+            re.search(r"\bOpCapability\s+VariablePointersStorageBuffer\b", text)
+        ),
         "vars_with_data_type": len(
             re.findall(r"OpUntypedVariableKHR\s+%\S+\s+\w+\s+%\S+", text)
         ),
@@ -233,6 +236,7 @@ def classify(case: Case) -> None:
         ok = (
             f["extension"]
             and f["capability"]
+            and f["variable_pointers_storage_buffer_capability"]
             and c["OpUntypedVariableKHR"] >= 2
             and int(f["vars_with_data_type"]) >= 2
             and c["OpUntypedAccessChainKHR"] >= 2
@@ -277,8 +281,8 @@ OpStore %p %h
         ("untyped-vector", "vector"): """
 OpCapability UntypedPointersKHR
 OpExtension "SPV_KHR_untyped_pointers"
-%i=OpUntypedVariableKHR %up Uniform %Raw
-%o=OpUntypedVariableKHR %up Uniform %Raw
+%i=OpUntypedVariableKHR %up StorageBuffer %Raw
+%o=OpUntypedVariableKHR %up StorageBuffer %Raw
 %p0=OpUntypedAccessChainKHR %up4 %Raw %i %z %n
 %a=OpLoad %v4 %p0 Aligned 4
 %p1=OpUntypedAccessChainKHR %up4 %Raw %i %z %n
@@ -295,8 +299,8 @@ OpStore %p3 %b Aligned 4
         ("untyped-surface", "surface"): """
 OpCapability UntypedPointersKHR
 OpExtension "SPV_KHR_untyped_pointers"
-%i=OpUntypedVariableKHR %up Uniform %Raw
-%o=OpUntypedVariableKHR %up Uniform %Raw
+%i=OpUntypedVariableKHR %up StorageBuffer %Raw
+%o=OpUntypedVariableKHR %up StorageBuffer %Raw
 %n=OpUntypedArrayLengthKHR %u %Raw %i 0
 %p=OpUntypedAccessChainKHR %up32 %Raw %o %z %idx
 %old=OpAtomicIAdd %u %p %scope %sem %n
@@ -314,10 +318,11 @@ OpExtension "SPV_KHR_untyped_pointers"
 """,
         ("untyped-alias", "alias"): """
 OpCapability UntypedPointersKHR
+OpCapability VariablePointersStorageBuffer
 OpExtension "SPV_KHR_untyped_pointers"
-%up=OpTypeUntypedPointerKHR Uniform
-%i=OpUntypedVariableKHR %up Uniform %Raw
-%o=OpUntypedVariableKHR %up Uniform %Raw
+%up=OpTypeUntypedPointerKHR StorageBuffer
+%i=OpUntypedVariableKHR %up StorageBuffer %Raw
+%o=OpUntypedVariableKHR %up StorageBuffer %Raw
 %r=OpLoad %up %alias
 %p0=OpUntypedAccessChainKHR %up4 %Raw %r %z %n
 %v=OpLoad %v4 %p0 Aligned 4
@@ -332,8 +337,8 @@ OpCapability UntypedPointersKHR
 OpExtension "SPV_KHR_untyped_pointers"
 %u64=OpTypeInt 64 0
 %s64=OpTypeInt 64 1
-%up=OpTypeUntypedPointerKHR Uniform
-%o=OpUntypedVariableKHR %up Uniform %Raw
+%up=OpTypeUntypedPointerKHR StorageBuffer
+%o=OpUntypedVariableKHR %up StorageBuffer %Raw
 %p0=OpUntypedAccessChainKHR %up %Raw %o %z %n0
 %a=OpAtomicIAdd %u64 %p0 %scope %sem %one
 %p1=OpUntypedAccessChainKHR %up %Raw %o %z %n1
