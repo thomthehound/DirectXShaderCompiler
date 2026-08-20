@@ -71,35 +71,19 @@ SpirvBuilder::addFnParam(QualType ptrType, bool isPrecise, bool isNointerp,
                          SourceLocation loc, llvm::StringRef name) {
   assert(function && "found detached parameter");
   SpirvFunctionParameter *param = nullptr;
-  const bool useUntypedRawBuffer =
-      !spirvOptions.allowedExtensions.empty() &&
-      featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers) &&
-      (isByteAddressBuffer(ptrType) || isRWByteAddressBuffer(ptrType));
-  if (useUntypedRawBuffer) {
-    // Native untyped raw-buffer parameters are StorageBuffer pointer values,
-    // not Function pointer-to-pointer aliases for the legacy legalizer.
-    param = new (context)
-        SpirvFunctionParameter(ptrType, isPrecise, isNointerp, loc);
-    param->setResultType(
-        context.getUntypedPointerKHRType(spv::StorageClass::StorageBuffer));
-    param->setStorageClass(spv::StorageClass::StorageBuffer);
-    context.addToInstructionsWithLoweredType(param);
-  } else if (isBindlessOpaqueArray(ptrType)) {
+  if (isBindlessOpaqueArray(ptrType)) {
     // If it is a bindless array of an opaque type, we have to use
     // a pointer to a pointer of the runtime array.
     param = new (context) SpirvFunctionParameter(
         context.getPointerType(ptrType, spv::StorageClass::UniformConstant),
         isPrecise, isNointerp, loc);
-    param->setStorageClass(hlsl::IsHLSLNodeInputType(ptrType)
-                               ? spv::StorageClass::NodePayloadAMDX
-                               : spv::StorageClass::Function);
   } else {
     param = new (context)
         SpirvFunctionParameter(ptrType, isPrecise, isNointerp, loc);
-    param->setStorageClass(hlsl::IsHLSLNodeInputType(ptrType)
-                               ? spv::StorageClass::NodePayloadAMDX
-                               : spv::StorageClass::Function);
   }
+  param->setStorageClass(hlsl::IsHLSLNodeInputType(ptrType)
+                             ? spv::StorageClass::NodePayloadAMDX
+                             : spv::StorageClass::Function);
   param->setDebugName(name);
   function->addParameter(param);
   return param;
@@ -215,19 +199,6 @@ SpirvInstruction *SpirvBuilder::createLoad(QualType resultType,
                                            SourceLocation loc,
                                            SourceRange range) {
   assert(insertPoint && "null insert point");
-
-  // Native untyped raw-buffer function parameters are already StorageBuffer
-  // pointer values. The legacy alias path calls createLoad to dereference a
-  // Function pointer-to-pointer; do not manufacture that extra load here.
-  if (isa<SpirvFunctionParameter>(pointer) &&
-      !spirvOptions.allowedExtensions.empty() &&
-      featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers) &&
-      (isByteAddressBuffer(resultType) || isRWByteAddressBuffer(resultType))) {
-    pointer->setStorageClass(spv::StorageClass::StorageBuffer);
-    pointer->setRValue(false);
-    return pointer;
-  }
-
   auto *instruction = new (context) SpirvLoad(resultType, loc, pointer, range);
   instruction->setStorageClass(pointer->getStorageClass());
   instruction->setLayoutRule(pointer->getLayoutRule());
@@ -403,40 +374,8 @@ SpirvBuilder::createFunctionCall(QualType returnType, SpirvFunction *func,
                                  llvm::ArrayRef<SpirvInstruction *> params,
                                  SourceLocation loc, SourceRange range) {
   assert(insertPoint && "null insert point");
-
-  llvm::SmallVector<SpirvInstruction *, 4> callParams(params.begin(),
-                                                       params.end());
-  if (!spirvOptions.allowedExtensions.empty() &&
-      featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers)) {
-    const auto formalParams = func->getParameters();
-    if (formalParams.size() == callParams.size()) {
-      for (size_t i = 0; i < callParams.size(); ++i) {
-        const QualType formalType = formalParams[i]->getAstResultType();
-        if (formalType.isNull() ||
-            (!isByteAddressBuffer(formalType) &&
-             !isRWByteAddressBuffer(formalType)))
-          continue;
-
-        SpirvInstruction *holder = callParams[i];
-        if (!holder ||
-            holder->getStorageClass() != spv::StorageClass::Function)
-          continue;
-
-        // The generic HLSL call path materializes resource arguments in a
-        // Function variable. For native untyped raw-buffer parameters, load
-        // the StorageBuffer pointer value once and pass that value directly.
-        SpirvInstruction *pointerValue =
-            createLoad(formalType, holder, loc, range);
-        pointerValue->setStorageClass(spv::StorageClass::StorageBuffer);
-        pointerValue->setContainsAliasComponent(false);
-        pointerValue->setRValue(false);
-        callParams[i] = pointerValue;
-      }
-    }
-  }
-
   auto *instruction =
-      new (context) SpirvFunctionCall(returnType, loc, func, callParams, range);
+      new (context) SpirvFunctionCall(returnType, loc, func, params, range);
   instruction->setRValue(func->isRValue());
   instruction->setContainsAliasComponent(func->constainsAliasComponent());
 
@@ -1047,9 +986,8 @@ SpirvInstruction *SpirvBuilder::createAllocateNodePayloads(
     SpirvInstruction *shaderIndex, SpirvInstruction *recordCount,
     SourceLocation loc) {
   assert(insertPoint && "null insert point");
-  auto *inst = new (context)
-      SpirvAllocateNodePayloads(resultType, loc, allocationScope, shaderIndex,
-                                recordCount);
+  auto *inst = new (context) SpirvAllocateNodePayloads(
+      resultType, loc, allocationScope, shaderIndex, recordCount);
   insertPoint->addInstruction(inst);
   return inst;
 }

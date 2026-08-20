@@ -63,26 +63,13 @@ public:
 
 private:
   /// Adds VariablePointersStorageBuffer for native untyped raw-buffer aliases.
-  /// Direct raw-buffer function parameters carry an untyped StorageBuffer
-  /// pointer value. Local aliases remain Function variables containing that
-  /// pointer value.
+  /// Alias intent and the HLSL resource type are stable before SPIR-V type
+  /// lowering completes, so do not inspect partially lowered parameter types
+  /// here.
   void addVariablePointersStorageBufferCapability(SpirvInstruction *instr) {
     if (spirvOptions.allowedExtensions.empty() ||
+        !instr->containsAliasComponent() ||
         !featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers))
-      return;
-
-    if (isa<SpirvFunctionParameter>(instr)) {
-      if (const auto *untypedPtr =
-              dyn_cast_or_null<UntypedPointerKHRType>(instr->getResultType())) {
-        if (untypedPtr->getStorageClass() == spv::StorageClass::StorageBuffer) {
-          addCapability(spv::Capability::VariablePointersStorageBuffer,
-                        instr->getSourceLocation());
-          return;
-        }
-      }
-    }
-
-    if (!instr->containsAliasComponent())
       return;
 
     const QualType astType = instr->getAstResultType();
