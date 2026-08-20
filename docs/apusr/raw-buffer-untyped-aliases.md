@@ -12,7 +12,7 @@ DXC's existing HLSL legalization path was designed around typed resource pointer
 
 For the APUSR untyped raw-buffer path, aliases will be emitted as legal SPIR-V directly instead of relying on the legacy HLSL resource-alias legalizer to erase them.
 
-Mutable untyped raw-buffer aliases will use `VariablePointersStorageBuffer` together with `UntypedPointersKHR`. This preserves the existing HLSL alias semantics while keeping the raw resource pointer in the `StorageBuffer` storage class.
+Mutable untyped raw-buffer aliases will use `VariablePointersStorageBuffer` together with `UntypedPointersKHR`, keeping the raw resource pointer in the `StorageBuffer` storage class. This directly supports local raw-buffer alias holders and raw-buffer helper parameters. Arbitrary control-flow rebinding between distinct `StorageBuffer` blocks is not claimed by this contract; that requires a separate audit of full `VariablePointers` semantics.
 
 This decision applies only to the explicit untyped raw-buffer path. The legacy typed raw-buffer path and unrelated resource alias lowering remain unchanged.
 

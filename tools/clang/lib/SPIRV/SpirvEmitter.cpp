@@ -3345,6 +3345,24 @@ SpirvInstruction *SpirvEmitter::processCall(const CallExpr *callExpr) {
       return nullptr;
     }
 
+    const bool nativeUntypedRawParam =
+        !spirvOptions.allowedExtensions.empty() &&
+        featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers) &&
+        (isByteAddressBuffer(paramType) || isRWByteAddressBuffer(paramType));
+    if (nativeUntypedRawParam) {
+      // Native raw resources cross a function boundary as StorageBuffer
+      // pointer values. A local alias is a Function-scope holder, so load that
+      // pointer exactly once; globals and nested native raw parameters are
+      // already pointer values and pass through unchanged.
+      auto *argInst = loadIfAliasVarRef(arg);
+      if (!argInst)
+        return nullptr;
+      vars.push_back(argInst);
+      isTempVar.push_back(false);
+      args.push_back(argInst);
+      continue;
+    }
+
     // Get the evaluation info if this argument is referencing some variable
     // *as a whole*, in which case we can avoid creating the temporary variable
     // for it if it can act as out parameter.
@@ -7400,13 +7418,20 @@ void SpirvEmitter::storeValue(SpirvInstruction *lhsPtr,
     spvBuilder.createStore(lhsPtr, rhsVal, loc, range);
     needsLegalization = true;
   } else if (isAKindOfStructuredOrByteBuffer(lhsValType)) {
-    // The rhs should be a pointer and the lhs should be a pointer-to-pointer.
-    // Directly store the pointer here and let SPIRV-Tools opt to do the clean
-    // up.
-    //
-    // Note: legalization specific code
+    const bool nativeUntypedRawAlias =
+        lhsPtr->containsAliasComponent() &&
+        !spirvOptions.allowedExtensions.empty() &&
+        featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers) &&
+        (isByteAddressBuffer(lhsValType) ||
+         isRWByteAddressBuffer(lhsValType));
+
+    // Native raw aliases store a StorageBuffer pointer value in their
+    // Function-scope holder and are already valid variable-pointer SPIR-V.
+    // Legacy structured/raw resources retain the pointer-to-pointer form that
+    // SPIRV-Tools HLSL legalization removes.
     spvBuilder.createStore(lhsPtr, rhsVal, loc, range);
-    needsLegalization = true;
+    if (!nativeUntypedRawAlias)
+      needsLegalization = true;
 
     // For ConstantBuffers/TextureBuffers, we decompose and assign each field
     // recursively like normal structs using the following logic.

@@ -1077,7 +1077,8 @@ DeclResultIdMapper::createFnParam(const ParmVarDecl *param,
       type, param->hasAttr<HLSLPreciseAttr>(),
       param->hasAttr<HLSLNoInterpolationAttr>(), loc, param->getName());
   bool isAlias = false;
-  (void)getTypeAndCreateCounterForPotentialAliasVar(param, &isAlias);
+  if (!shouldUseUntypedRawBuffer(spirvOptions, featureManager, type))
+    (void)getTypeAndCreateCounterForPotentialAliasVar(param, &isAlias);
   fnParamInstr->setContainsAliasComponent(isAlias);
 
   if (isConstantBuffer(type))
@@ -5461,7 +5462,13 @@ QualType DeclResultIdMapper::getTypeAndCreateCounterForPotentialAliasVar(
     *shouldBeAlias = genAlias;
 
   if (genAlias) {
-    needsLegalization = true;
+    // Native untyped raw-buffer aliases are already emitted as legal
+    // variable-pointer SPIR-V and must not enter the typed HLSL legalizer.
+    const bool nativeUntypedRawAlias =
+        !isa<FunctionDecl>(decl) &&
+        shouldUseUntypedRawBuffer(spirvOptions, featureManager, type);
+    if (!nativeUntypedRawAlias)
+      needsLegalization = true;
     createCounterVarForDecl(decl);
   }
 

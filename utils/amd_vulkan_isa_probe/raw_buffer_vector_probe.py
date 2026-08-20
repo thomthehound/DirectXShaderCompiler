@@ -426,6 +426,12 @@ def main() -> int:
         ),
         Case("legacy-alias", "alias", "shaders/raw_buffer_alias.hlsl"),
         Case(
+            "untyped-alias-local",
+            "alias",
+            "shaders/raw_buffer_alias_local.hlsl",
+            untyped_ext,
+        ),
+        Case(
             "untyped-alias", "alias", "shaders/raw_buffer_alias.hlsl", untyped_ext
         ),
         Case("legacy-atomic64", "atomic64", "shaders/raw_buffer_atomic64.hlsl"),
