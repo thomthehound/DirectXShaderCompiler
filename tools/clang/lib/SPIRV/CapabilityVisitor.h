@@ -62,18 +62,19 @@ public:
   bool visitInstruction(SpirvInstruction *instr) override;
 
 private:
-  /// Adds VariablePointersStorageBuffer for native untyped raw-buffer aliases.
-  /// Alias intent and the HLSL resource type are stable before SPIR-V type
-  /// lowering completes, so do not inspect partially lowered parameter types
-  /// here.
+  /// Adds VariablePointersStorageBuffer for native untyped raw-buffer aliases
+  /// and direct raw-buffer function parameters. Use the stable HLSL type and
+  /// alias intent rather than inspecting partially lowered SPIR-V types.
   void addVariablePointersStorageBufferCapability(SpirvInstruction *instr) {
-    if (!instr->containsAliasComponent() ||
-        !featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers))
+    if (!featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers))
       return;
 
     const QualType astType = instr->getAstResultType();
-    if (!astType.isNull() &&
-        (isByteAddressBuffer(astType) || isRWByteAddressBuffer(astType)))
+    if (astType.isNull() ||
+        (!isByteAddressBuffer(astType) && !isRWByteAddressBuffer(astType)))
+      return;
+
+    if (isa<SpirvFunctionParameter>(instr) || instr->containsAliasComponent())
       addCapability(spv::Capability::VariablePointersStorageBuffer,
                     instr->getSourceLocation());
   }
