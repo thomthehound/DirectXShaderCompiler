@@ -67,8 +67,7 @@ private:
   /// lowering completes, so do not inspect partially lowered parameter types
   /// here.
   void addVariablePointersStorageBufferCapability(SpirvInstruction *instr) {
-    if (spirvOptions.allowedExtensions.empty() ||
-        !instr->containsAliasComponent() ||
+    if (!instr->containsAliasComponent() ||
         !featureManager.isExtensionEnabled(Extension::KHR_untyped_pointers))
       return;
 
