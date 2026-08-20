@@ -25,13 +25,12 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      # TEMPORARY DELIVERY BOOTSTRAP:
-      # The GitHub connector cannot apply a narrow patch to the large mapper
-      # translation unit. This step applies cardinality-checked source edits,
-      # restores this workflow to its parent version in the same source commit,
-      # and commits the real compiler/probe fix before the build below.
+      # TEMPORARY DELIVERY BOOTSTRAP. This is not a compiler fallback.
+      # It exists only because the connector has no narrow patch primitive for
+      # the large mapper translation unit. The source commit below restores this
+      # workflow and deletes the trigger before the actual compiler build runs.
       - name: Apply native untyped raw-buffer alias fix
-        if: github.event_name == 'push' && github.event.head_commit.message == 'TEMP bootstrap native raw-buffer alias fix'
+        if: github.event_name == 'push' && github.event.head_commit.message == 'TRIGGER native raw-buffer alias fix'
         shell: pwsh
         run: |
           @'
@@ -158,7 +157,9 @@ jobs:
           '@ | python -
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          git checkout HEAD^ -- .github/workflows/raw-buffer-vectorization-ci.yml
+          git checkout 3a447b1a34a0935d320431d7b82343d74a97b815 -- .github/workflows/raw-buffer-vectorization-ci.yml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git rm -- .github/rawbuf-patch-trigger
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           python utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py --self-test
@@ -177,6 +178,7 @@ jobs:
           import subprocess
 
           expected = {
+              ".github/rawbuf-patch-trigger",
               ".github/workflows/raw-buffer-vectorization-ci.yml",
               "tools/clang/lib/SPIRV/CapabilityVisitor.cpp",
               "tools/clang/lib/SPIRV/DeclResultIdMapper.cpp",
