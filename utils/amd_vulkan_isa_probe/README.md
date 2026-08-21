@@ -14,6 +14,74 @@ For the included HLSL `msad4` experiment, the exact one-instruction target is
 SAD-family mnemonics are preserved as specialized partial lowering, and
 ordinary arithmetic is not relabeled as native support.
 
+## One-command full qualification on Windows
+
+`run_windows.ps1` is the canonical full sweep for this directory. It builds the
+Vulkan-side probe executables, runs every current Python qualification probe,
+runs the SAD/QSad semantic proof, re-runs the complete native untyped raw-buffer
+compiler contract with `spirv-val`, and collects the results into one archive.
+
+Run it from the repository root with a freshly built `dxc.exe` from the branch
+you intend to qualify. `VULKAN_SDK`, CMake, Ninja, and Python must be available.
+The DXC path is deliberately explicit so a stock/system DXC cannot be tested by
+accident.
+
+```powershell
+& .\utils\amd_vulkan_isa_probe\run_windows.ps1 `
+  -Dxc <path-to-this-fork-build\bin\dxc.exe>
+```
+
+The default output directory is timestamped, for example
+`out\amd-full-qualification-20260820-203800`, so stale files from an earlier run
+cannot be mistaken for fresh evidence. At the end the script writes:
+
+- `qualification-summary.txt` - compact human-readable status for every step.
+- `qualification-summary.json` - machine-readable status and tool metadata.
+- `<output-directory>-results.zip` - all useful reports, SPIR-V, and ISA output,
+  excluding the temporary CMake build tree. This ZIP is the preferred artifact
+  to hand back for analysis.
+
+The sweep does **not** stop when one experimental qualification fails. It runs
+all remaining probes and summarizes the entire machine at the end. Exit codes
+are intentionally distinct:
+
+- `0`: all hard contracts passed and all qualification probes executed.
+- `1`: a hard compiler/semantic contract failed.
+- `2`: hard contracts passed, but one or more hardware qualification probes
+  could not execute completely.
+
+A successful probe that finds **no** native instruction is still a valid
+qualification result and does not by itself make the sweep fail.
+
+To add RGA evidence to the SAD/MSAD and APUSR QSad comparisons:
+
+```powershell
+& .\utils\amd_vulkan_isa_probe\run_windows.ps1 `
+  -Dxc <path-to-this-fork-build\bin\dxc.exe> `
+  -Rga <path-to-rga.exe> `
+  -RgaTarget gfx1151 `
+  -RgaLive
+```
+
+Installed-driver ISA remains authoritative. RGA offline results are additional
+target evidence, not a substitute for the driver actually running APUSR.
+
+The full sweep currently covers:
+
+- SAD/QSad source-level semantics and the exact APUSR rolling-window contract.
+- Native untyped raw-buffer vector load/store, GetDimensions, aliasing, 32-bit
+  atomics, native 64-bit atomics, legacy compatibility, and `spirv-val`.
+- The decisive APUSR `msad4-scalar` vs `msad4-udot` vs current `swar-udot`
+  installed-driver comparison.
+- General SAD/MSAD-family recovery.
+- Packed integer dots, saturating dots, FP16 dot recovery, and exact FP16/BF16
+  mixed-dot qualification.
+- BF16 conversion, half conversion, and packed normalized/integer conversion.
+- Cross-lane operations, wave reductions, cooperative matrices, transcendental
+  spellings, LDS access shapes, cube helpers, empirical candidate recovery, and
+  core math native recovery.
+- Runtime semantic verification for the math candidates used by the probe suite.
+
 ## APUSR optical-flow SAD/QSad probes
 
 Before comparing native code, verify the source-level arithmetic contracts:
@@ -85,7 +153,7 @@ evidence, not a substitute for the driver that actually runs APUSR.
 Use a Vulkan SDK environment (or pass `-DVulkan_ROOT=...` to CMake):
 
 ```powershell
-cmake -S utils/amd-vulkan-isa-probe -B out/amd-vulkan-isa-probe -A x64
+cmake -S utils/amd_vulkan_isa_probe -B out/amd-vulkan-isa-probe -A x64
 cmake --build out/amd-vulkan-isa-probe --config Release
 ```
 
