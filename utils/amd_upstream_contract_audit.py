@@ -35,7 +35,12 @@ def check() -> list[str]:
     )
 
     intrinsic_ids = set(re.findall(r"^\s*(IOP_\w+)\s*=", header, re.MULTILINE))
-    emitter_ids = set(re.findall(r"\bIntrinsicOp::(IOP_\w+)\b", emitter))
+    # Ignore token-pasted enum fragments inside wave-operation macros.
+    emitter_ids = {
+        match.group(1)
+        for match in re.finditer(r"\bIntrinsicOp::(IOP_\w+)\b", emitter)
+        if emitter[match.end():match.end() + 2] != "##"
+    }
     for name in sorted(emitter_ids - intrinsic_ids):
         errors.append(f"SPIR-V emitter references undefined intrinsic: {name}")
 
@@ -71,10 +76,10 @@ def check() -> list[str]:
     if "in bool isInputSigned, in numeric value" not in fill_def:
         errors.append("LinAlg FillMatrix signature changed; audit argument lowering")
     fill_start = emitter.find(
-        "case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_FillMatrix:"
+        "case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_FillMatrix: {"
     )
     fill_end = emitter.find(
-        "case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_CopyConvertMatrix:",
+        "case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_CopyConvertMatrix: {",
         fill_start,
     )
     if fill_start < 0 or fill_end < 0 or "callExpr->getArg(2)" not in emitter[
