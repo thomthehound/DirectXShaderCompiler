@@ -14,7 +14,7 @@
 
 #if !defined(VK_KHR_cooperative_matrix)
 int main() {
-  std::cerr << "amd_vulkan_matrix_probe: Vulkan SDK headers do not expose "
+  std::cerr << "UNSUPPORTED: Vulkan SDK headers do not expose "
                "VK_KHR_cooperative_matrix\n";
   return 20;
 }
@@ -34,6 +34,7 @@ struct Options {
   uint32_t k = 16;
   std::string entry = "main";
   std::optional<uint32_t> device_index;
+  bool properties_only = false;
 };
 
 [[noreturn]] void usage(const char *exe) {
@@ -42,6 +43,10 @@ struct Options {
                " --c-type TYPE --result-type TYPE [--m N --n N --k N]"
                " [--device N] [--entry NAME]\n"
                "TYPE: f16, f32, bf16, i8, u8, i32, u32\n";
+  std::cerr << "Or: " << exe
+            << " --properties-only --a-type TYPE --b-type TYPE"
+               " --c-type TYPE --result-type TYPE [--m N --n N --k N]"
+               " [--device N]\n";
   std::exit(2);
 }
 
@@ -59,12 +64,17 @@ uint32_t parse_u32(std::string_view text, std::string_view what) {
 }
 
 Options parse_args(int argc, char **argv) {
-  if (argc < 3)
+  if (argc < 2)
     usage(argv[0]);
   Options o;
-  o.spirv = argv[1];
-  o.output = argv[2];
-  for (int i = 3; i < argc; ++i) {
+  o.properties_only = std::string_view(argv[1]) == "--properties-only";
+  if (!o.properties_only) {
+    if (argc < 3)
+      usage(argv[0]);
+    o.spirv = argv[1];
+    o.output = argv[2];
+  }
+  for (int i = o.properties_only ? 2 : 3; i < argc; ++i) {
     const std::string_view arg = argv[i];
     auto next = [&]() -> std::string_view {
       if (++i >= argc)
@@ -166,7 +176,8 @@ struct DeviceHandle {
 int main(int argc, char **argv) {
   try {
     const Options o = parse_args(argc, argv);
-    const auto spirv = read_spirv(o.spirv);
+    const auto spirv =
+        o.properties_only ? std::vector<uint32_t>{} : read_spirv(o.spirv);
 
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
     app.pApplicationName = "amd_vulkan_matrix_probe";
@@ -208,7 +219,8 @@ int main(int argc, char **argv) {
     vkGetPhysicalDeviceProperties(physical, &props);
     std::cout << "device: " << props.deviceName << "\n";
 
-    if (!has_extension(physical, VK_AMD_SHADER_INFO_EXTENSION_NAME)) {
+    if (!o.properties_only &&
+        !has_extension(physical, VK_AMD_SHADER_INFO_EXTENSION_NAME)) {
       std::cout << "UNSUPPORTED: VK_AMD_shader_info\n";
       return 30;
     }
@@ -294,6 +306,11 @@ int main(int argc, char **argv) {
       return 37;
     }
 #endif
+
+    if (o.properties_only) {
+      std::cout << "ISA_NOT_TESTED: matrix native lowering needs a legal shader\n";
+      return 0;
+    }
 
     VkPhysicalDeviceCooperativeMatrixFeaturesKHR enabled_coop{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR};

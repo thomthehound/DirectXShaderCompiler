@@ -14,6 +14,19 @@ For the included HLSL `msad4` experiment, the exact one-instruction target is
 SAD-family mnemonics are preserved as specialized partial lowering, and
 ordinary arithmetic is not relabeled as native support.
 
+## Cooperative-matrix qualification scope
+
+The descriptor-backed `dx::linalg` shape shader is intentionally rejected by
+our SPIR-V compiler until a legal matrix pointer bridge exists. It is a
+**negative test**, not an ISA qualification shader.
+
+The matrix probe's `--properties-only` path can query matrix shapes, types
+and feature support from the installed Vulkan driver independently of shader
+compilation and disassembly. These results establish **device capability only**;
+the probe explicitly reports that WMMA/SWMMAC/MFMA ISA lowering is **not
+tested**. A future positive shader must have legal, observable input/output
+semantics before driver ISA can be claimed.
+
 ## Typed and untyped raw-buffer representations
 
 The DXC SPIR-V backend supports two capability-dependent raw-buffer
