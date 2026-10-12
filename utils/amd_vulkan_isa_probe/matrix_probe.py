@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 from pathlib import Path
 
@@ -28,13 +27,6 @@ CASES = (
     {"mode": 7, "name": "u8xi8-i32", "a": "u8", "b": "i8", "c": "i32", "r": "i32",
  "extra": []},
 )
-
-FAMILY_PATTERNS = {
-    "wmma": re.compile(r"\bv_wmma_[A-Za-z0-9_]+\b", re.I),
-    "swmmac": re.compile(r"\bv_swmmac_[A-Za-z0-9_]+\b", re.I),
-    "mfma": re.compile(r"\bv_mfma_[A-Za-z0-9_]+\b", re.I),
-}
-
 
 def run(argv: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(

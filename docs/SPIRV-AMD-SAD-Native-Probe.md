@@ -18,8 +18,11 @@ For SAD-family work we therefore keep four proof levels separate:
 4. **Performance** — runtime measurement confirms that the native-looking
    codegen is actually beneficial in the target workload.
 
-The `-fspv-require-native-intrinsics` switch must continue to enforce level 3,
-not level 1 or 2.
+The `-fspv-require-native-intrinsics` switch rejects compiler lowerings
+that lose a recognized native-intent contract. That is a **compiler-side
+constraint**, not proof of a particular AMD machine instruction. Level 3
+requires installed-driver disassembly; a compiler targeting generic Vulkan
+cannot guarantee what an independent driver will select.
 
 ## Exact `msad4` target
 

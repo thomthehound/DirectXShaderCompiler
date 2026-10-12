@@ -5,7 +5,7 @@ This fork treats preservation of specialized GPU intent as a correctness propert
 ## Compiler controls
 
 - `-fspv-enable-amd-intrinsics` enables AMD-oriented legal lowerings for specialized HLSL intrinsics. It may use core/KHR operations that preserve packed or cooperative semantics better than scalar expansion.
-- `-fspv-require-native-intrinsics` turns missing native-preserving SPIR-V contracts into compile errors. This is an audit mode: it is intentionally stricter than ordinary Vulkan compilation.
+- `-fspv-require-native-intrinsics` rejects known missing or emulated native-preserving SPIR-V contracts. This is a **compiler contract audit**, not a promise of a specific AMD machine instruction: the Vulkan driver controls final ISA selection.
 - `-fspv-extension=AMD` (also `SPV_AMD`) enables every AMD/AMDX extension known to this DXC snapshot. Individual `SPV_AMD_*`/`SPV_AMDX_*` names remain supported.
 - `<vk/amd/intrinsics.h>` exposes the four registered AMD extended-instruction sets directly to HLSL without scalar emulation.
 
