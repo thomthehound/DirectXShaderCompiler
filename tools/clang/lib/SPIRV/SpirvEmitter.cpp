@@ -4268,17 +4268,16 @@ SpirvInstruction *SpirvEmitter::processRWByteAddressBufferAtomicMethods(
       valueType->isIntegerType() && astContext.getTypeSize(valueType) == 64;
 
   if (is64BitAtomic && !rawBufferHandler.isUntypedRawBuffer(objectInfo)) {
-    emitError(
-        "64-bit RWByteAddressBuffer atomics require "
-        "SPV_KHR_untyped_pointers; the typed raw-buffer representation "
-        "cannot provide a native 64-bit atomic pointer",
-        expr->getCallee()->getExprLoc());
+    emitError("64-bit RWByteAddressBuffer atomics require "
+              "SPV_KHR_untyped_pointers; the typed raw-buffer representation "
+              "cannot provide a native 64-bit atomic pointer",
+              expr->getCallee()->getExprLoc());
     return nullptr;
   }
 
-  // Preserve the existing uint32 representation for typed 32-bit atomics. Untyped
-  // 64-bit atomics can use the frontend-selected signed/unsigned integer type
-  // directly because their pointer does not encode a pointee type.
+  // Preserve the existing uint32 representation for typed 32-bit atomics.
+  // Untyped 64-bit atomics can use the frontend-selected signed/unsigned
+  // integer type directly because their pointer does not encode a pointee type.
   const QualType atomicType =
       is64BitAtomic ? valueType : astContext.UnsignedIntTy;
 
