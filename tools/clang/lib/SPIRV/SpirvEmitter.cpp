@@ -9719,27 +9719,27 @@ SpirvEmitter::processIntrinsicCallExpr(const CallExpr *callExpr) {
   case hlsl::IntrinsicOp::IOP_msad4:
     retVal = processIntrinsicMsad4(callExpr);
     break;
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_FillMatrix:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_CopyConvertMatrix:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixLoadFromDescriptor:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixLoadFromMemory:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixLength:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixGetCoordinate:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixGetElement:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixSetElement:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixStoreToDescriptor:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixStoreToMemory:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixQueryAccumulatorLayout:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixMatrixMultiply:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixMatrixMultiplyAccumulate:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixAccumulate:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixAccumulateToDescriptor:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixAccumulateToMemory:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixVectorMultiply:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixVectorMultiplyAdd:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixOuterProduct:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_Convert:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_VectorAccumulateToDescriptor:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_FillMatrix:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_CopyConvertMatrix:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixLoadFromDescriptor:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixLoadFromMemory:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixLength:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixGetCoordinate:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixGetElement:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixSetElement:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixStoreToDescriptor:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixStoreToMemory:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixQueryAccumulatorLayout:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixMatrixMultiply:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixMatrixMultiplyAccumulate:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixAccumulate:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixAccumulateToDescriptor:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixAccumulateToMemory:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixVectorMultiply:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixVectorMultiplyAdd:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixOuterProduct:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_Convert:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_VectorAccumulateToDescriptor:
     retVal = processIntrinsicLinAlg(callExpr, hlslOpcode);
     break;
   case hlsl::IntrinsicOp::IOP_printf:
@@ -11177,7 +11177,7 @@ SpirvEmitter::processIntrinsicLinAlg(const CallExpr *callExpr,
       };
 
   switch (op) {
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_FillMatrix: {
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_FillMatrix: {
     const QualType resultType = callExpr->getArg(0)->getType();
     const auto *matrixType = getMatrixType(resultType);
     if (!matrixType) {
@@ -11209,7 +11209,7 @@ SpirvEmitter::processIntrinsicLinAlg(const CallExpr *callExpr,
     return nullptr;
   }
 
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_CopyConvertMatrix: {
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_CopyConvertMatrix: {
     const QualType resultType = callExpr->getArg(0)->getType();
     const QualType sourceType = callExpr->getArg(1)->getType();
     const auto *dst = getMatrixType(resultType);
@@ -11274,13 +11274,13 @@ SpirvEmitter::processIntrinsicLinAlg(const CallExpr *callExpr,
     return nullptr;
   }
 
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixLength: {
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixLength: {
     auto *matrix = loadIfGLValue(callExpr->getArg(0), range);
     return spvBuilder.createUnaryOp(spv::Op::OpCooperativeMatrixLengthKHR,
                                     callExpr->getType(), matrix, loc, range);
   }
 
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixGetElement: {
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixGetElement: {
     const QualType matrixAstType = callExpr->getArg(1)->getType();
     const auto *matrixType = getMatrixType(matrixAstType);
     const QualType componentType =
@@ -11300,7 +11300,7 @@ SpirvEmitter::processIntrinsicLinAlg(const CallExpr *callExpr,
     return nullptr;
   }
 
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixSetElement: {
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixSetElement: {
     const QualType matrixAstType = callExpr->getArg(0)->getType();
     const auto *matrixType = getMatrixType(matrixAstType);
     const QualType componentType =
@@ -11322,7 +11322,7 @@ SpirvEmitter::processIntrinsicLinAlg(const CallExpr *callExpr,
     return nullptr;
   }
 
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixLoadFromMemory: {
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixLoadFromMemory: {
     const QualType resultType = callExpr->getArg(0)->getType();
     const auto *matrixType = getMatrixType(resultType);
     const auto *arrayType = astContext.getAsArrayType(callExpr->getArg(1)->getType());
@@ -11360,7 +11360,7 @@ SpirvEmitter::processIntrinsicLinAlg(const CallExpr *callExpr,
     return nullptr;
   }
 
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixStoreToMemory: {
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixStoreToMemory: {
     const QualType matrixAstType = callExpr->getArg(0)->getType();
     const auto *matrixType = getMatrixType(matrixAstType);
     const auto *arrayType = astContext.getAsArrayType(callExpr->getArg(1)->getType());
@@ -11397,7 +11397,7 @@ SpirvEmitter::processIntrinsicLinAlg(const CallExpr *callExpr,
     return nullptr;
   }
 
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixMatrixMultiplyAccumulate: {
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixMatrixMultiplyAccumulate: {
     const QualType resultType = callExpr->getArg(0)->getType();
     auto *a = loadIfGLValue(callExpr->getArg(1), range);
     auto *b = loadIfGLValue(callExpr->getArg(2), range);
@@ -11409,7 +11409,7 @@ SpirvEmitter::processIntrinsicLinAlg(const CallExpr *callExpr,
     return nullptr;
   }
 
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixMatrixMultiply: {
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixMatrixMultiply: {
     const QualType resultType = callExpr->getArg(0)->getType();
     const auto *matrixType = getMatrixType(resultType);
     if (!matrixType || matrixType->getUse() != MatrixUse::Accumulator) {
@@ -11438,37 +11438,37 @@ SpirvEmitter::processIntrinsicLinAlg(const CallExpr *callExpr,
     return nullptr;
   }
 
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixGetCoordinate:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixGetCoordinate:
     emitError("dx::linalg MatrixGetCoordinate exposes implementation-specific "
               "lane-to-element ownership that SPV_KHR_cooperative_matrix does "
               "not expose", loc);
     return nullptr;
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixQueryAccumulatorLayout:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixQueryAccumulatorLayout:
     emitError("dx::linalg MatrixQueryAccumulatorLayout queries a D3D target "
               "layout; Vulkan exposes cooperative-matrix layouts through device "
               "properties rather than a shader instruction", loc);
     return nullptr;
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixLoadFromDescriptor:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixStoreToDescriptor:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixLoadFromDescriptor:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixStoreToDescriptor:
     emitError("dx::linalg ByteAddressBuffer cooperative-matrix load/store needs "
               "a typed or untyped pointer bridge at the byte offset; refusing "
               "to reinterpret a Vulkan storage-buffer pointer illegally", loc);
     return nullptr;
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixAccumulate:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixAccumulate:
     emitError("dx::linalg MatrixAccumulate changes cooperative-matrix Use "
               "(A/B to Accumulator); KHR arithmetic requires matching Use and "
               "there is no KHR use-conversion instruction", loc);
     return nullptr;
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixAccumulateToDescriptor:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixAccumulateToMemory:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixAccumulateToDescriptor:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixAccumulateToMemory:
     emitError("dx::linalg interlocked matrix accumulation has no "
               "SPV_KHR_cooperative_matrix atomic equivalent", loc);
     return nullptr;
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixVectorMultiply:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixVectorMultiplyAdd:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixOuterProduct:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_Convert:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_VectorAccumulateToDescriptor:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixVectorMultiply:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixVectorMultiplyAdd:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixOuterProduct:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_Convert:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_VectorAccumulateToDescriptor:
     emitError("this SM 6.10 dx::linalg operation belongs to the thread-scope "
               "cooperative-vector family; Vulkan has no KHR or AMD SPIR-V "
               "contract for it", loc);
