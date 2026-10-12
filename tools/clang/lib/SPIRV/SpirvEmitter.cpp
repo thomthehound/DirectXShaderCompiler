@@ -11397,7 +11397,8 @@ SpirvEmitter::processIntrinsicLinAlg(const CallExpr *callExpr,
     return nullptr;
   }
 
-  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixMatrixMultiplyAccumulate: {
+  case hlsl::IntrinsicOp::
+      IOP_Dx__builtin_LinAlg_MatrixMatrixMultiplyAccumulate: {
     const QualType resultType = callExpr->getArg(0)->getType();
     auto *a = loadIfGLValue(callExpr->getArg(1), range);
     auto *b = loadIfGLValue(callExpr->getArg(2), range);
