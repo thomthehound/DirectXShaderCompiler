@@ -1,11 +1,21 @@
-// RUN: not %dxc -T cs_6_6 -E main -fcgl -spirv -fspv-target-env=vulkan1.2 %s 2>&1 | FileCheck %s
+// RUN: not %dxc -T cs_6_6 -E main -fcgl -spirv -fspv-target-env=vulkan1.2 %s 2>&1 | FileCheck %s --check-prefix=LEGACY
+// RUN: %dxc -T cs_6_6 -E main -fcgl -spirv -fspv-target-env=vulkan1.2 -fspv-extension=SPV_KHR_untyped_pointers %s | FileCheck %s --check-prefix=UNTYPED
 
-// RWByteAddressBuffer is currently represented as 32-bit uint words in the
-// SPIR-V backend. A correct 64-bit atomic requires a genuine 64-bit pointee;
-// splitting the operation across two words would violate atomicity.
-// TODO: add a legal 64-bit raw-buffer representation/alignment bridge, then
-// replace this negative contract with Int64Atomics codegen checks.
-// CHECK: error: intrinsic 'InterlockedAdd64' method unimplemented
+// The legacy raw-buffer representation must reject 64-bit atomics rather
+// than attempt non-atomic 32-bit emulation. Enabling untyped pointers must
+// produce actual 64-bit SPIR-V atomics for all eight operations.
+// LEGACY: error: 64-bit RWByteAddressBuffer atomics require SPV_KHR_untyped_pointers
+// UNTYPED-DAG: OpCapability Int64Atomics
+// UNTYPED-DAG: OpCapability UntypedPointersKHR
+// UNTYPED-DAG: OpExtension "SPV_KHR_untyped_pointers"
+// UNTYPED-DAG: OpAtomicIAdd
+// UNTYPED-DAG: OpAtomicAnd
+// UNTYPED-DAG: OpAtomicOr
+// UNTYPED-DAG: OpAtomicXor
+// UNTYPED-DAG: OpAtomicUMin
+// UNTYPED-DAG: OpAtomicUMax
+// UNTYPED-DAG: OpAtomicExchange
+// UNTYPED-DAG: OpAtomicCompareExchange
 
 RWByteAddressBuffer Data : register(u0);
 RWStructuredBuffer<uint4> Out : register(u1);
