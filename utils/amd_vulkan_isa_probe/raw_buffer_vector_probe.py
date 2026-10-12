@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 
-LEGACY_ATOMIC64_DIAGNOSTIC = (
+TYPED_ATOMIC64_DIAGNOSTIC = (
     "64-bit RWByteAddressBuffer atomics require SPV_KHR_untyped_pointers; "
     "the typed raw-buffer representation cannot provide a native 64-bit atomic pointer"
 )
@@ -370,13 +370,13 @@ OpExtension "SPV_KHR_untyped_pointers"
     untyped = Case(
         "untyped-vector", "vector", "fixture", "SPV_KHR_untyped_pointers"
     )
-    legacy_cmd = make_compile_command(
+    typed_cmd = make_compile_command(
         "dxc", typed, "vulkan1.2", "cs_6_6", Path("a.hlsl"), Path("a.spv")
     )
     untyped_cmd = make_compile_command(
         "dxc", untyped, "vulkan1.2", "cs_6_6", Path("a.hlsl"), Path("a.spv")
     )
-    if any(arg.startswith("-fspv-extension=") for arg in legacy_cmd):
+    if any(arg.startswith("-fspv-extension=") for arg in typed_cmd):
         print("FAIL typed command unexpectedly enables an extension")
         return 1
     if "-fspv-extension=SPV_KHR_untyped_pointers" not in untyped_cmd:
@@ -466,7 +466,7 @@ def main() -> int:
             if (
                 case.name == "typed-atomic64"
                 and cp.returncode
-                and LEGACY_ATOMIC64_DIAGNOSTIC in (cp.stdout + cp.stderr)
+                and TYPED_ATOMIC64_DIAGNOSTIC in (cp.stdout + cp.stderr)
             ):
                 case.classification = "typed-atomic64-rejected"
             elif case.name == "typed-atomic64" and cp.returncode:
@@ -501,7 +501,7 @@ def main() -> int:
         print_case(case)
 
     by_name = {c.name: c for c in specs}
-    legacy_ready = all(
+    typed_ready = all(
         by_name[name].classification == expected
         for name, expected in (
             ("typed-vector", "typed-scalarized"),
@@ -519,7 +519,7 @@ def main() -> int:
         and by_name["untyped-atomic64"].classification == "untyped-atomic64-native"
     )
     contract_ready = (
-        legacy_ready
+        typed_ready
         and vector_ready
         and surface_ready
         and alias_ready
@@ -540,7 +540,7 @@ def main() -> int:
         "schema": 5,
         "target_env": args.target_env,
         "shader_profile": args.shader_profile,
-        "legacy_compatibility_ready": legacy_ready,
+        "typed_raw_buffer_ready": typed_ready,
         "untyped_vectorization_ready": vector_ready,
         "untyped_surface_ready": surface_ready,
         "untyped_alias_ready": alias_ready,
