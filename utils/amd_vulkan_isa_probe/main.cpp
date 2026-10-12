@@ -399,8 +399,9 @@ int main(int argc, char** argv) {
     result = get_shader_info(device, pipeline, VK_SHADER_STAGE_COMPUTE_BIT,
                              VK_SHADER_INFO_TYPE_DISASSEMBLY_AMD,
                              &disassembly_size, disassembly.data());
-    if (result != VK_SUCCESS && result != VK_INCOMPLETE)
-      check(result, "vkGetShaderInfoAMD(data)");
+    if (result == VK_INCOMPLETE)
+      throw std::runtime_error("incomplete AMD shader disassembly");
+    check(result, "vkGetShaderInfoAMD(data)");
 
     std::ofstream output(options.output, std::ios::binary);
     if (!output)

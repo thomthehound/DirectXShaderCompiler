@@ -327,8 +327,9 @@ int main(int argc, char **argv) {
     std::vector<char> text(size);
     r = get_shader_info(device, pipeline, VK_SHADER_STAGE_COMPUTE_BIT,
                         VK_SHADER_INFO_TYPE_DISASSEMBLY_AMD, &size, text.data());
-    if (r != VK_SUCCESS && r != VK_INCOMPLETE)
-      check(r, "vkGetShaderInfoAMD(data)");
+    if (r == VK_INCOMPLETE)
+      throw std::runtime_error("incomplete AMD shader disassembly");
+    check(r, "vkGetShaderInfoAMD(data)");
     std::ofstream out(o.output, std::ios::binary);
     out.write(text.data(), static_cast<std::streamsize>(size));
     if (!out)
