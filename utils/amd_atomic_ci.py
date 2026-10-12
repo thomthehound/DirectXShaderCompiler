@@ -54,7 +54,7 @@ def check_raw_u64(
     shader: Path,
     flags: tuple[str, ...],
 ) -> bool:
-    # The legacy representation must reject a 64-bit atomic rather than
+    # The typed representation must reject a 64-bit atomic rather than
     # silently splitting it across independent 32-bit operations.
     legacy = run_shader(dxc, shader, *flags)
     diagnostic = (
@@ -63,13 +63,13 @@ def check_raw_u64(
     output = legacy.stdout + "\n" + legacy.stderr
     if legacy.returncode == 0 or diagnostic not in output:
         print(
-            "FAIL AMD atomics: legacy raw-buffer 64-bit atomic contract "
+            "FAIL AMD atomics: typed raw-buffer 64-bit atomic contract "
             "did not produce the required diagnostic",
             file=sys.stderr,
         )
         print(output[-8000:], file=sys.stderr)
         return False
-    print("PASS AMD atomics: legacy raw-buffer 64-bit atomic rejection")
+    print("PASS AMD atomics: typed raw-buffer 64-bit atomic rejection")
 
     native = run_shader(
         dxc, shader, *flags, "-fspv-extension=SPV_KHR_untyped_pointers"

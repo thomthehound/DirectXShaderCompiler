@@ -1,13 +1,10 @@
-// RUN: %dxc -T cs_6_10 -E main -fcgl -spirv -fspv-target-env=vulkan1.3 -DMODE=0 %s | FileCheck %s --check-prefix=COMMON
-// RUN: %dxc -T cs_6_10 -E main -fcgl -spirv -fspv-target-env=vulkan1.3 -DMODE=2 %s | FileCheck %s --check-prefix=COMMON
-// RUN: %dxc -T cs_6_10 -E main -fcgl -spirv -fspv-target-env=vulkan1.3 -DMODE=4 %s | FileCheck %s --check-prefix=COMMON
+// RUN: not %dxc -T cs_6_10 -E main -fcgl -spirv -fspv-target-env=vulkan1.3 -DMODE=0 %s 2>&1 | FileCheck %s --check-prefix=POINTER
+// RUN: not %dxc -T cs_6_10 -E main -fcgl -spirv -fspv-target-env=vulkan1.3 -fspv-extension=SPV_KHR_bfloat16 -DMODE=2 %s 2>&1 | FileCheck %s --check-prefix=POINTER
+// RUN: not %dxc -T cs_6_10 -E main -fcgl -spirv -fspv-target-env=vulkan1.3 -DMODE=4 %s 2>&1 | FileCheck %s --check-prefix=POINTER
 
-// COMMON: OpCapability CooperativeMatrixKHR
-// COMMON: OpExtension "SPV_KHR_cooperative_matrix"
-// COMMON: OpTypeCooperativeMatrixKHR
-// COMMON: OpCooperativeMatrixLoadKHR
-// COMMON: OpCooperativeMatrixMulAddKHR
-// COMMON: OpCooperativeMatrixStoreKHR
+// Descriptor-backed cooperative matrices need a legal storage pointer bridge.
+// These cases must reject the unsupported pointer mapping, not emit invalid SPIR-V.
+// POINTER: error: dx::linalg ByteAddressBuffer cooperative-matrix load/store needs a typed or untyped pointer bridge at the byte offset
 
 #ifndef MODE
 #define MODE 0
@@ -85,9 +82,9 @@ void main() {
   __builtin_LinAlgMatrix [[__LinAlgMatrix_Attributes(BCOMP, 16, 16, 1, 1)]] b;
   __builtin_LinAlgMatrix [[__LinAlgMatrix_Attributes(CCOMP, 16, 16, 2, 1)]] acc;
 
-  __builtin_LinAlg_MatrixLoadFromDescriptor(a, Data, 0, A_STRIDE, 0, 128);
-  __builtin_LinAlg_MatrixLoadFromDescriptor(b, Data, 4096, B_STRIDE, 0, 128);
-  __builtin_LinAlg_MatrixLoadFromDescriptor(acc, Data, 8192, C_STRIDE, 0, 128);
-  __builtin_LinAlg_MatrixMatrixMultiplyAccumulate(acc, a, b, acc);
-  __builtin_LinAlg_MatrixStoreToDescriptor(acc, Data, 12288, C_STRIDE, 0, 128);
+  dx::__builtin_LinAlg_MatrixLoadFromDescriptor(a, Data, 0, A_STRIDE, 0, 128);
+  dx::__builtin_LinAlg_MatrixLoadFromDescriptor(b, Data, 4096, B_STRIDE, 0, 128);
+  dx::__builtin_LinAlg_MatrixLoadFromDescriptor(acc, Data, 8192, C_STRIDE, 0, 128);
+  dx::__builtin_LinAlg_MatrixMatrixMultiplyAccumulate(acc, a, b, acc);
+  dx::__builtin_LinAlg_MatrixStoreToDescriptor(acc, Data, 12288, C_STRIDE, 0, 128);
 }

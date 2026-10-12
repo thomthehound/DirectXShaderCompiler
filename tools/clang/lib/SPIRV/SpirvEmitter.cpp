@@ -4246,7 +4246,7 @@ SpirvEmitter::processByteAddressBufferStructuredBufferGetDimensions(
 SpirvInstruction *SpirvEmitter::processRWByteAddressBufferAtomicMethods(
     hlsl::IntrinsicOp opcode, const CXXMemberCallExpr *expr) {
   // RWByteAddressBuffer exposes both 32-bit Interlocked* methods and native
-  // 64-bit Interlocked*64 methods. The legacy raw-buffer representation has
+  // 64-bit Interlocked*64 methods. The typed raw-buffer representation has
   // a typed uint32 runtime array and therefore cannot provide a genuine
   // atomic 64-bit pointer. The explicitly enabled untyped-pointer path can.
   const auto *object = expr->getImplicitObjectArgument();
@@ -4270,13 +4270,13 @@ SpirvInstruction *SpirvEmitter::processRWByteAddressBufferAtomicMethods(
   if (is64BitAtomic && !rawBufferHandler.isUntypedRawBuffer(objectInfo)) {
     emitError(
         "64-bit RWByteAddressBuffer atomics require "
-        "SPV_KHR_untyped_pointers; the legacy raw-buffer representation "
+        "SPV_KHR_untyped_pointers; the typed raw-buffer representation "
         "cannot provide a native 64-bit atomic pointer",
         expr->getCallee()->getExprLoc());
     return nullptr;
   }
 
-  // Preserve the existing uint32 representation for legacy atomics. Untyped
+  // Preserve the existing uint32 representation for typed 32-bit atomics. Untyped
   // 64-bit atomics can use the frontend-selected signed/unsigned integer type
   // directly because their pointer does not encode a pointee type.
   const QualType atomicType =
@@ -5013,7 +5013,7 @@ SpirvInstruction *SpirvEmitter::processByteAddressBufferLoadStore(
     return result;
   }
 
-  // Legacy raw buffers use a struct containing RuntimeArray<uint>.
+  // Typed raw buffers use a struct containing RuntimeArray<uint>.
   // First index is member 0; the second is the 32-bit word address.
   auto *constUint0 =
       spvBuilder.getConstantInt(astContext.UnsignedIntTy, llvm::APInt(32, 0));
