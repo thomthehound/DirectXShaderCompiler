@@ -449,6 +449,9 @@ def main() -> int:
         required=(
             r'OpExtension "SPV_KHR_cooperative_matrix"',
             r"\bOpCooperativeMatrixMulAddKHR\b",
+            r"\bOpConstant\b[^\n]*\b17\b",
+            r"\bOpConstant\b[^\n]*\b19\b",
+            r"\bOpConstant\b[^\n]*\b23\b",
         ),
     )
 

@@ -14,6 +14,36 @@ For the included HLSL `msad4` experiment, the exact one-instruction target is
 SAD-family mnemonics are preserved as specialized partial lowering, and
 ordinary arithmetic is not relabeled as native support.
 
+## Typed and untyped raw-buffer representations
+
+The DXC SPIR-V backend supports two capability-dependent raw-buffer
+representations, **not** a user-facing "legacy mode":
+
+- **Typed raw buffers:** the default representation based on 32-bit runtime
+  array elements. This supports its established 32-bit load/store and atomic
+  operations. It must reject native 64-bit raw-buffer atomics rather than
+  emulate them with non-atomic pairs of 32-bit operations.
+- **Untyped-pointer raw buffers:** opt in with
+  `-fspv-extension=SPV_KHR_untyped_pointers`. This permits native 64-bit
+  raw-buffer atomics through untyped access chains when the Vulkan target and
+  driver support the extension. The emitted SPIR-V must also validate with
+  `spirv-val`.
+
+The regression tests intentionally cover both paths. A **rejection** in the
+typed representation proves safe capability enforcement; it does not prove
+that a missing feature has been implemented. In the matrix suite, DXIL
+cooperative-matrix operations and SPIR-V descriptor-backed cooperative-matrix
+load/store are tested independently. The latter remains blocked pending a
+legal storage-buffer pointer bridge.
+
+For development, `python utils/amd_upstream_contract_audit.py` checks generated
+intrinsic names and AMD test fixtures before a compiler build.
+`python utils/amd_contract_suite.py --dxc <built-dxc>` runs every AMD compiler
+contract and reports all failing suites rather than stopping at the first.
+The existing AMD development workflow runs preflight on `amd-sad-msad` pushes;
+its expensive Linux/Windows compiler builds remain opt-in through `[full-ci]`
+in a commit message or manual dispatch.
+
 ## One-command full qualification on Windows
 
 `run_windows.ps1` is the canonical full sweep for this directory. It builds the

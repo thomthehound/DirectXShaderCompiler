@@ -1058,7 +1058,7 @@ void SpirvEmitter::HandleTranslationUnit(ASTContext &context) {
 
 void SpirvEmitter::doDecl(const Decl *decl) {
   if (isa<EmptyDecl>(decl) || isa<TypeAliasTemplateDecl>(decl) ||
-      isa<VarTemplateDecl>(decl))
+      isa<VarTemplateDecl>(decl) || isa<StaticAssertDecl>(decl))
     return;
 
   // Implicit decls are lazily created when needed.
@@ -1944,17 +1944,10 @@ void SpirvEmitter::registerCapabilitiesAndExtensionsForVarDecl(
 
 void SpirvEmitter::doHLSLBufferDecl(const HLSLBufferDecl *bufferDecl) {
   // This is a cbuffer/tbuffer decl.
-  // Check and emit warnings for member intializers which are not
-  // supported in Vulkan
   for (const auto *member : bufferDecl->decls()) {
     if (const auto *varMember = dyn_cast<VarDecl>(member)) {
-      if (!spirvOptions.noWarnIgnoredFeatures) {
-        if (const auto *init = varMember->getInit())
-          emitWarning("%select{tbuffer|cbuffer}0 member initializer "
-                      "ignored since no Vulkan equivalent",
-                      init->getExprLoc())
-              << bufferDecl->isCBuffer() << init->getSourceRange();
-      }
+      if (varMember->getStorageClass() == StorageClass::SC_Static)
+        continue;
 
       // We cannot handle external initialization of column-major matrices now.
       if (isOrContainsNonFpColMajorMatrix(astContext, spirvOptions,
@@ -1976,6 +1969,12 @@ void SpirvEmitter::doHLSLBufferDecl(const HLSLBufferDecl *bufferDecl) {
         DeclResultIdMapper::ContextUsageKind::ShaderRecordBufferKHR);
   } else {
     declIdMapper.createCTBuffer(bufferDecl);
+  }
+
+  for (const auto *member : bufferDecl->decls()) {
+    const auto *varMember = dyn_cast<VarDecl>(member);
+    if (varMember && varMember->getStorageClass() == StorageClass::SC_Static)
+      doVarDecl(varMember);
   }
 }
 
@@ -2172,9 +2171,11 @@ void SpirvEmitter::doVarDecl(const VarDecl *decl) {
   // ConstantBuffers and TextureBuffers are not HLSLBufferDecls.
   if (const auto *bufferDecl =
           dyn_cast<HLSLBufferDecl>(decl->getDeclContext())) {
-    // This is a VarDecl of cbuffer/tbuffer type.
-    doHLSLBufferDecl(bufferDecl);
-    return;
+    if (decl->getStorageClass() != StorageClass::SC_Static) {
+      // This is a VarDecl of cbuffer/tbuffer type.
+      doHLSLBufferDecl(bufferDecl);
+      return;
+    }
   }
 
   if (decl->getAttr<VKInputAttachmentIndexAttr>()) {
@@ -2195,10 +2196,6 @@ void SpirvEmitter::doVarDecl(const VarDecl *decl) {
   // variables) belongs to the Function storage class.
   if (isExternalVar(decl)) {
     var = declIdMapper.createExternVar(decl);
-    if (decl->hasInit()) {
-      emitWarning("Initializer of external global will be ignored",
-                  decl->getLocation());
-    }
   } else {
     // We already know the variable is not externally visible here. If it does
     // not have local storage, it should be file scope variable.
@@ -3969,8 +3966,17 @@ SpirvEmitter::processFlatConversion(const QualType type,
       initInstr->setAstResultType(astContext.UnsignedLongLongTy);
   }
 
-  // Decompose `initInstr`.
-  std::vector<SpirvInstruction *> flatValues = decomposeToScalars(initInstr);
+  QualType sourceType = initInstr->getAstResultType();
+  if (hlsl::IsHLSLResourceType(sourceType))
+    sourceType = hlsl::GetHLSLResourceResultType(sourceType);
+
+  // A same-type conversion emits one scalar per SPIR-V field, but a cast that
+  // changes the shape, keeps one scalar (potentially with merged bitfields) per
+  // AST field. includeMergedBitfields determines which indexing is used.
+  const bool includeMergedBitfields =
+      !astContext.hasSameUnqualifiedType(type, sourceType);
+  std::vector<SpirvInstruction *> flatValues =
+      decomposeToScalars(initInstr, includeMergedBitfields);
 
   if (flatValues.size() == 1) {
     return splatScalarToGenerate(type, flatValues[0], SpirvLayoutRule::Void);
@@ -4240,7 +4246,7 @@ SpirvEmitter::processByteAddressBufferStructuredBufferGetDimensions(
 SpirvInstruction *SpirvEmitter::processRWByteAddressBufferAtomicMethods(
     hlsl::IntrinsicOp opcode, const CXXMemberCallExpr *expr) {
   // RWByteAddressBuffer exposes both 32-bit Interlocked* methods and native
-  // 64-bit Interlocked*64 methods. The legacy raw-buffer representation has
+  // 64-bit Interlocked*64 methods. The typed raw-buffer representation has
   // a typed uint32 runtime array and therefore cannot provide a genuine
   // atomic 64-bit pointer. The explicitly enabled untyped-pointer path can.
   const auto *object = expr->getImplicitObjectArgument();
@@ -4262,17 +4268,16 @@ SpirvInstruction *SpirvEmitter::processRWByteAddressBufferAtomicMethods(
       valueType->isIntegerType() && astContext.getTypeSize(valueType) == 64;
 
   if (is64BitAtomic && !rawBufferHandler.isUntypedRawBuffer(objectInfo)) {
-    emitError(
-        "64-bit RWByteAddressBuffer atomics require "
-        "SPV_KHR_untyped_pointers; the legacy raw-buffer representation "
-        "cannot provide a native 64-bit atomic pointer",
-        expr->getCallee()->getExprLoc());
+    emitError("64-bit RWByteAddressBuffer atomics require "
+              "SPV_KHR_untyped_pointers; the typed raw-buffer representation "
+              "cannot provide a native 64-bit atomic pointer",
+              expr->getCallee()->getExprLoc());
     return nullptr;
   }
 
-  // Preserve the existing uint32 representation for legacy atomics. Untyped
-  // 64-bit atomics can use the frontend-selected signed/unsigned integer type
-  // directly because their pointer does not encode a pointee type.
+  // Preserve the existing uint32 representation for typed 32-bit atomics.
+  // Untyped 64-bit atomics can use the frontend-selected signed/unsigned
+  // integer type directly because their pointer does not encode a pointee type.
   const QualType atomicType =
       is64BitAtomic ? valueType : astContext.UnsignedIntTy;
 
@@ -5007,7 +5012,7 @@ SpirvInstruction *SpirvEmitter::processByteAddressBufferLoadStore(
     return result;
   }
 
-  // Legacy raw buffers use a struct containing RuntimeArray<uint>.
+  // Typed raw buffers use a struct containing RuntimeArray<uint>.
   // First index is member 0; the second is the 32-bit word address.
   auto *constUint0 =
       spvBuilder.getConstantInt(astContext.UnsignedIntTy, llvm::APInt(32, 0));
@@ -9713,27 +9718,27 @@ SpirvEmitter::processIntrinsicCallExpr(const CallExpr *callExpr) {
   case hlsl::IntrinsicOp::IOP_msad4:
     retVal = processIntrinsicMsad4(callExpr);
     break;
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_FillMatrix:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_CopyConvertMatrix:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixLoadFromDescriptor:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixLoadFromMemory:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixLength:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixGetCoordinate:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixGetElement:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixSetElement:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixStoreToDescriptor:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixStoreToMemory:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixQueryAccumulatorLayout:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixMatrixMultiply:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixMatrixMultiplyAccumulate:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixAccumulate:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixAccumulateToDescriptor:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixAccumulateToMemory:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixVectorMultiply:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixVectorMultiplyAdd:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixOuterProduct:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_Convert:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_VectorAccumulateToDescriptor:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_FillMatrix:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_CopyConvertMatrix:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixLoadFromDescriptor:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixLoadFromMemory:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixLength:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixGetCoordinate:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixGetElement:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixSetElement:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixStoreToDescriptor:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixStoreToMemory:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixQueryAccumulatorLayout:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixMatrixMultiply:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixMatrixMultiplyAccumulate:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixAccumulate:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixAccumulateToDescriptor:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixAccumulateToMemory:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixVectorMultiply:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixVectorMultiplyAdd:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixOuterProduct:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_Convert:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_VectorAccumulateToDescriptor:
     retVal = processIntrinsicLinAlg(callExpr, hlslOpcode);
     break;
   case hlsl::IntrinsicOp::IOP_printf:
@@ -11171,7 +11176,7 @@ SpirvEmitter::processIntrinsicLinAlg(const CallExpr *callExpr,
       };
 
   switch (op) {
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_FillMatrix: {
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_FillMatrix: {
     const QualType resultType = callExpr->getArg(0)->getType();
     const auto *matrixType = getMatrixType(resultType);
     if (!matrixType) {
@@ -11188,8 +11193,9 @@ SpirvEmitter::processIntrinsicLinAlg(const CallExpr *callExpr,
       return nullptr;
     }
 
-    auto *value = loadIfGLValue(callExpr->getArg(1), range);
-    const QualType valueType = callExpr->getArg(1)->getType();
+    // Argument 1 specifies signedness; argument 2 is the scalar value.
+    auto *value = loadIfGLValue(callExpr->getArg(2), range);
+    const QualType valueType = callExpr->getArg(2)->getType();
     if (!isSameType(astContext, valueType, componentType)) {
       if (isFloatComponent(matrixType->getComponentType()))
         value = castToFloat(value, valueType, componentType, loc, range);
@@ -11203,7 +11209,7 @@ SpirvEmitter::processIntrinsicLinAlg(const CallExpr *callExpr,
     return nullptr;
   }
 
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_CopyConvertMatrix: {
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_CopyConvertMatrix: {
     const QualType resultType = callExpr->getArg(0)->getType();
     const QualType sourceType = callExpr->getArg(1)->getType();
     const auto *dst = getMatrixType(resultType);
@@ -11268,13 +11274,13 @@ SpirvEmitter::processIntrinsicLinAlg(const CallExpr *callExpr,
     return nullptr;
   }
 
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixLength: {
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixLength: {
     auto *matrix = loadIfGLValue(callExpr->getArg(0), range);
     return spvBuilder.createUnaryOp(spv::Op::OpCooperativeMatrixLengthKHR,
                                     callExpr->getType(), matrix, loc, range);
   }
 
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixGetElement: {
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixGetElement: {
     const QualType matrixAstType = callExpr->getArg(1)->getType();
     const auto *matrixType = getMatrixType(matrixAstType);
     const QualType componentType =
@@ -11294,7 +11300,7 @@ SpirvEmitter::processIntrinsicLinAlg(const CallExpr *callExpr,
     return nullptr;
   }
 
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixSetElement: {
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixSetElement: {
     const QualType matrixAstType = callExpr->getArg(0)->getType();
     const auto *matrixType = getMatrixType(matrixAstType);
     const QualType componentType =
@@ -11316,7 +11322,7 @@ SpirvEmitter::processIntrinsicLinAlg(const CallExpr *callExpr,
     return nullptr;
   }
 
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixLoadFromMemory: {
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixLoadFromMemory: {
     const QualType resultType = callExpr->getArg(0)->getType();
     const auto *matrixType = getMatrixType(resultType);
     const auto *arrayType = astContext.getAsArrayType(callExpr->getArg(1)->getType());
@@ -11354,7 +11360,7 @@ SpirvEmitter::processIntrinsicLinAlg(const CallExpr *callExpr,
     return nullptr;
   }
 
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixStoreToMemory: {
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixStoreToMemory: {
     const QualType matrixAstType = callExpr->getArg(0)->getType();
     const auto *matrixType = getMatrixType(matrixAstType);
     const auto *arrayType = astContext.getAsArrayType(callExpr->getArg(1)->getType());
@@ -11391,7 +11397,8 @@ SpirvEmitter::processIntrinsicLinAlg(const CallExpr *callExpr,
     return nullptr;
   }
 
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixMatrixMultiplyAccumulate: {
+  case hlsl::IntrinsicOp::
+      IOP_Dx__builtin_LinAlg_MatrixMatrixMultiplyAccumulate: {
     const QualType resultType = callExpr->getArg(0)->getType();
     auto *a = loadIfGLValue(callExpr->getArg(1), range);
     auto *b = loadIfGLValue(callExpr->getArg(2), range);
@@ -11403,7 +11410,7 @@ SpirvEmitter::processIntrinsicLinAlg(const CallExpr *callExpr,
     return nullptr;
   }
 
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixMatrixMultiply: {
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixMatrixMultiply: {
     const QualType resultType = callExpr->getArg(0)->getType();
     const auto *matrixType = getMatrixType(resultType);
     if (!matrixType || matrixType->getUse() != MatrixUse::Accumulator) {
@@ -11432,37 +11439,37 @@ SpirvEmitter::processIntrinsicLinAlg(const CallExpr *callExpr,
     return nullptr;
   }
 
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixGetCoordinate:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixGetCoordinate:
     emitError("dx::linalg MatrixGetCoordinate exposes implementation-specific "
               "lane-to-element ownership that SPV_KHR_cooperative_matrix does "
               "not expose", loc);
     return nullptr;
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixQueryAccumulatorLayout:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixQueryAccumulatorLayout:
     emitError("dx::linalg MatrixQueryAccumulatorLayout queries a D3D target "
               "layout; Vulkan exposes cooperative-matrix layouts through device "
               "properties rather than a shader instruction", loc);
     return nullptr;
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixLoadFromDescriptor:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixStoreToDescriptor:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixLoadFromDescriptor:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixStoreToDescriptor:
     emitError("dx::linalg ByteAddressBuffer cooperative-matrix load/store needs "
               "a typed or untyped pointer bridge at the byte offset; refusing "
               "to reinterpret a Vulkan storage-buffer pointer illegally", loc);
     return nullptr;
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixAccumulate:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixAccumulate:
     emitError("dx::linalg MatrixAccumulate changes cooperative-matrix Use "
               "(A/B to Accumulator); KHR arithmetic requires matching Use and "
               "there is no KHR use-conversion instruction", loc);
     return nullptr;
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixAccumulateToDescriptor:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixAccumulateToMemory:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixAccumulateToDescriptor:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixAccumulateToMemory:
     emitError("dx::linalg interlocked matrix accumulation has no "
               "SPV_KHR_cooperative_matrix atomic equivalent", loc);
     return nullptr;
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixVectorMultiply:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixVectorMultiplyAdd:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_MatrixOuterProduct:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_Convert:
-  case hlsl::IntrinsicOp::IOP___builtin_LinAlg_VectorAccumulateToDescriptor:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixVectorMultiply:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixVectorMultiplyAdd:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_MatrixOuterProduct:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_Convert:
+  case hlsl::IntrinsicOp::IOP_Dx__builtin_LinAlg_VectorAccumulateToDescriptor:
     emitError("this SM 6.10 dx::linalg operation belongs to the thread-scope "
               "cooperative-vector family; Vulkan has no KHR or AMD SPIR-V "
               "contract for it", loc);
@@ -17010,9 +17017,22 @@ SpirvInstruction *SpirvEmitter::processRawBufferLoad(const CallExpr *callExpr) {
     return nullptr;
   }
 
-  uint32_t alignment = callExpr->getNumArgs() == 1
-                           ? 4
-                           : getRawBufferAlignment(callExpr->getArg(1));
+  uint32_t alignment = 0;
+  if (callExpr->getNumArgs() == 1) {
+    // Compute the required scalar alignment from the loaded type.
+    // Per the Vulkan spec, PhysicalStorageBuffer alignment must be at least the
+    // largest scalar alignment within the type, this matches scalar layout
+    // rules. See:
+    // https://docs.vulkan.org/guide/latest/buffer_device_address_alignment.html
+    AlignmentSizeCalculator alignmentCalc(astContext, spirvOptions);
+    uint32_t stride = 0;
+    QualType bufferType = callExpr->getCallReturnType(astContext);
+    std::tie(alignment, std::ignore) =
+        alignmentCalc.getAlignmentAndSize(bufferType, SpirvLayoutRule::Scalar,
+                                          /*isRowMajor*/ llvm::None, &stride);
+  } else {
+    alignment = getRawBufferAlignment(callExpr->getArg(1));
+  }
   if (alignment == 0)
     return nullptr;
 
@@ -17113,9 +17133,22 @@ SpirvEmitter::processRawBufferStore(const CallExpr *callExpr) {
     return nullptr;
   }
 
-  uint32_t alignment = callExpr->getNumArgs() == 2
-                           ? 4
-                           : getRawBufferAlignment(callExpr->getArg(2));
+  uint32_t alignment = 0;
+  if (callExpr->getNumArgs() == 2) {
+    // Compute the required scalar alignment from the stored type.
+    // Per the Vulkan spec, PhysicalStorageBuffer alignment must be at least the
+    // largest scalar alignment within the type, this matches scalar layout
+    // rules. See:
+    // https://docs.vulkan.org/guide/latest/buffer_device_address_alignment.html
+    QualType bufferType = callExpr->getArg(1)->getType();
+    AlignmentSizeCalculator alignmentCalc(astContext, spirvOptions);
+    uint32_t stride = 0;
+    std::tie(alignment, std::ignore) =
+        alignmentCalc.getAlignmentAndSize(bufferType, SpirvLayoutRule::Scalar,
+                                          /*isRowMajor*/ llvm::None, &stride);
+  } else {
+    alignment = getRawBufferAlignment(callExpr->getArg(2));
+  }
   if (alignment == 0)
     return nullptr;
 
@@ -17561,7 +17594,8 @@ SpirvEmitter::doUnaryExprOrTypeTraitExpr(const UnaryExprOrTypeTraitExpr *expr) {
 }
 
 std::vector<SpirvInstruction *>
-SpirvEmitter::decomposeToScalars(SpirvInstruction *inst) {
+SpirvEmitter::decomposeToScalars(SpirvInstruction *inst,
+                                 bool includeMergedBitfields) {
   QualType elementType;
   uint32_t elementCount = 0;
   uint32_t numOfRows = 0;
@@ -17606,7 +17640,8 @@ SpirvEmitter::decomposeToScalars(SpirvInstruction *inst) {
       auto *element = spvBuilder.createCompositeExtract(
           elementType, inst, {i}, inst->getSourceLocation());
       element->setLayoutRule(inst->getLayoutRule());
-      auto decomposedElement = decomposeToScalars(element);
+      auto decomposedElement =
+          decomposeToScalars(element, includeMergedBitfields);
 
       // See how we can improve the performance by avoiding this copy.
       result.insert(result.end(), decomposedElement.begin(),
@@ -17626,20 +17661,22 @@ SpirvEmitter::decomposeToScalars(SpirvInstruction *inst) {
 
     forEachSpirvField(
         recordType, dyn_cast<StructType>(type),
-        [this, inst, &result](size_t spirvFieldIndex, const QualType &fieldType,
-                              const StructType::FieldInfo &fieldInfo) {
+        [this, inst, &result, includeMergedBitfields](
+            size_t spirvFieldIndex, const QualType &fieldType,
+            const StructType::FieldInfo &fieldInfo) {
           auto *field = spvBuilder.createCompositeExtract(
               fieldType, inst, {fieldInfo.fieldIndex},
               inst->getSourceLocation());
           field->setLayoutRule(inst->getLayoutRule());
-          auto decomposedField = decomposeToScalars(field);
+          auto decomposedField =
+              decomposeToScalars(field, includeMergedBitfields);
 
           // See how we can improve the performance by avoiding this copy.
           result.insert(result.end(), decomposedField.begin(),
                         decomposedField.end());
           return true;
         },
-        true);
+        includeMergedBitfields);
     return result;
   }
 

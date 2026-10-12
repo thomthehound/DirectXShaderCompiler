@@ -5,5 +5,5 @@
 [numthreads(1, 1, 1)]
 void main() {
   __builtin_LinAlgMatrix [[__LinAlgMatrix_Attributes(9, 16, 16, 0, 0)]] a;
-  __builtin_LinAlg_FillMatrix(a, 1.0f);
+  dx::__builtin_LinAlg_FillMatrix(a, false, 1.0f);
 }

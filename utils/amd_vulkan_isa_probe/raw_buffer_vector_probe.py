@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Qualify legacy and SPV_KHR_untyped_pointers ByteAddressBuffer codegen."""
+"""Qualify typed and SPV_KHR_untyped_pointers ByteAddressBuffer codegen."""
 
 from __future__ import annotations
 
@@ -12,9 +12,9 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 
-LEGACY_ATOMIC64_DIAGNOSTIC = (
+TYPED_ATOMIC64_DIAGNOSTIC = (
     "64-bit RWByteAddressBuffer atomics require SPV_KHR_untyped_pointers; "
-    "the legacy raw-buffer representation cannot provide a native 64-bit atomic pointer"
+    "the typed raw-buffer representation cannot provide a native 64-bit atomic pointer"
 )
 
 
@@ -180,7 +180,7 @@ def classify(case: Case) -> None:
             )
         else:
             ok = not untyped and c["OpLoad"] >= 8 and c["OpStore"] >= 8
-            case.classification = "typed-scalarized" if ok else "legacy-vector-changed"
+            case.classification = "typed-scalarized" if ok else "typed-vector-changed"
         return
 
     if case.kind == "atomic64":
@@ -228,7 +228,7 @@ def classify(case: Case) -> None:
                 and c["OpAtomicIAdd"] >= 1
             )
             case.classification = (
-                "typed-surface-compatible" if ok else "legacy-surface-changed"
+                "typed-surface-compatible" if ok else "typed-surface-changed"
             )
         return
 
@@ -248,19 +248,19 @@ def classify(case: Case) -> None:
             "untyped-alias-complete" if ok else "untyped-alias-partial"
         )
     else:
-        # Legacy aliases may remain composite or scalarize after optimization.
+        # Typed aliases may remain composite or scalarize after optimization.
         scalarized = c["OpLoad"] >= 4 and c["OpStore"] >= 4
         composite = (
             c["OpCompositeConstruct"] >= 1
             and c["OpCompositeExtract"] >= 4
         )
         ok = not untyped and (scalarized or composite)
-        case.classification = "typed-alias-compatible" if ok else "legacy-alias-changed"
+        case.classification = "typed-alias-compatible" if ok else "typed-alias-changed"
 
 
 def self_test() -> int:
     fixtures = {
-        ("legacy-vector", "vector"): """
+        ("typed-vector", "vector"): """
 %a=OpLoad %u %p
 %b=OpLoad %u %p
 %c=OpLoad %u %p
@@ -292,7 +292,7 @@ OpStore %p2 %a Aligned 4
 %p3=OpUntypedAccessChainKHR %up4 %Raw %o %z %n
 OpStore %p3 %b Aligned 4
 """,
-        ("legacy-surface", "surface"): """
+        ("typed-surface", "surface"): """
 %n=OpArrayLength %u %i 0
 %old=OpAtomicIAdd %u %p %scope %sem %n
 """,
@@ -305,7 +305,7 @@ OpExtension "SPV_KHR_untyped_pointers"
 %p=OpUntypedAccessChainKHR %up32 %Raw %o %z %idx
 %old=OpAtomicIAdd %u %p %scope %sem %n
 """,
-        ("legacy-alias", "alias"): """
+        ("typed-alias", "alias"): """
 %a=OpLoad %u %p
 %b=OpLoad %u %p
 %c=OpLoad %u %p
@@ -350,11 +350,11 @@ OpExtension "SPV_KHR_untyped_pointers"
 """,
     }
     expected = {
-        "legacy-vector": "typed-scalarized",
+        "typed-vector": "typed-scalarized",
         "untyped-vector": "untyped-vectorized",
-        "legacy-surface": "typed-surface-compatible",
+        "typed-surface": "typed-surface-compatible",
         "untyped-surface": "untyped-surface-complete",
-        "legacy-alias": "typed-alias-compatible",
+        "typed-alias": "typed-alias-compatible",
         "untyped-alias": "untyped-alias-complete",
         "untyped-atomic64": "untyped-atomic64-native",
     }
@@ -366,18 +366,18 @@ OpExtension "SPV_KHR_untyped_pointers"
             print(f"FAIL {name}: {case.classification} != {expected[name]}")
             return 1
 
-    legacy = Case("legacy-vector", "vector", "fixture")
+    typed = Case("typed-vector", "vector", "fixture")
     untyped = Case(
         "untyped-vector", "vector", "fixture", "SPV_KHR_untyped_pointers"
     )
-    legacy_cmd = make_compile_command(
-        "dxc", legacy, "vulkan1.2", "cs_6_6", Path("a.hlsl"), Path("a.spv")
+    typed_cmd = make_compile_command(
+        "dxc", typed, "vulkan1.2", "cs_6_6", Path("a.hlsl"), Path("a.spv")
     )
     untyped_cmd = make_compile_command(
         "dxc", untyped, "vulkan1.2", "cs_6_6", Path("a.hlsl"), Path("a.spv")
     )
-    if any(arg.startswith("-fspv-extension=") for arg in legacy_cmd):
-        print("FAIL legacy command unexpectedly enables an extension")
+    if any(arg.startswith("-fspv-extension=") for arg in typed_cmd):
+        print("FAIL typed command unexpectedly enables an extension")
         return 1
     if "-fspv-extension=SPV_KHR_untyped_pointers" not in untyped_cmd:
         print("FAIL untyped command does not enable SPV_KHR_untyped_pointers")
@@ -416,15 +416,15 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     untyped_ext = "SPV_KHR_untyped_pointers"
     specs = (
-        Case("legacy-vector", "vector", "shaders/raw_buffer_vector.hlsl"),
+        Case("typed-vector", "vector", "shaders/raw_buffer_vector.hlsl"),
         Case(
             "untyped-vector", "vector", "shaders/raw_buffer_vector.hlsl", untyped_ext
         ),
-        Case("legacy-surface", "surface", "shaders/raw_buffer_surface.hlsl"),
+        Case("typed-surface", "surface", "shaders/raw_buffer_surface.hlsl"),
         Case(
             "untyped-surface", "surface", "shaders/raw_buffer_surface.hlsl", untyped_ext
         ),
-        Case("legacy-alias", "alias", "shaders/raw_buffer_alias.hlsl"),
+        Case("typed-alias", "alias", "shaders/raw_buffer_alias.hlsl"),
         Case(
             "untyped-alias-local",
             "alias",
@@ -434,7 +434,7 @@ def main() -> int:
         Case(
             "untyped-alias", "alias", "shaders/raw_buffer_alias.hlsl", untyped_ext
         ),
-        Case("legacy-atomic64", "atomic64", "shaders/raw_buffer_atomic64.hlsl"),
+        Case("typed-atomic64", "atomic64", "shaders/raw_buffer_atomic64.hlsl"),
         Case(
             "untyped-atomic64",
             "atomic64",
@@ -464,13 +464,13 @@ def main() -> int:
         if cp.returncode or not spv.exists():
             append_process_notes(case, "dxc", cp)
             if (
-                case.name == "legacy-atomic64"
+                case.name == "typed-atomic64"
                 and cp.returncode
-                and LEGACY_ATOMIC64_DIAGNOSTIC in (cp.stdout + cp.stderr)
+                and TYPED_ATOMIC64_DIAGNOSTIC in (cp.stdout + cp.stderr)
             ):
-                case.classification = "legacy-atomic64-rejected"
-            elif case.name == "legacy-atomic64" and cp.returncode:
-                case.classification = "legacy-atomic64-wrong-rejection"
+                case.classification = "typed-atomic64-rejected"
+            elif case.name == "typed-atomic64" and cp.returncode:
+                case.classification = "typed-atomic64-wrong-rejection"
                 failed = True
             else:
                 case.classification = "compile-failed"
@@ -501,12 +501,12 @@ def main() -> int:
         print_case(case)
 
     by_name = {c.name: c for c in specs}
-    legacy_ready = all(
+    typed_ready = all(
         by_name[name].classification == expected
         for name, expected in (
-            ("legacy-vector", "typed-scalarized"),
-            ("legacy-surface", "typed-surface-compatible"),
-            ("legacy-alias", "typed-alias-compatible"),
+            ("typed-vector", "typed-scalarized"),
+            ("typed-surface", "typed-surface-compatible"),
+            ("typed-alias", "typed-alias-compatible"),
         )
     )
     vector_ready = by_name["untyped-vector"].classification == "untyped-vectorized"
@@ -515,18 +515,18 @@ def main() -> int:
     )
     alias_ready = by_name["untyped-alias"].classification == "untyped-alias-complete"
     atomic64_ready = (
-        by_name["legacy-atomic64"].classification == "legacy-atomic64-rejected"
+        by_name["typed-atomic64"].classification == "typed-atomic64-rejected"
         and by_name["untyped-atomic64"].classification == "untyped-atomic64-native"
     )
     contract_ready = (
-        legacy_ready
+        typed_ready
         and vector_ready
         and surface_ready
         and alias_ready
         and atomic64_ready
     )
     validation_ready = bool(val) and all(
-        c.val_rc == 0 for c in specs if c.name != "legacy-atomic64"
+        c.val_rc == 0 for c in specs if c.name != "typed-atomic64"
     )
 
     if args.require_untyped_vectorization and not vector_ready:
@@ -540,7 +540,7 @@ def main() -> int:
         "schema": 5,
         "target_env": args.target_env,
         "shader_profile": args.shader_profile,
-        "legacy_compatibility_ready": legacy_ready,
+        "typed_raw_buffer_ready": typed_ready,
         "untyped_vectorization_ready": vector_ready,
         "untyped_surface_ready": surface_ready,
         "untyped_alias_ready": alias_ready,
