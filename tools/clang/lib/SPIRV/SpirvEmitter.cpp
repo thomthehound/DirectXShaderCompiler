@@ -11194,8 +11194,9 @@ SpirvEmitter::processIntrinsicLinAlg(const CallExpr *callExpr,
       return nullptr;
     }
 
-    auto *value = loadIfGLValue(callExpr->getArg(1), range);
-    const QualType valueType = callExpr->getArg(1)->getType();
+    // Argument 1 specifies signedness; argument 2 is the scalar value.
+    auto *value = loadIfGLValue(callExpr->getArg(2), range);
+    const QualType valueType = callExpr->getArg(2)->getType();
     if (!isSameType(astContext, valueType, componentType)) {
       if (isFloatComponent(matrixType->getComponentType()))
         value = castToFloat(value, valueType, componentType, loc, range);
