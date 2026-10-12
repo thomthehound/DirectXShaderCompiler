@@ -8020,8 +8020,8 @@ constexpr IntrinsicLower gLowerTable[] = {
      DXIL::OpCode::LinAlgVectorAccumulateToDescriptor},
     {IntrinsicOp::IOP_VkAmdVertexParameter, UnsupportedVulkanIntrinsic,
      DXIL::OpCode::NumOpCodes},
-    {IntrinsicOp::IOP_VkAmdVertexParameterComponent,
-     UnsupportedVulkanIntrinsic, DXIL::OpCode::NumOpCodes},
+    {IntrinsicOp::IOP_VkAmdVertexParameterComponent, UnsupportedVulkanIntrinsic,
+     DXIL::OpCode::NumOpCodes},
 };
 constexpr size_t NumLowerTableEntries =
     sizeof(gLowerTable) / sizeof(gLowerTable[0]);
