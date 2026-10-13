@@ -107,7 +107,7 @@ jobs:
             -DHLSL_INCLUDE_TESTS=OFF
 
       - name: Build DXC and LIT utilities
-        run: cmake --build build-amd-spirv --target dxc dxcompiler dxildll FileCheck not --parallel 4
+        run: cmake --build build-amd-spirv --target dxc dxcompiler dxildll FileCheck not llvm-config --parallel 4
 
       - name: Smoke DXIL and SPIR-V
         run: |
@@ -155,7 +155,7 @@ jobs:
           call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -no_logo -arch=amd64 -host_arch=amd64
           cmake -S . -B build-amd-spirv -G Ninja -C cmake\caches\PredefinedParams.cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_SPIRV_CODEGEN=ON -DSPIRV_BUILD_TESTS=OFF -DLLVM_INCLUDE_TESTS=ON -DLLVM_BUILD_TESTS=OFF -DCLANG_INCLUDE_TESTS=ON -DHLSL_INCLUDE_TESTS=OFF
           if errorlevel 1 exit /b %errorlevel%
-          cmake --build build-amd-spirv --target dxc dxcompiler dxildll FileCheck not --parallel 4
+          cmake --build build-amd-spirv --target dxc dxcompiler dxildll FileCheck not llvm-config --parallel 4
           if errorlevel 1 exit /b %errorlevel%
 
       - name: Smoke DXIL and SPIR-V

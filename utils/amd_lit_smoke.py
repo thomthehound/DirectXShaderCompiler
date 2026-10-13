@@ -6,7 +6,7 @@ KHR cooperative-matrix SPIR-V, and a target-environment diagnostic. They are
 real LIT RUN lines executed by the repository's own test infrastructure, not
 equivalent AMD-specific Python assertions.
 
-Run after building dxc, dxcompiler, dxildll, FileCheck, and not with
+Run after building dxc, dxcompiler, dxildll, FileCheck, not, and llvm-config with
 LLVM_INCLUDE_TESTS=ON and CLANG_INCLUDE_TESTS=ON.
 """
 
@@ -70,7 +70,7 @@ def main() -> int:
         return 2
 
     bin_dir = build / "bin"
-    for tool in ("dxc", "FileCheck", "not"):
+    for tool in ("dxc", "FileCheck", "not", "llvm-config"):
         name = tool + (".exe" if sys.platform == "win32" else "")
         if not (bin_dir / name).is_file():
             print(f"FAIL: missing required LIT tool: {bin_dir / name}",
