@@ -1122,6 +1122,20 @@ int ReadDxcOpts(const OptTable *optionTable, unsigned flagsToInclude,
       Args.hasFlag(OPT_fspv_enable_amd_intrinsics, OPT_INVALID, false);
   opts.SpirvOptions.requireNativeIntrinsics =
       Args.hasFlag(OPT_fspv_require_native_intrinsics, OPT_INVALID, false);
+
+  // Neither option has a DXIL interpretation. Reject rather than silently
+  // accepting a spelling that cannot affect the selected output format.
+  if (!opts.GenSPIRV) {
+    if (opts.SpirvOptions.enableAmdIntrinsics) {
+      errors << "-fspv-enable-amd-intrinsics requires -spirv output";
+      return 1;
+    }
+    if (opts.SpirvOptions.requireNativeIntrinsics) {
+      errors << "-fspv-require-native-intrinsics requires -spirv output";
+      return 1;
+    }
+  }
+
   opts.SpirvOptions.flattenResourceArrays =
       Args.hasFlag(OPT_fspv_flatten_resource_arrays, OPT_INVALID, false);
   opts.SpirvOptions.reduceLoadSize =
@@ -1300,6 +1314,8 @@ int ReadDxcOpts(const OptTable *optionTable, unsigned flagsToInclude,
       Args.hasFlag(OPT_fspv_flatten_resource_arrays, OPT_INVALID, false) ||
       Args.hasFlag(OPT_fspv_reduce_load_size, OPT_INVALID, false) ||
       Args.hasFlag(OPT_fspv_reflect, OPT_INVALID, false) ||
+      Args.hasFlag(OPT_fspv_enable_amd_intrinsics, OPT_INVALID, false) ||
+      Args.hasFlag(OPT_fspv_require_native_intrinsics, OPT_INVALID, false) ||
       Args.hasFlag(OPT_fspv_fix_func_call_arguments, OPT_INVALID, false) ||
       Args.hasFlag(OPT_fspv_print_all, OPT_INVALID, false) ||
       Args.hasFlag(OPT_fspv_use_emulated_heap, OPT_INVALID, false) ||

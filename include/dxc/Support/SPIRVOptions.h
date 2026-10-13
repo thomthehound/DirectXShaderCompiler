@@ -57,12 +57,11 @@ struct SpirvCodeGenOptions {
   bool invertW = false; // Multiplicative inverse
   bool noWarnEmulatedFeatures = false;
   bool noWarnIgnoredFeatures = false;
-  // Prefer SPIR-V forms that preserve AMD hardware intent instead of broad
-  // compatibility emulation when Vulkan has a usable contract for them.
+  // Experimental packed OpUDot candidate for HLSL msad4. This may help AMD
+  // instruction recovery, but it does not represent native MQSAD in SPIR-V.
   bool enableAmdIntrinsics = false;
-  // Reject specialized HLSL intrinsics when SPIR-V cannot preserve their
-  // native hardware semantics. This is an audit mode: never silently expand a
-  // hardware operation into a slow scalar sequence.
+  // Reject HLSL msad4 when no native-equivalent SPIR-V opcode exists. This
+  // currently audits msad4 only, not all HLSL emulations or the driver's ISA.
   bool requireNativeIntrinsics = false;
   bool preserveBindings = false;
   bool preserveInterface = false;

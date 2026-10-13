@@ -17,8 +17,8 @@
 
 #include "dxc/DXIL/DxilConstants.h"
 #include "dxc/DXIL/DxilInterpolationMode.h"
-#include "dxc/HLSL/DxilSignatureAllocator.h"
 #include "dxc/DXIL/DxilTypeSystem.h"
+#include "dxc/HLSL/DxilSignatureAllocator.h"
 #include "dxc/Support/SPIRVOptions.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/HlslTypes.h"
@@ -2299,7 +2299,8 @@ SpirvInstruction *DeclResultIdMapper::getAmdVertexParameterComponentPtr(
 
   constexpr uint32_t kD3DInputRegisterCount = 32;
   hlsl::DxilSignatureAllocator packer(
-      kD3DInputRegisterCount, /*useMinPrecision=*/!spirvOptions.enable16BitTypes);
+      kD3DInputRegisterCount,
+      /*useMinPrecision=*/!spirvOptions.enable16BitTypes);
   packer.PackPrefixStable(elements, 0, kD3DInputRegisterCount);
 
   for (const auto &element : elementStorage) {

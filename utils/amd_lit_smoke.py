@@ -29,6 +29,7 @@ CASES = (
     "CodeGenSPIRV/coopmatrix.old.spirv.hlsl",
     "CodeGenSPIRV/amd.intrinsics.vertex-parameter-index.hlsl",
     "CodeGenSPIRV/amd.intrinsics.vertex-parameter-index.invalid.hlsl",
+    "CodeGenSPIRV/amd.experimental-option-scope.hlsl",
 )
 
 
