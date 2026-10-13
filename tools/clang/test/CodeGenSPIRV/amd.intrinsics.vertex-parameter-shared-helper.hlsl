@@ -8,7 +8,9 @@
 // SHARED: error: AMD vertex-parameter helper requires a unique shader entry point
 // UNIQUE-COUNT-4: InterpolateAtVertexAMD
 
-float4 readPixelInput() {
+// An exported helper is queued before either entry point when declared first.
+// Its uniquely owned case must not depend on source declaration order.
+export float4 readPixelInput() {
   return vk::AmdVertexParameter(1u, 0u);
 }
 
