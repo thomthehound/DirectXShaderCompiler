@@ -87,7 +87,8 @@ class ProbeEvidenceTest(unittest.TestCase):
         rc, report = self.execute("candidate_zoo.py")
         self.assertEqual(rc, 0)
         self.assertEqual(report["hit_count"], 0)
-        self.assertEqual(report["records"][0]["status"], "not-run")
+        self.assertEqual(report["records"][0]["status"], "isa-only")
+        self.assertEqual(report["records"][0]["runtime"], "not-run")
 
     def test_verified_isa_promoted(self):
         rc, report = self.execute("candidate_zoo.py", verify=True)

@@ -89,7 +89,9 @@ function Invoke-ProbeStep {
     param(
         [Parameter(Mandatory=$true)][string]$Name,
         [Parameter(Mandatory=$true)][ValidateSet("contract", "qualification")][string]$Category,
-        [Parameter(Mandatory=$true)][scriptblock]$Action
+        [Parameter(Mandatory=$true)][scriptblock]$Action,
+        [string]$EvidenceReport,
+        [ValidateSet("isa", "verified")][string]$ReportMode = "isa"
     )
 
     Write-Host ""
@@ -107,8 +109,40 @@ function Invoke-ProbeStep {
         Write-Host $exception -ForegroundColor Red
     }
 
+    # A zero process exit code establishes that the tool ran, not that the
+    # requested device capability or specialized instruction was observed.
+    $evidenceStatus = if ($Category -eq "contract") { "not-applicable" } else { "unclassified" }
+    if ($Category -eq "qualification" -and $EvidenceReport) {
+        try {
+            if (-not (Test-Path -LiteralPath $EvidenceReport -PathType Leaf)) {
+                throw "Missing qualification report: $EvidenceReport"
+            }
+            $evidence = Get-Content -LiteralPath $EvidenceReport -Raw | ConvertFrom-Json
+            if ($evidence.schema -ne 2) {
+                throw "Unsupported qualification report schema: $EvidenceReport"
+            }
+            switch ([string]$evidence.overall_status) {
+                "completed" {
+                    $evidenceStatus = if ($ReportMode -eq "verified") { "runtime-verified" } else { "isa-only" }
+                }
+                "completed-with-unsupported" { $evidenceStatus = "partially-unsupported" }
+                "isa-only" { $evidenceStatus = "isa-only" }
+                "failed" {
+                    $evidenceStatus = "failed"
+                    if ($rc -eq 0) { $rc = 2 }
+                }
+                default { throw "Unknown qualification result in $EvidenceReport" }
+            }
+        } catch {
+            $evidenceStatus = "invalid-report"
+            if ($rc -eq 0) { $rc = 2 }
+            $message = $_.Exception.Message
+            $exception = if ($exception) { "$exception; $message" } else { $message }
+        }
+    }
+
     if ($rc -eq 0) {
-        $status = "ok"
+        $status = if ($Category -eq "contract") { "passed" } else { "executed" }
     } elseif ($Category -eq "contract") {
         $status = "failed"
     } else {
@@ -119,12 +153,14 @@ function Invoke-ProbeStep {
         name = $Name
         category = $Category
         status = $status
+        evidence_status = $evidenceStatus
+        evidence_report = $EvidenceReport
         exit_code = [int]$rc
         duration_seconds = [math]::Round(((Get-Date) - $started).TotalSeconds, 3)
         exception = $exception
     }
 
-    Write-Host ("[AMD SPIR-V] {0}: {1} (exit {2})" -f $Name, $status.ToUpperInvariant(), $rc)
+    Write-Host ("[AMD SPIR-V] {0}: {1} (evidence: {2}, exit {3})" -f $Name, $status.ToUpperInvariant(), $evidenceStatus, $rc)
 }
 
 Invoke-ProbeStep "SAD/QSad semantic proof" "contract" {
@@ -156,7 +192,7 @@ Invoke-ProbeStep "Runtime math semantic verification" "contract" {
     New-Item -ItemType Directory -Force -Path $SemanticDir | Out-Null
     $SemanticSpv = Join-Path $SemanticDir "math_execute.spv"
     $SemanticShader = Join-Path $ProbeRoot "shaders/math_execute.hlsl"
-    & $Dxc -spirv -T cs_6_2 -E main -fspv-target-env=vulkan1.2 -fspv-extension=AMD `
+    & $Dxc -spirv -T cs_6_2 -E main '-fspv-target-env=vulkan1.2' '-fspv-extension=AMD' `
         $SemanticShader -Fo $SemanticSpv
     if ($LASTEXITCODE -ne 0) { return }
     & $MathVerify $SemanticSpv
@@ -200,7 +236,7 @@ $DotArgs = @(
 )
 Invoke-ProbeStep "Packed integer + packed-half FP16 dot native recovery" "qualification" {
     & $Python @DotArgs
-}
+} -EvidenceReport (Join-Path $OutDir "dot/dot_report.json") -ReportMode "isa"
 
 $DotSatArgs = @(
     (Join-Path $ProbeRoot "dot_saturation_probe.py"),
@@ -332,7 +368,7 @@ $ZooArgs = @(
 )
 Invoke-ProbeStep "Empirical candidate zoo + runtime oracle" "qualification" {
     & $Python @ZooArgs
-}
+} -EvidenceReport (Join-Path $OutDir "candidate-zoo/candidate_zoo_report.json") -ReportMode "verified"
 
 $MathArgs = @(
     (Join-Path $ProbeRoot "math_probe.py"),
@@ -346,6 +382,9 @@ Invoke-ProbeStep "Core math native recovery" "qualification" {
 
 $ContractFailures = @($script:Results | Where-Object { $_.category -eq "contract" -and $_.exit_code -ne 0 })
 $QualificationIncomplete = @($script:Results | Where-Object { $_.category -eq "qualification" -and $_.exit_code -ne 0 })
+$QualificationUnsupported = @($script:Results | Where-Object { $_.evidence_status -eq "partially-unsupported" })
+$QualificationUnclassified = @($script:Results | Where-Object { $_.category -eq "qualification" -and $_.evidence_status -eq "unclassified" })
+$QualificationIsaOnly = @($script:Results | Where-Object { $_.evidence_status -eq "isa-only" })
 if ($ContractFailures.Count -gt 0) {
     $OverallStatus = "failed-contract"
     $FinalExitCode = 1
@@ -353,14 +392,17 @@ if ($ContractFailures.Count -gt 0) {
     $OverallStatus = "incomplete-qualification"
     $FinalExitCode = 2
 } else {
-    $OverallStatus = "complete"
+    # All requested processes ran successfully. Hardware evidence is classified
+    # separately; an unsupported or unclassified case is not a qualified result.
+    $OverallStatus = "steps-executed"
     $FinalExitCode = 0
 }
 
 $FinishedUtc = (Get-Date).ToUniversalTime()
 $Summary = [PSCustomObject]@{
-    schema = 1
+    schema = 2
     overall_status = $OverallStatus
+    qualification_evidence_status = if ($QualificationUnclassified.Count -gt 0 -or $QualificationIsaOnly.Count -gt 0 -or $QualificationUnsupported.Count -gt 0) { "partial" } else { "classified" }
     started_utc = $StartedUtc.ToString("o")
     finished_utc = $FinishedUtc.ToString("o")
     duration_seconds = [math]::Round(($FinishedUtc - $StartedUtc).TotalSeconds, 3)
@@ -373,6 +415,9 @@ $Summary = [PSCustomObject]@{
     rga_live = [bool]$RgaLive
     contract_failures = $ContractFailures.Count
     qualification_incomplete = $QualificationIncomplete.Count
+    qualification_unsupported = $QualificationUnsupported.Count
+    qualification_unclassified = $QualificationUnclassified.Count
+    qualification_isa_only = $QualificationIsaOnly.Count
     steps = @($script:Results)
 }
 
@@ -387,11 +432,14 @@ $lines = @(
     "vulkan_sdk: $VulkanSdk",
     "contract_failures: $($ContractFailures.Count)",
     "qualification_incomplete: $($QualificationIncomplete.Count)",
+    "qualification_unsupported: $($QualificationUnsupported.Count)",
+    "qualification_unclassified: $($QualificationUnclassified.Count)",
+    "qualification_isa_only: $($QualificationIsaOnly.Count)",
     "",
     "steps:"
 )
 foreach ($result in $script:Results) {
-    $lines += ("  [{0}] {1} - {2} (exit {3}, {4}s)" -f $result.category, $result.name, $result.status, $result.exit_code, $result.duration_seconds)
+    $lines += ("  [{0}] {1} - {2}, evidence={3} (exit {4}, {5}s)" -f $result.category, $result.name, $result.status, $result.evidence_status, $result.exit_code, $result.duration_seconds)
     if ($result.exception) {
         $lines += "    exception: $($result.exception)"
     }
@@ -400,7 +448,7 @@ $lines | Set-Content -LiteralPath $SummaryText -Encoding utf8
 
 Write-Host ""
 Write-Host "================ AMD SPIR-V qualification summary ================"
-$script:Results | Format-Table category, status, exit_code, name -AutoSize
+$script:Results | Format-Table category, status, evidence_status, exit_code, name -AutoSize
 Write-Host "Overall: $OverallStatus"
 Write-Host "Summary: $SummaryText"
 

@@ -192,7 +192,7 @@ def main() -> int:
             "name": candidate.name,
             "family": candidate.family,
             "status": ("completed" if runtime_status == "pass"
-                       else "not-run" if runtime_status == "not-run"
+                       else "isa-only" if runtime_status == "not-run"
                        else "failed"),
             "compile": "pass",
             "runtime": runtime_status,
