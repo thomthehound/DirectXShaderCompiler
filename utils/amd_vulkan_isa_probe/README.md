@@ -14,6 +14,22 @@ For the included HLSL `msad4` experiment, the exact one-instruction target is
 SAD-family mnemonics are preserved as specialized partial lowering, and
 ordinary arithmetic is not relabeled as native support.
 
+## Experimental AMD SPIR-V flags
+
+The two opt-in `-fspv-` AMD flags require `-spirv`; they are rejected for DXIL
+output rather than accepted and ignored.
+
+- `-fspv-enable-amd-intrinsics` currently selects a packed `OpUDot` candidate
+  for `msad4`. This does **not** map to a dedicated SPIR-V MQSAD operation and
+  does **not** establish native Radeon `v_mqsad_u32_u8` generation.
+- `-fspv-require-native-intrinsics` currently rejects the non-native
+  `msad4` expansion and candidate. It is an incomplete representability audit,
+  **not** a guarantee that every HLSL operation in the shader lowered to native
+  hardware instructions. It cannot substitute for live-driver ISA qualification.
+
+The flags can be combined: the strict rejection takes precedence for `msad4`.
+Standardized packed dot operations retain their ordinary SPIR-V lowering.
+
 ## Cooperative-matrix qualification scope
 
 The descriptor-backed `dx::linalg` shape shader is intentionally rejected by

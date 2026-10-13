@@ -124,4 +124,3 @@ unsigned PackDxilSignature(DxilSignature &sig, DXIL::PackingStrategy packing) {
   return rowsUsed;
 }
 } // namespace hlsl
-

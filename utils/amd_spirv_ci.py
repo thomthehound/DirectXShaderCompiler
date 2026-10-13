@@ -438,6 +438,34 @@ def main() -> int:
         ),
         "msad4 has a native AMD mapping to v_mqsad_u32_u8",
     )
+    require_failure(
+        "strict mode overrides experimental msad4 candidate",
+        compile_shader(
+            "intrinsics.msad4.amd.hlsl",
+            "-T", "vs_6_0", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-enable-amd-intrinsics",
+            "-fspv-require-native-intrinsics",
+        ),
+        "msad4 has a native AMD mapping to v_mqsad_u32_u8",
+    )
+    require_failure(
+        "experimental msad4 flag rejected for DXIL",
+        compile_shader(
+            "intrinsics.msad4.amd.hlsl",
+            "-T", "vs_6_0", "-E", "main", "-fcgl",
+            "-fspv-enable-amd-intrinsics",
+        ),
+        "-fspv-enable-amd-intrinsics requires -spirv output",
+    )
+    require_failure(
+        "native-SPIR-V audit flag rejected for DXIL",
+        compile_shader(
+            "intrinsics.msad4.amd.hlsl",
+            "-T", "vs_6_0", "-E", "main", "-fcgl",
+            "-fspv-require-native-intrinsics",
+        ),
+        "-fspv-require-native-intrinsics requires -spirv output",
+    )
 
     require_success(
         "KHR cooperative matrix",

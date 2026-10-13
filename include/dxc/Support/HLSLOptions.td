@@ -402,9 +402,9 @@ def fspv_debug_EQ : Joined<["-"], "fspv-debug=">, Group<spirv_Group>, Flags<[Cor
 def fspv_extension_EQ : Joined<["-"], "fspv-extension=">, Group<spirv_Group>, Flags<[CoreOption, DriverOption]>,
   HelpText<"Specify SPIR-V extension permitted to use">;
 def fspv_enable_amd_intrinsics : Flag<["-"], "fspv-enable-amd-intrinsics">, Group<spirv_Group>, Flags<[CoreOption, DriverOption]>,
-  HelpText<"Prefer AMD-oriented SPIR-V lowerings that preserve specialized hardware intent where Vulkan has a legal contract">;
+  HelpText<"Experiment with packed integer-dot-product lowering of msad4 in SPIR-V; this does not guarantee a native MQSAD instruction">;
 def fspv_require_native_intrinsics : Flag<["-"], "fspv-require-native-intrinsics">, Group<spirv_Group>, Flags<[CoreOption, DriverOption]>,
-  HelpText<"Reject specialized HLSL intrinsics that cannot be represented by a native-preserving SPIR-V contract">;
+  HelpText<"Audit native SPIR-V representability of msad4 (currently the only rejected emulation); not a hardware-ISA guarantee">;
 def fspv_target_env_EQ : Joined<["-"], "fspv-target-env=">, Group<spirv_Group>, Flags<[CoreOption, DriverOption]>,
   HelpText<"Specify the target environment: vulkan1.0 (default), vulkan1.1, vulkan1.1spirv1.4, vulkan1.2, vulkan1.3, or universal1.5">;
 def fspv_flatten_resource_arrays: Flag<["-"], "fspv-flatten-resource-arrays">, Group<spirv_Group>, Flags<[CoreOption, DriverOption]>,
