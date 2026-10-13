@@ -79,7 +79,7 @@ def main() -> int:
 
     command = [
         sys.executable, str(ROOT / "utils/lit/lit.py"),
-        "-sv", "--param", f"clang_site_config={site}",
+        "-v", "--param", f"clang_site_config={site}",
         *(str(TEST_ROOT / case) for case in CASES),
     ]
     env = os.environ.copy()
