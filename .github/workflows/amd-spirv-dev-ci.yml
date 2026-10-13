@@ -5,6 +5,9 @@ on:
     branches:
       - amd-spirv-native-intrinsics-dev
       - amd-sad-msad
+  pull_request:
+    branches:
+      - amd-sad-msad
   workflow_dispatch:
 
 # This is an integration branch with frequent incremental commits. Do not burn
@@ -65,12 +68,12 @@ jobs:
       - name: Check current DXC intrinsics and AMD source contracts
         run: |
           python3 utils/amd_upstream_contract_audit.py
+          python3 -m unittest discover -s utils/amd_vulkan_isa_probe -p 'test_probe_evidence.py'
           python3 utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py --self-test
 
   build-linux:
     name: Linux compiler + contracts
     needs: preflight
-    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[full-ci]') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -125,7 +128,6 @@ jobs:
   build-windows:
     name: Windows compiler + contracts
     needs: preflight
-    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[full-ci]') }}
     runs-on: windows-latest
     timeout-minutes: 120
     steps:

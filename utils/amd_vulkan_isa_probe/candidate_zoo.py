@@ -104,12 +104,18 @@ def main() -> int:
 
     records: list[dict] = []
     hits: list[dict] = []
-    runtime_failures = 0
+    runtime_mismatches = 0
+    runtime_errors = 0
+    compile_failures = 0
+    probe_failures = 0
+    unsupported_count = 0
 
     for candidate in candidates:
         stem = f"{candidate.index:02d}_{candidate.name}"
         spv = out_dir / f"{stem}.spv"
         isa = out_dir / f"{stem}.isa"
+        spv.unlink(missing_ok=True)
+        isa.unlink(missing_ok=True)
         compiled = run([
             dxc,
             "-spirv", "-T", "cs_6_2", "-E", "main",
@@ -117,11 +123,14 @@ def main() -> int:
             f"-DAPUSR_CANDIDATE={candidate.index}",
             str(shader), "-Fo", str(spv),
         ])
-        if compiled.returncode != 0:
+        if compiled.returncode != 0 or not spv.is_file() or spv.stat().st_size == 0:
+            compile_failures += 1
             records.append({
                 "index": candidate.index,
                 "name": candidate.name,
                 "family": candidate.family,
+                "status": "failed",
+                "stage": "compile",
                 "compile": "failed",
                 "stderr": compiled.stderr[-4000:],
             })
@@ -135,26 +144,44 @@ def main() -> int:
             runtime_output = (verified.stdout + "\n" + verified.stderr).strip()
             if verified.returncode == 0:
                 runtime_status = "pass"
+            elif verified.returncode == 1:
+                runtime_status = "mismatch"
+                runtime_mismatches += 1
             else:
-                runtime_status = "failed"
-                runtime_failures += 1
+                runtime_status = "error"
+                runtime_errors += 1
 
         probed = run([driver_probe, str(spv), str(isa)])
-        if probed.returncode != 0 or not isa.exists():
+        unsupported_driver = probed.returncode in (3, 4, 5, 6)
+        probe_failed = (
+            not unsupported_driver
+            and (probed.returncode != 0 or not isa.is_file() or isa.stat().st_size == 0)
+        )
+        if unsupported_driver or probe_failed:
+            if unsupported_driver:
+                unsupported_count += 1
+            else:
+                probe_failures += 1
             records.append({
                 "index": candidate.index,
                 "name": candidate.name,
                 "family": candidate.family,
+                "status": ("failed" if probe_failed or runtime_status in ("mismatch", "error")
+                           else "unsupported"),
                 "compile": "pass",
                 "runtime": runtime_status,
+                "runtime_returncode": (
+                    verified.returncode if runtime_verifier is not None else None
+                ),
                 "runtime_output": runtime_output[-4000:],
-                "probe": "failed",
+                "probe": "unsupported" if unsupported_driver else "failed",
+                "probe_returncode": probed.returncode,
                 "stdout": probed.stdout[-4000:],
                 "stderr": probed.stderr[-4000:],
             })
             print(
                 f"{candidate.index:02d} {candidate.name:<34} "
-                f"runtime={runtime_status} PROBE FAIL"
+                f"runtime={runtime_status} probe={'UNSUPPORTED' if unsupported_driver else 'FAILED'}"
             )
             continue
 
@@ -164,8 +191,14 @@ def main() -> int:
             "index": candidate.index,
             "name": candidate.name,
             "family": candidate.family,
+            "status": ("completed" if runtime_status == "pass"
+                       else "not-run" if runtime_status == "not-run"
+                       else "failed"),
             "compile": "pass",
             "runtime": runtime_status,
+            "runtime_returncode": (
+                verified.returncode if runtime_verifier is not None else None
+            ),
             "runtime_output": runtime_output[-4000:],
             "probe": "pass",
             "specialized": found,
@@ -173,7 +206,7 @@ def main() -> int:
             "isa": str(isa),
         }
         records.append(record)
-        if found and runtime_status != "failed":
+        if found and runtime_status == "pass":
             hits.append(record)
         label = ", ".join(found) if found else "no targeted mnemonic"
         print(
@@ -182,17 +215,28 @@ def main() -> int:
         )
 
     report = {
+        "schema": 2,
         "shader": str(shader),
         "candidate_count": len(candidates),
+        "overall_status": (
+            "failed" if compile_failures or runtime_mismatches or runtime_errors or probe_failures
+            else "completed-with-unsupported" if unsupported_count
+            else "isa-only" if runtime_verifier is None
+            else "completed"
+        ),
         "hit_count": len(hits),
-        "runtime_failures": runtime_failures,
+        "runtime_failures": runtime_mismatches + runtime_errors,
+        "runtime_mismatches": runtime_mismatches,
+        "runtime_errors": runtime_errors,
+        "compile_failures": compile_failures,
+        "probe_failures": probe_failures,
+        "unsupported_count": unsupported_count,
         "hits": hits,
         "records": records,
         "policy": (
-            "A promoted hit requires a specialized Radeon ISA mnemonic and no "
-            "runtime semantic failure. It still does not license substituting the "
-            "expression into APUSR until the relevant APUSR consumer passes a "
-            "differential/numerical and performance A/B test."
+            "A promoted hit requires specialized Radeon ISA and passing runtime "
+            "semantic verification. Unverified ISA observations are never hits. "
+            "Consumer-level differential and performance A/B tests remain required."
         ),
     }
     (out_dir / "candidate_zoo_report.json").write_text(
@@ -203,11 +247,13 @@ def main() -> int:
     )
 
     print(
-        f"candidate zoo: {len(hits)} promoted hit(s) / {len(candidates)} candidate(s); "
-        f"runtime failures={runtime_failures}"
+        f"candidate zoo: {len(hits)} verified ISA hit(s) / {len(candidates)} candidate(s); "
+        f"runtime mismatches={runtime_mismatches}, verifier errors={runtime_errors}, "
+        f"probe failures={probe_failures}, unsupported={unsupported_count}"
     )
-    # Empirical misses are useful data. A runtime semantic mismatch is not.
-    return 1 if runtime_failures else 0
+    if compile_failures or runtime_mismatches:
+        return 1
+    return 2 if runtime_errors or probe_failures else 0
 
 
 if __name__ == "__main__":
