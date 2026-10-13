@@ -212,6 +212,25 @@ def main() -> int:
         counts=((r"\bInterpolateAtVertexAMD\b", 4),),
     )
 
+    require_success(
+        "AMD raw vertex-parameter helper with one entry",
+        compile_shader(
+            "amd.intrinsics.vertex-parameter-helper.hlsl",
+            "-T", "ps_6_0", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-extension=AMD",
+        ),
+        required=(r'OpExtension "SPV_AMD_shader_explicit_vertex_parameter"',),
+        counts=((r"\bInterpolateAtVertexAMD\b", 4),),
+    )
+    require_failure(
+        "AMD raw vertex-parameter shared helper has ambiguous entry owner",
+        compile_shader(
+            "amd.intrinsics.vertex-parameter-shared-helper.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-extension=AMD",
+        ),
+        "AMD vertex-parameter helper requires a unique shader entry point",
+    )
     require_failure(
         "AMD raw vertex-parameter register bounds",
         compile_shader(

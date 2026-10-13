@@ -33,6 +33,7 @@
 #include "clang/SPIRV/FeatureManager.h"
 #include "clang/SPIRV/SpirvBuilder.h"
 #include "clang/SPIRV/SpirvContext.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 
 #include "ConstEvaluator.h"
@@ -1556,6 +1557,15 @@ private:
 
   /// A queue of FunctionInfo reachable from all the entry functions.
   std::vector<const FunctionInfo *> workQueue;
+
+  // Raw AMD pixel-input register lookup depends on the calling entry point.
+  // The emitter shares non-entry functions across library entry points, so a
+  // helper with multiple owners cannot resolve a unique input signature.
+  // Values are the unique entry declaration, or nullptr if ambiguous.
+  llvm::DenseMap<const FunctionDecl *, const FunctionDecl *>
+      amdParameterEntryOwners;
+  void collectAmdParameterEntryOwners();
+  SpirvFunction *getAmdParameterEntryFunction(SourceLocation loc);
 
   /// Get SPIR-V entrypoint name for the given FunctionInfo.
   llvm::StringRef getEntryPointName(const FunctionInfo *entryInfo);

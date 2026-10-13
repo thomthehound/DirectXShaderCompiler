@@ -2232,7 +2232,8 @@ SpirvInstruction *getAmdParameterComponentPtr(
 
 SpirvInstruction *DeclResultIdMapper::getAmdVertexParameterComponentPtr(
     uint32_t parameterIndex, uint32_t componentIndex,
-    QualType *componentType, SourceLocation loc) {
+    SpirvFunction *owningEntry, QualType *componentType, SourceLocation loc) {
+  assert(owningEntry);
   assert(componentType);
   if (!spvContext.isPS()) {
     emitError("AMD vertex-parameter access is only valid in a pixel shader",
@@ -2245,8 +2246,8 @@ SpirvInstruction *DeclResultIdMapper::getAmdVertexParameterComponentPtr(
 
   for (const auto &stageVar : stageVars) {
     // A library module may contain several entry-point interfaces. D3D pixel
-    // parameter registers are local to the current entry point, not global.
-    if (stageVar.getEntryPoint() && stageVar.getEntryPoint() != entryFunction)
+    // parameter registers are local to the owning entry point, not global.
+    if (stageVar.getEntryPoint() && stageVar.getEntryPoint() != owningEntry)
       continue;
     if (!stageVar.getSigPoint() ||
         stageVar.getSigPoint()->GetKind() != hlsl::SigPoint::Kind::PSIn ||

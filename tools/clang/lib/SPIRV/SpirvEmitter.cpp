@@ -29,6 +29,7 @@
 #include "clang/SPIRV/String.h"
 #include "clang/Sema/Sema.h"
 #include "llvm/ADT/APInt.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/Casting.h"
@@ -763,6 +764,79 @@ llvm::StringRef SpirvEmitter::getEntryPointName(const FunctionInfo *entryInfo) {
   return entrypointName;
 }
 
+// Map each reachable HLSL function to its unique shader entry point before
+// emitting any function bodies. The work queue translates shared helpers once
+// and cannot supply their caller's entry point when their bodies are emitted.
+// Traverse the source call graph instead of relying on the last wrapper built.
+// Indirect/unresolved calls are not used to infer ownership; a helper with no
+// provable entry owner is rejected at its raw parameter access.
+void SpirvEmitter::collectAmdParameterEntryOwners() {
+  amdParameterEntryOwners.clear();
+  for (const auto *entryInfo : workQueue) {
+    if (!entryInfo->isEntryFunction)
+      continue;
+    const auto *root = dyn_cast<FunctionDecl>(entryInfo->funcDecl);
+    if (!root)
+      continue;
+
+    llvm::DenseSet<const FunctionDecl *> visited;
+    llvm::SmallVector<const FunctionDecl *, 32> pending(1, root);
+    while (!pending.empty()) {
+      const FunctionDecl *fn = pending.pop_back_val();
+      const FunctionDecl *key = fn->getCanonicalDecl();
+      if (!visited.insert(key).second)
+        continue;
+
+      auto previous = amdParameterEntryOwners.find(key);
+      if (previous == amdParameterEntryOwners.end())
+        amdParameterEntryOwners[key] = root;
+      else if (previous->second != root)
+        previous->second = nullptr;
+
+      const FunctionDecl *definition = fn->getDefinition();
+      if (!definition || !definition->getBody())
+        continue;
+
+      llvm::SmallVector<const Stmt *, 64> statements;
+      statements.push_back(definition->getBody());
+      while (!statements.empty()) {
+        const Stmt *stmt = statements.pop_back_val();
+        if (const auto *call = dyn_cast<CallExpr>(stmt))
+          if (const auto *callee = call->getDirectCallee())
+            pending.push_back(callee);
+        for (const Stmt *child : stmt->children())
+          if (child)
+            statements.push_back(child);
+      }
+    }
+  }
+}
+
+SpirvFunction *
+SpirvEmitter::getAmdParameterEntryFunction(SourceLocation loc) {
+  if (!curFunction) {
+    emitError("AMD vertex-parameter access requires a shader entry point",
+              loc);
+    return nullptr;
+  }
+  const auto owner =
+      amdParameterEntryOwners.find(curFunction->getCanonicalDecl());
+  if (owner == amdParameterEntryOwners.end() || !owner->second) {
+    emitError("AMD vertex-parameter helper requires a unique shader entry "
+              "point; shared or unowned helpers cannot resolve D3D input "
+              "registers",
+              loc);
+    return nullptr;
+  }
+  const auto entry = functionInfoMap.find(owner->second);
+  if (entry == functionInfoMap.end() || !entry->second->entryFunction) {
+    emitError("AMD vertex-parameter entry-point interface is unavailable",
+              loc);
+    return nullptr;
+  }
+  return entry->second->entryFunction;
+}
+
 void SpirvEmitter::HandleTranslationUnit(ASTContext &context) {
   // Stop translating if there are errors in previous compilation stages.
   if (context.getDiagnostics().hasErrorOccurred())
@@ -809,6 +883,10 @@ void SpirvEmitter::HandleTranslationUnit(ASTContext &context) {
     if (context.getDiagnostics().hasErrorOccurred())
       return;
   }
+
+  // Resolve helper ownership while the call graph still represents HLSL
+  // declarations, before the entry wrappers change the current entry pointer.
+  collectAmdParameterEntryOwners();
 
   // Translate all functions reachable from the entry function.
   // The queue can grow in the meanwhile; so need to keep evaluating
@@ -13233,9 +13311,12 @@ bool evaluateAmdImmediate(const Expr *expr, ASTContext &astContext,
 SpirvInstruction *SpirvEmitter::emitAmdVertexParameterComponent(
     uint32_t vertexIndex, uint32_t parameterIndex, uint32_t componentIndex,
     SourceLocation loc, SourceRange range) {
+  auto *owningEntry = getAmdParameterEntryFunction(loc);
+  if (!owningEntry)
+    return nullptr;
   QualType componentType;
   auto *componentPtr = declIdMapper.getAmdVertexParameterComponentPtr(
-      parameterIndex, componentIndex, &componentType, loc);
+      parameterIndex, componentIndex, owningEntry, &componentType, loc);
   if (!componentPtr)
     return nullptr;
 

@@ -249,7 +249,7 @@ public:
   /// SPIR-V Input pointer. The returned componentType is the pointee type.
   SpirvInstruction *getAmdVertexParameterComponentPtr(
       uint32_t parameterIndex, uint32_t componentIndex,
-      QualType *componentType, SourceLocation loc);
+      SpirvFunction *owningEntry, QualType *componentType, SourceLocation loc);
 
   /// \brief Creates stage variables for raytracing.
   SpirvVariable *createRayTracingNVStageVar(spv::StorageClass sc,
