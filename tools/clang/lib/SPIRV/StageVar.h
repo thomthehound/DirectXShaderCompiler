@@ -18,6 +18,8 @@
 #include <string>
 
 namespace clang {
+class NamedDecl;
+
 namespace spirv {
 
 /// A struct containing information about a particular HLSL semantic.
@@ -59,6 +61,11 @@ public:
 
   const hlsl::SigPoint *getSigPoint() const { return sigPoint; }
   const SemanticInfo &getSemanticInfo() const { return semanticInfo; }
+
+  // Original HLSL declaration, independent of the SPIR-V interface variable
+  // and its (possibly different) interface type/semantic.
+  const NamedDecl *getSourceDecl() const { return sourceDecl; }
+  void setSourceDecl(const NamedDecl *decl) { sourceDecl = decl; }
   std::string getSemanticStr() const;
 
   QualType getAstType() const { return type; }
@@ -104,6 +111,7 @@ private:
   QualType type;
   /// SPIR-V instruction.
   SpirvVariable *value;
+  const NamedDecl *sourceDecl = nullptr;
   /// Indicates whether this stage variable should be a SPIR-V builtin.
   bool isBuiltin;
   /// SPIR-V storage class this stage variable belongs to.
