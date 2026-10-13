@@ -39,6 +39,7 @@ jobs:
             utils/apusr_amd_qualify.py \
             utils/apusr_amd_experimental_inventory.py \
             utils/amd_spirv_ci.py \
+            utils/amd_lit_smoke.py \
             utils/amd_math_ci.py \
             utils/amd_subgroup_ci.py \
             utils/amd_dxil_ci.py \
@@ -69,6 +70,7 @@ jobs:
       - name: Check current DXC intrinsics and AMD source contracts
         run: |
           python3 utils/amd_upstream_contract_audit.py
+          python3 utils/amd_lit_smoke.py --self-test
           python3 -m unittest discover -s utils/amd_vulkan_isa_probe -p 'test_probe_evidence.py'
           python3 -m unittest discover -s utils/amd_vulkan_isa_probe -p 'test_khr_cooperative_matrix_control.py'
           python3 utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py --self-test
@@ -100,12 +102,12 @@ jobs:
             -DLLVM_USE_LINKER=lld \
             -DENABLE_SPIRV_CODEGEN=ON \
             -DSPIRV_BUILD_TESTS=OFF \
-            -DLLVM_INCLUDE_TESTS=OFF \
-            -DCLANG_INCLUDE_TESTS=OFF \
+            -DLLVM_INCLUDE_TESTS=ON \
+            -DCLANG_INCLUDE_TESTS=ON \
             -DHLSL_INCLUDE_TESTS=OFF
 
-      - name: Build DXC
-        run: cmake --build build-amd-spirv --target dxc dxcompiler dxildll --parallel 4
+      - name: Build DXC and LIT utilities
+        run: cmake --build build-amd-spirv --target dxc dxcompiler dxildll FileCheck not --parallel 4
 
       - name: Smoke DXIL and SPIR-V
         run: |
@@ -128,6 +130,11 @@ jobs:
           python3 utils/amd_contract_suite.py --dxc "$PWD/build-amd-spirv/bin/dxc"
           python3 utils/amd_vulkan_isa_probe/khr_cooperative_matrix_control.py --dxc "$PWD/build-amd-spirv/bin/dxc" --out-dir "$RUNNER_TEMP/khr-matrix-control"
 
+      - name: Focused upstream LIT and FileCheck regressions
+        run: |
+          set -euo pipefail
+          python3 utils/amd_lit_smoke.py --build-dir build-amd-spirv
+
   build-windows:
     name: Windows compiler + contracts
     needs: preflight
@@ -146,9 +153,9 @@ jobs:
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%i"
           if not defined VSINSTALL exit /b 1
           call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -no_logo -arch=amd64 -host_arch=amd64
-          cmake -S . -B build-amd-spirv -G Ninja -C cmake\caches\PredefinedParams.cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_SPIRV_CODEGEN=ON -DSPIRV_BUILD_TESTS=OFF -DLLVM_INCLUDE_TESTS=OFF -DLLVM_BUILD_TESTS=OFF -DCLANG_INCLUDE_TESTS=OFF -DHLSL_INCLUDE_TESTS=OFF
+          cmake -S . -B build-amd-spirv -G Ninja -C cmake\caches\PredefinedParams.cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_SPIRV_CODEGEN=ON -DSPIRV_BUILD_TESTS=OFF -DLLVM_INCLUDE_TESTS=ON -DLLVM_BUILD_TESTS=OFF -DCLANG_INCLUDE_TESTS=ON -DHLSL_INCLUDE_TESTS=OFF
           if errorlevel 1 exit /b %errorlevel%
-          cmake --build build-amd-spirv --target dxc dxcompiler dxildll --parallel 4
+          cmake --build build-amd-spirv --target dxc dxcompiler dxildll FileCheck not --parallel 4
           if errorlevel 1 exit /b %errorlevel%
 
       - name: Smoke DXIL and SPIR-V
@@ -177,4 +184,10 @@ jobs:
           & python utils/amd_contract_suite.py --dxc $dxc
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & python utils/amd_vulkan_isa_probe/khr_cooperative_matrix_control.py --dxc $dxc --out-dir "$env:RUNNER_TEMP/khr-matrix-control"
+          exit $LASTEXITCODE
+
+      - name: Focused upstream LIT and FileCheck regressions
+        shell: pwsh
+        run: |
+          & python utils/amd_lit_smoke.py --build-dir build-amd-spirv
           exit $LASTEXITCODE
