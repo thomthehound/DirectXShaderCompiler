@@ -1,4 +1,5 @@
 // RUN: %dxc -T lib_6_6 -E main -fcgl -spirv -fspv-extension=AMD %s | FileCheck %s --check-prefix=UNIQUE
+// RUN: %dxc -T lib_6_6 -E main -fcgl -spirv -fspv-extension=AMD -DDEFAULT_SINGLE_OWNER %s | FileCheck %s --check-prefix=UNIQUE
 // RUN: not %dxc -T lib_6_6 -E main -fcgl -spirv -fspv-extension=AMD -DDEFAULT_USED %s 2>&1 | FileCheck %s --check-prefix=SHARED
 
 #include <vk/amd/intrinsics.h>
@@ -19,12 +20,16 @@ float4 withDefault(float4 input = readPixelInput()) {
 
 [shader("pixel")]
 float4 first(float4 input : TEXCOORD0) : SV_Target {
+#ifdef DEFAULT_SINGLE_OWNER
+  return input;
+#else
   return readPixelInput();
+#endif
 }
 
 [shader("pixel")]
 float4 second(float2 lo : TEXCOORD0, float2 hi : TEXCOORD1) : SV_Target {
-#ifdef DEFAULT_USED
+#if defined(DEFAULT_USED) || defined(DEFAULT_SINGLE_OWNER)
   return withDefault();
 #else
   return withDefault(float4(lo, hi));
