@@ -234,3 +234,36 @@ rga.exe -s vulkan --comp out\msad4.amd.spv --isa out\msad4.live.isa
 ```
 
 Do not treat an offline RGA hit as equivalent to a live-driver hit.
+
+## Khronos cooperative-matrix positive control
+
+The upstream `vk::khr::CooperativeMatrix` implementation is an independent
+compiler control for the experimental `dx::linalg` descriptor-pointer work.
+The source in `shaders/khr_cooperative_matrix.hlsl` covers both FP16
+subgroup multiply-add and signed-Int32 structured-buffer load/multiply/store.
+The latter uses a single storage buffer at set 0, binding 0.
+
+Compiler-only qualification (also run on both platforms in CI):
+
+```powershell
+python utils/amd_vulkan_isa_probe/khr_cooperative_matrix_control.py `
+  --dxc <path-to-dxc.exe>
+```
+
+Installed AMD Vulkan driver qualification:
+
+```powershell
+python utils/amd_vulkan_isa_probe/khr_cooperative_matrix_control.py `
+  --dxc <path-to-dxc.exe> `
+  --matrix-probe <path-to-amd_vulkan_matrix_probe.exe> `
+  --spirv-val <path-to-spirv-val.exe>
+```
+
+The output `khr_matrix_report.json` records compilation, available device
+matrix shapes, pipeline/disassembly results, and observed WMMA/MFMA-family
+instructions separately. An unsupported device shape or unavailable
+`VK_AMD_shader_info` does not mean the shader is wrong or that native matrix
+hardware is absent. Conversely, successful pipeline creation or an ISA mnemonic
+does **not** establish numerical correctness or performance; this test does not
+dispatch the shader. The legacy `matrix_probe.py` continues to track the
+`dx::linalg` byte-address pointer bridge independently.

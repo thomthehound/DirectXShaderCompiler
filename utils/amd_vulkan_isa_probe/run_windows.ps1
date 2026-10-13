@@ -329,6 +329,17 @@ Invoke-ProbeStep "Cooperative matrix property + ISA qualification" "qualificatio
     & $Python @MatrixArgs
 }
 
+$KhrMatrixArgs = @(
+    (Join-Path $ProbeRoot "khr_cooperative_matrix_control.py"),
+    "--dxc", $Dxc,
+    "--matrix-probe", $MatrixProbe,
+    "--spirv-val", $SpirvVal,
+    "--out-dir", (Join-Path $OutDir "matrix-khr")
+)
+Invoke-ProbeStep "Khronos cooperative matrix positive control" "qualification" {
+    & $Python @KhrMatrixArgs
+} -EvidenceReport (Join-Path $OutDir "matrix-khr/khr_matrix_report.json") -ReportMode "isa"
+
 $TranscendentalArgs = @(
     (Join-Path $ProbeRoot "transcendental_probe.py"),
     "--dxc", $Dxc,
