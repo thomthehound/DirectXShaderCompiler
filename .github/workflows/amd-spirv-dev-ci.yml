@@ -162,7 +162,7 @@ jobs:
           $spirv = "$env:RUNNER_TEMP\amd_dxc_smoke.spv"
           & $dxc -T cs_6_6 -E main -Fo $dxil $source
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $dxc -spirv -fspv-target-env=vulkan1.2 -T cs_6_6 -E main -Fo $spirv $source
+          & $dxc -spirv '-fspv-target-env=vulkan1.2' -T cs_6_6 -E main -Fo $spirv $source
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ((Get-Item -LiteralPath $dxil).Length -eq 0) { throw 'DXIL smoke output is empty' }
           if ((Get-Item -LiteralPath $spirv).Length -eq 0) { throw 'SPIR-V smoke output is empty' }
