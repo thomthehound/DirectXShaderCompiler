@@ -60,6 +60,7 @@ jobs:
             utils/amd_vulkan_isa_probe/conversion_probe.py \
             utils/amd_vulkan_isa_probe/packing_probe.py \
             utils/amd_vulkan_isa_probe/matrix_probe.py \
+            utils/amd_vulkan_isa_probe/khr_cooperative_matrix_control.py \
             utils/amd_vulkan_isa_probe/transcendental_probe.py \
             utils/amd_vulkan_isa_probe/lds_probe.py \
             utils/amd_vulkan_isa_probe/cube_probe.py \
@@ -69,6 +70,7 @@ jobs:
         run: |
           python3 utils/amd_upstream_contract_audit.py
           python3 -m unittest discover -s utils/amd_vulkan_isa_probe -p 'test_probe_evidence.py'
+          python3 -m unittest discover -s utils/amd_vulkan_isa_probe -p 'test_khr_cooperative_matrix_control.py'
           python3 utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py --self-test
 
   build-linux:
@@ -124,6 +126,7 @@ jobs:
           set -euo pipefail
           export LD_LIBRARY_PATH="$PWD/build-amd-spirv/lib:${LD_LIBRARY_PATH:-}"
           python3 utils/amd_contract_suite.py --dxc "$PWD/build-amd-spirv/bin/dxc"
+          python3 utils/amd_vulkan_isa_probe/khr_cooperative_matrix_control.py --dxc "$PWD/build-amd-spirv/bin/dxc" --out-dir "$RUNNER_TEMP/khr-matrix-control"
 
   build-windows:
     name: Windows compiler + contracts
@@ -172,4 +175,6 @@ jobs:
         run: |
           $dxc = Join-Path $PWD 'build-amd-spirv\bin\dxc.exe'
           & python utils/amd_contract_suite.py --dxc $dxc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & python utils/amd_vulkan_isa_probe/khr_cooperative_matrix_control.py --dxc $dxc --out-dir "$env:RUNNER_TEMP/khr-matrix-control"
           exit $LASTEXITCODE
