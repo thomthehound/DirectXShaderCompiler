@@ -2235,12 +2235,8 @@ SpirvInstruction *DeclResultIdMapper::getAmdVertexParameterComponentPtr(
     SpirvFunction *owningEntry, QualType *componentType, SourceLocation loc) {
   assert(owningEntry);
   assert(componentType);
-  if (!spvContext.isPS()) {
-    emitError("AMD vertex-parameter access is only valid in a pixel shader",
-              loc);
-    return nullptr;
-  }
-
+  // The emitter has validated the owning entry's pixel stage. An exported
+  // library helper can still be translated with the Library context here.
   std::vector<AmdParameterElement> elementStorage;
   elementStorage.reserve(stageVars.size());
 

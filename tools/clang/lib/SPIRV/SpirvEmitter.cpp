@@ -836,7 +836,19 @@ SpirvFunction *SpirvEmitter::getAmdParameterEntryFunction(SourceLocation loc) {
     return nullptr;
   }
   const auto entry = functionInfoMap.find(owner->second);
-  if (entry == functionInfoMap.end() || !entry->second->entryFunction) {
+  if (entry == functionInfoMap.end()) {
+    emitError("AMD vertex-parameter entry-point interface is unavailable", loc);
+    return nullptr;
+  }
+  // Exported library helpers retain the Library shader kind even when a
+  // pixel entry is their unique caller. Validate the resolved owner instead
+  // of the helper's current translation context.
+  if (entry->second->shaderModelKind != hlsl::ShaderModel::Kind::Pixel) {
+    emitError("AMD vertex-parameter access is only valid in a pixel shader",
+              loc);
+    return nullptr;
+  }
+  if (!entry->second->entryFunction) {
     emitError("AMD vertex-parameter entry-point interface is unavailable", loc);
     return nullptr;
   }
@@ -13355,11 +13367,6 @@ SpirvInstruction *SpirvEmitter::emitAmdVertexParameterComponent(
 
 SpirvInstruction *
 SpirvEmitter::processAmdVertexParameterComponent(const CallExpr *callExpr) {
-  if (!spvContext.isPS()) {
-    emitError("vk::AmdVertexParameterComponent is only valid in a pixel shader",
-              callExpr->getExprLoc());
-    return nullptr;
-  }
   if (callExpr->getNumArgs() != 3)
     llvm_unreachable("AmdVertexParameterComponent argument count mismatch");
 
@@ -13385,11 +13392,6 @@ SpirvEmitter::processAmdVertexParameterComponent(const CallExpr *callExpr) {
 
 SpirvInstruction *
 SpirvEmitter::processAmdVertexParameter(const CallExpr *callExpr) {
-  if (!spvContext.isPS()) {
-    emitError("vk::AmdVertexParameter is only valid in a pixel shader",
-              callExpr->getExprLoc());
-    return nullptr;
-  }
   if (callExpr->getNumArgs() != 2)
     llvm_unreachable("AmdVertexParameter argument count mismatch");
 

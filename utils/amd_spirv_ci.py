@@ -230,7 +230,16 @@ def main() -> int:
             "-fspv-extension=AMD", "-DUNIQUE_OWNER",
         ),
         required=(r'OpExtension "SPV_AMD_shader_explicit_vertex_parameter"',),
-        counts=((r"\bInterpolateAtVertexAMD\b", 4),),
+        counts=((r"\bInterpolateAtVertexAMD\b", 5),),
+    )
+    require_failure(
+        "AMD raw vertex-parameter non-pixel owner is rejected",
+        compile_shader(
+            "amd.intrinsics.vertex-parameter-shared-helper.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-extension=AMD", "-DUNIQUE_OWNER", "-DVERTEX_OWNER",
+        ),
+        "AMD vertex-parameter access is only valid in a pixel shader",
     )
     require_failure(
         "AMD raw vertex-parameter shared helper has ambiguous entry owner",
