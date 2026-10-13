@@ -18,6 +18,8 @@ from pathlib import Path
 SPIRV_MAGIC = 0x07230203
 OP_CAPABILITY = 17
 OP_COOPERATIVE_MATRIX_TYPE_KHR = 4456
+OP_COOPERATIVE_MATRIX_LOAD_KHR = 4457
+OP_COOPERATIVE_MATRIX_STORE_KHR = 4458
 OP_COOPERATIVE_MATRIX_MUL_ADD_KHR = 4459
 COOPERATIVE_MATRIX_CAPABILITY_KHR = 6022
 
@@ -139,9 +141,10 @@ def main() -> int:
             continue
         try:
             opcodes, capability = read_opcodes(spv)
-            if not capability or not {
-                OP_COOPERATIVE_MATRIX_TYPE_KHR, OP_COOPERATIVE_MATRIX_MUL_ADD_KHR
-            }.issubset(opcodes):
+            required = {OP_COOPERATIVE_MATRIX_TYPE_KHR, OP_COOPERATIVE_MATRIX_MUL_ADD_KHR}
+            if case["name"] == "i32xi32-i32":
+                required.update({OP_COOPERATIVE_MATRIX_LOAD_KHR, OP_COOPERATIVE_MATRIX_STORE_KHR})
+            if not capability or not required.issubset(opcodes):
                 raise ValueError("missing required KHR cooperative-matrix operations")
         except (ValueError, OSError) as exc:
             failures += 1

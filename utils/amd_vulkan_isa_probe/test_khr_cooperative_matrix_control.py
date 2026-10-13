@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 from khr_cooperative_matrix_control import (  # noqa: E402
     read_opcodes, OP_COOPERATIVE_MATRIX_MUL_ADD_KHR,
+    OP_COOPERATIVE_MATRIX_LOAD_KHR, OP_COOPERATIVE_MATRIX_STORE_KHR,
 )
 
 FAKE_DXC = """#!/usr/bin/env python3
@@ -28,6 +29,8 @@ words = [0x07230203, 0x10600, 0, 12, 0,
          (2 << 16) | 17, 6022,
          (2 << 16) | 4456, 1,
          (2 << 16) | 4459, 1]
+if "-DCONTROL_F16=0" in sys.argv:
+    words += [(2 << 16) | 4457, 1, (2 << 16) | 4458, 1]
 path.write_bytes(struct.pack("<" + "I" * len(words), *words))
 """
 FAKE_PROBE = """#!/usr/bin/env python3
@@ -71,7 +74,7 @@ class KhrMatrixControlTests(unittest.TestCase):
             sys.executable, str(ROOT / "khr_cooperative_matrix_control.py"),
             "--dxc", str(self.root / "fake_dxc"),
             "--out-dir", str(self.root / "out"),
-            "--mode", "f16xf16-f16",
+            "--mode", (mode.get("CONTROL_MODE", "f16xf16-f16") if mode else "f16xf16-f16"),
         ]
         if hardware:
             cmd.extend(["--matrix-probe", str(self.root / "fake_probe")])
@@ -124,6 +127,14 @@ class KhrMatrixControlTests(unittest.TestCase):
         )
         self.assertEqual(rc, 1)
         self.assertEqual(report["cases"][0]["driver_status"], "failed")
+
+    def test_structured_buffer_matrix_operations_are_required(self):
+        rc, report = self.run_control({"CONTROL_MODE": "i32xi32-i32"})
+        self.assertEqual(rc, 0)
+        self.assertEqual(report["cases"][0]["compiler_status"], "pass")
+        ops, _ = read_opcodes(self.root / "out/i32xi32-i32.spv")
+        self.assertIn(OP_COOPERATIVE_MATRIX_LOAD_KHR, ops)
+        self.assertIn(OP_COOPERATIVE_MATRIX_STORE_KHR, ops)
 
     def test_invalid_spirv_is_rejected(self):
         bad = self.root / "bad.spv"
