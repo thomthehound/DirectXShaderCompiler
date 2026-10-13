@@ -27,6 +27,8 @@ CASES = (
     "CodeGenSPIRV/coopmatrix_muladd_test.hlsl",
     "CodeGenSPIRV/coopmatrix.groupshared.hlsl",
     "CodeGenSPIRV/coopmatrix.old.spirv.hlsl",
+    "CodeGenSPIRV/amd.intrinsics.vertex-parameter-index.hlsl",
+    "CodeGenSPIRV/amd.intrinsics.vertex-parameter-index.invalid.hlsl",
 )
 
 
