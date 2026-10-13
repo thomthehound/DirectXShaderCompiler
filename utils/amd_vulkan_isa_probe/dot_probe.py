@@ -93,11 +93,15 @@ def main() -> int:
 
     records: list[dict] = []
     compile_failures = 0
+    probe_failures = 0
+    unsupported_count = 0
 
     for candidate in candidates:
         stem = f"{candidate.index:02d}_{candidate.name}"
         spv = out_dir / f"{stem}.spv"
         isa = out_dir / f"{stem}.driver.isa"
+        spv.unlink(missing_ok=True)
+        isa.unlink(missing_ok=True)
         compiled = run([
             dxc,
             "-spirv",
@@ -108,11 +112,13 @@ def main() -> int:
             str(shader),
             "-Fo", str(spv),
         ])
-        if compiled.returncode != 0:
+        if compiled.returncode != 0 or not spv.is_file() or spv.stat().st_size == 0:
             compile_failures += 1
             records.append({
                 "index": candidate.index,
                 "name": candidate.name,
+                "status": "failed",
+                "stage": "compile",
                 "compile": "failed",
                 "stderr": compiled.stderr[-5000:],
             })
@@ -120,16 +126,36 @@ def main() -> int:
             continue
 
         probed = run([driver_probe, str(spv), str(isa)])
-        if probed.returncode != 0 or not isa.exists():
+        # Exit codes 3-6 are explicitly unsupported capabilities in the
+        # installed-driver probe. All other errors are failed measurements.
+        if probed.returncode in (3, 4, 5, 6):
+            unsupported_count += 1
             records.append({
                 "index": candidate.index,
                 "name": candidate.name,
+                "status": "unsupported",
                 "compile": "pass",
-                "driver": "rejected-or-no-isa",
+                "driver": "unsupported",
+                "driver_returncode": probed.returncode,
                 "stdout": probed.stdout[-5000:],
                 "stderr": probed.stderr[-5000:],
             })
-            print(f"{candidate.index:02d} {candidate.name:<24} driver rejected/no ISA")
+            print(f"{candidate.index:02d} {candidate.name:<24} driver unsupported")
+            continue
+        if probed.returncode != 0 or not isa.is_file() or isa.stat().st_size == 0:
+            probe_failures += 1
+            records.append({
+                "index": candidate.index,
+                "name": candidate.name,
+                "status": "failed",
+                "stage": "driver-probe",
+                "compile": "pass",
+                "driver": "failed",
+                "driver_returncode": probed.returncode,
+                "stdout": probed.stdout[-5000:],
+                "stderr": probed.stderr[-5000:],
+            })
+            print(f"{candidate.index:02d} {candidate.name:<24} driver probe failed")
             continue
 
         text = isa.read_text(encoding="utf-8", errors="replace")
@@ -138,8 +164,10 @@ def main() -> int:
             "index": candidate.index,
             "name": candidate.name,
             "compile": "pass",
+            "status": "completed",
             "driver": "pass",
             "native": native,
+            "runtime_semantics": "not-run",
             "spv": str(spv),
             "isa": str(isa),
         })
@@ -149,21 +177,30 @@ def main() -> int:
         )
 
     report = {
+        "schema": 2,
         "shader": str(shader),
         "candidate_count": len(candidates),
+        "overall_status": ("failed" if compile_failures or probe_failures
+                           else "completed-with-unsupported" if unsupported_count
+                           else "completed"),
         "compile_failures": compile_failures,
+        "probe_failures": probe_failures,
+        "unsupported_count": unsupported_count,
         "records": records,
         "policy": (
             "Each module contains exactly one dot contract, so a native mnemonic is "
-            "causally attributable to that source operation. Driver rejection or a "
-            "missing generation-specific mnemonic is evidence, not a harness failure; "
-            "DXC compilation failure is a harness/contract failure."
+            "causally attributable to that source operation. Absent targeted "
+            "mnemonics are valid negative observations. Unsupported disassembly "
+            "facilities differ from failed probes; ISA observation does not "
+            "establish runtime semantic correctness."
         ),
     }
     (out_dir / "dot_report.json").write_text(
         json.dumps(report, indent=2) + "\n", encoding="utf-8"
     )
-    return 1 if compile_failures else 0
+    if compile_failures:
+        return 1
+    return 2 if probe_failures else 0
 
 
 if __name__ == "__main__":
