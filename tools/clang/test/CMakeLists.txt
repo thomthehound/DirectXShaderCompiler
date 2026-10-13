@@ -81,15 +81,16 @@ endif()
 # HLSL Change Begin
 # Explicitly overriding check-clang dependencies for HLSL
 set(CLANG_TEST_DEPS dxc dxa dxopt dxl dxv dxr dxcompiler clang-tblgen llvm-config opt FileCheck count not ClangUnitTests)
+# Optional execution/batch harnesses are only created by configurations
+# that build those tools. Keep LIT targets usable for compiler-only CI builds.
 if (WIN32)
-list(APPEND CLANG_TEST_DEPS
-     dxc_batch ExecHLSLTests dxildll
-    )
-else()
-list(APPEND CLANG_TEST_DEPS
-     dxildll
-    )
+  foreach(test_tool dxc_batch ExecHLSLTests)
+    if (TARGET ${test_tool})
+      list(APPEND CLANG_TEST_DEPS ${test_tool})
+    endif()
+  endforeach()
 endif()
+list(APPEND CLANG_TEST_DEPS dxildll)
 add_custom_target(clang-test-depends DEPENDS ${CLANG_TEST_DEPS})
 set_target_properties(clang-test-depends PROPERTIES FOLDER "Clang tests")
 # HLSL Change End
