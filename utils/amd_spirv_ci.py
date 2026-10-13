@@ -250,6 +250,25 @@ def main() -> int:
         ),
         "AMD vertex-parameter helper requires a unique shader entry point",
     )
+    require_success(
+        "AMD raw vertex-parameter default argument unused by second entry",
+        compile_shader(
+            "amd.intrinsics.vertex-parameter-default-argument.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-extension=AMD",
+        ),
+        required=(r'OpExtension "SPV_AMD_shader_explicit_vertex_parameter"',),
+        counts=((r"\bInterpolateAtVertexAMD\b", 4),),
+    )
+    require_failure(
+        "AMD raw vertex-parameter default argument shared across entries",
+        compile_shader(
+            "amd.intrinsics.vertex-parameter-default-argument.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-extension=AMD", "-DDEFAULT_USED",
+        ),
+        "AMD vertex-parameter helper requires a unique shader entry point",
+    )
     require_failure(
         "AMD raw vertex-parameter register bounds",
         compile_shader(

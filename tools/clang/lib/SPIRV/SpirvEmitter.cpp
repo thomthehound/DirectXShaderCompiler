@@ -806,6 +806,17 @@ void SpirvEmitter::collectAmdParameterEntryOwners() {
         if (const auto *call = dyn_cast<CallExpr>(stmt))
           if (const auto *callee = call->getDirectCallee())
             pending.push_back(callee);
+        // CXXDefaultArgExpr has no AST children, but codegen evaluates the
+        // referenced parameter's initializer at each omitted-argument call.
+        // Include its calls in reachability for this specific caller.
+        if (const auto *defaultArg = dyn_cast<CXXDefaultArgExpr>(stmt)) {
+          const auto *param = defaultArg->getParam();
+          const Expr *value = param->hasUninstantiatedDefaultArg()
+                                  ? param->getUninstantiatedDefaultArg()
+                                  : param->getDefaultArg();
+          if (value)
+            statements.push_back(value);
+        }
         for (const Stmt *child : stmt->children())
           if (child)
             statements.push_back(child);
