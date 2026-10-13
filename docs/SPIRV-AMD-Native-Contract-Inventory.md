@@ -26,6 +26,10 @@ The names below are taken from the contemporary LLVM AMDGPU subtarget-feature su
 | BVH/ray-tracing hardware instructions | High-level Vulkan ray tracing has a KHR contract; private BVH instruction details do not. | Keep DXR on KHR ray tracing/query. Audit only functionality that cannot be represented there. |
 | DPP/permlane/cross-lane operations | Mixed core/KHR/AMD subgroup coverage. | Classify operation-by-operation; preserve AMD extinsts where registered. |
 
+## Authoritative capability ledger
+
+`utils/amd_spirv_contracts.json` is the single source for tracked AGS and lower-level AMDGPU contract classifications. The former matrix/packing addendum has been reconciled into its `low_level_math` entries: unavailable round-toward-zero packing and IU4 matrices stay explicitly blocked, while legal packed conversions and mixed-precision dot/matrix shapes are tracked as candidates or native *SPIR-V contracts* only. Those labels never imply installed-driver ISA or performance evidence.
+
 ## Generated inventory
 
 Use a current LLVM checkout to regenerate the raw review surface:
