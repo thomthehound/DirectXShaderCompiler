@@ -795,8 +795,8 @@ void SpirvEmitter::collectAmdParameterEntryOwners() {
       else if (previous->second != root)
         previous->second = nullptr;
 
-      const FunctionDecl *definition = fn->getDefinition();
-      if (!definition || !definition->getBody())
+      const FunctionDecl *definition = nullptr;
+      if (!fn->hasBody(definition))
         continue;
 
       llvm::SmallVector<const Stmt *, 64> statements;
