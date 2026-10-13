@@ -213,6 +213,15 @@ def main() -> int:
     )
 
     require_failure(
+        "AMD raw vertex-parameter register bounds",
+        compile_shader(
+            "amd.intrinsics.vertex-parameter-out-of-range.hlsl",
+            "-T", "ps_6_0", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-extension=AMD",
+        ),
+        "AMD vertex-parameter register component is not backed by a pixel shader input",
+    )
+    require_failure(
         "AMD raw vertex-parameter immediate enforcement",
         compile_shader(
             "amd.intrinsics.vertex-parameter-index.invalid.hlsl",

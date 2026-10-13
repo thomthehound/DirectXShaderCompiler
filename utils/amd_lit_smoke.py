@@ -30,6 +30,7 @@ CASES = (
     "CodeGenSPIRV/amd.intrinsics.vertex-parameter-index.hlsl",
     "CodeGenSPIRV/amd.intrinsics.vertex-parameter-index.invalid.hlsl",
     "CodeGenSPIRV/amd.experimental-option-scope.hlsl",
+    "CodeGenSPIRV/amd.intrinsics.vertex-parameter-out-of-range.hlsl",
 )
 
 

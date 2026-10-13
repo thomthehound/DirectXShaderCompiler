@@ -2244,6 +2244,10 @@ SpirvInstruction *DeclResultIdMapper::getAmdVertexParameterComponentPtr(
   elementStorage.reserve(stageVars.size());
 
   for (const auto &stageVar : stageVars) {
+    // A library module may contain several entry-point interfaces. D3D pixel
+    // parameter registers are local to the current entry point, not global.
+    if (stageVar.getEntryPoint() && stageVar.getEntryPoint() != entryFunction)
+      continue;
     if (!stageVar.getSigPoint() ||
         stageVar.getSigPoint()->GetKind() != hlsl::SigPoint::Kind::PSIn ||
         stageVar.getStorageClass() != spv::StorageClass::Input ||
@@ -2263,13 +2267,8 @@ SpirvInstruction *DeclResultIdMapper::getAmdVertexParameterComponentPtr(
       return nullptr;
     }
 
-    const ValueDecl *sourceDecl = nullptr;
-    for (const auto &entry : stageVarInstructions) {
-      if (entry.second == stageVar.getSpirvInstr()) {
-        sourceDecl = entry.first;
-        break;
-      }
-    }
+    const ValueDecl *sourceDecl =
+        dyn_cast_or_null<ValueDecl>(stageVar.getSourceDecl());
     if (!sourceDecl) {
       emitError("AMD vertex-parameter resolver could not recover the source "
                 "pixel-input declaration",
@@ -3958,6 +3957,7 @@ SpirvVariable *DeclResultIdMapper::createSpirvInterfaceVariable(
     varInstr->setNoninterpolated();
 
   stageVar.setSpirvInstr(varInstr);
+  stageVar.setSourceDecl(stageVarData.decl);
   stageVar.setLocationAttr(stageVarData.decl->getAttr<VKLocationAttr>());
   stageVar.setIndexAttr(stageVarData.decl->getAttr<VKIndexAttr>());
   if (stageVar.getStorageClass() == spv::StorageClass::Input ||
