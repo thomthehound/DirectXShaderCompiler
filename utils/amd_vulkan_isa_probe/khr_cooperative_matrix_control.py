@@ -221,7 +221,7 @@ def main() -> int:
     overall_status = (
         "failed" if failures else
         "completed-with-unsupported" if unsupported else
-        "isa-only" if matrix_probe is None else
+        "compiler-only" if matrix_probe is None else
         "completed"
     )
     report = {

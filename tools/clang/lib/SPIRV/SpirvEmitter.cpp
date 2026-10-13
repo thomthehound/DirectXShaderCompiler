@@ -812,11 +812,9 @@ void SpirvEmitter::collectAmdParameterEntryOwners() {
   }
 }
 
-SpirvFunction *
-SpirvEmitter::getAmdParameterEntryFunction(SourceLocation loc) {
+SpirvFunction *SpirvEmitter::getAmdParameterEntryFunction(SourceLocation loc) {
   if (!curFunction) {
-    emitError("AMD vertex-parameter access requires a shader entry point",
-              loc);
+    emitError("AMD vertex-parameter access requires a shader entry point", loc);
     return nullptr;
   }
   const auto owner =
@@ -830,8 +828,7 @@ SpirvEmitter::getAmdParameterEntryFunction(SourceLocation loc) {
   }
   const auto entry = functionInfoMap.find(owner->second);
   if (entry == functionInfoMap.end() || !entry->second->entryFunction) {
-    emitError("AMD vertex-parameter entry-point interface is unavailable",
-              loc);
+    emitError("AMD vertex-parameter entry-point interface is unavailable", loc);
     return nullptr;
   }
   return entry->second->entryFunction;

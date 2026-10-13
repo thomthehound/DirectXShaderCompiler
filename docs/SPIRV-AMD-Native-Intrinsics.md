@@ -4,8 +4,8 @@ This fork treats preservation of specialized GPU intent as a correctness propert
 
 ## Compiler controls
 
-- `-fspv-enable-amd-intrinsics` enables AMD-oriented legal lowerings for specialized HLSL intrinsics. It may use core/KHR operations that preserve packed or cooperative semantics better than scalar expansion.
-- `-fspv-require-native-intrinsics` rejects known missing or emulated native-preserving SPIR-V contracts. This is a **compiler contract audit**, not a promise of a specific AMD machine instruction: the Vulkan driver controls final ISA selection.
+- `-fspv-enable-amd-intrinsics` currently enables an experimental packed `OpUDot` lowering of HLSL `msad4`. This remains an unproven candidate for Radeon `v_mqsad_u32_u8` recovery, not a promise of dedicated hardware execution.
+- `-fspv-require-native-intrinsics` currently rejects `msad4` because no equivalent native-preserving Vulkan SPIR-V instruction is available. **This is not a comprehensive native-instruction audit** and does not guarantee driver ISA for other shader operations. Both switches require `-spirv`; DXIL compilation rejects them.
 - `-fspv-extension=AMD` (also `SPV_AMD`) enables every AMD/AMDX extension known to this DXC snapshot. Individual `SPV_AMD_*`/`SPV_AMDX_*` names remain supported.
 - `<vk/amd/intrinsics.h>` exposes the four registered AMD extended-instruction sets directly to HLSL without scalar emulation.
 
@@ -54,7 +54,7 @@ The AMD extinst wrappers intentionally emit the AMD instruction-set identity. Do
 
 AMD ISA contains many operations with no Vulkan/SPIR-V opcode, extended instruction set, capability, or decoration representing them. DXC cannot legally emit `v_msad_u8`, arbitrary `V_*`/`S_*` ISA, undocumented WMMA encodings, or private ray-tracing instructions into a normal Vulkan SPIR-V module by inventing opcodes. Doing that would require a coordinated private extension across at least the SPIR-V producer, validator/toolchain, and the AMD Vulkan compiler/driver (for open AMD stacks, that means the relevant LLPC/PAL path as well).
 
-`-fspv-require-native-intrinsics` exists specifically so these gaps cannot be mistaken for solved native support.
+`-fspv-require-native-intrinsics` currently prevents `msad4` from being treated as natively represented. Extending this safeguard to other gaps requires explicit feature-by-feature implementation and testing; it is not a blanket guarantee.
 
 ## Inventory and compiler boundary
 

@@ -90,7 +90,7 @@ class KhrMatrixControlTests(unittest.TestCase):
     def test_compiler_only_does_not_claim_driver_qualification(self):
         rc, report = self.run_control()
         self.assertEqual(rc, 0)
-        self.assertEqual(report["overall_status"], "isa-only")
+        self.assertEqual(report["overall_status"], "compiler-only")
         self.assertEqual(report["cases"][0]["driver_status"], "not-run")
 
     def test_compiler_error_is_fatal(self):
