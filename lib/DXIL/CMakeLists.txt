@@ -26,6 +26,7 @@ add_llvm_library(LLVMDXIL
   DxilShaderFlags.cpp
   DxilShaderModel.cpp
   DxilSignature.cpp
+  DxilSignatureAllocator.cpp
   DxilSignatureElement.cpp
   DxilSubobject.cpp
   DxilTypeSystem.cpp

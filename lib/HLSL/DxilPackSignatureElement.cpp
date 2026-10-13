@@ -125,5 +125,3 @@ unsigned PackDxilSignature(DxilSignature &sig, DXIL::PackingStrategy packing) {
 }
 } // namespace hlsl
 
-#include "dxc/HLSL/DxilSignatureAllocator.inl"
-#include <algorithm>

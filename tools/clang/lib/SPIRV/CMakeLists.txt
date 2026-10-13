@@ -39,6 +39,7 @@ add_clang_library(clangSPIRV
   clangAST
   clangBasic
   clangFrontend
+  LLVMDXIL
   clangLex
   SPIRV-Tools-opt
   )
