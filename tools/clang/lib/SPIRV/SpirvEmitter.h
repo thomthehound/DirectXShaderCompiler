@@ -1564,6 +1564,7 @@ private:
   // Values are the unique entry declaration, or nullptr if ambiguous.
   llvm::DenseMap<const FunctionDecl *, const FunctionDecl *>
       amdParameterEntryOwners;
+  bool amdParameterOwnershipCollected = false;
   void collectAmdParameterEntryOwners();
   SpirvFunction *getAmdParameterEntryFunction(SourceLocation loc);
 

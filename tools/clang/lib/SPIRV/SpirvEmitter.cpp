@@ -813,6 +813,13 @@ void SpirvEmitter::collectAmdParameterEntryOwners() {
 }
 
 SpirvFunction *SpirvEmitter::getAmdParameterEntryFunction(SourceLocation loc) {
+  // Most shaders do not use the raw AMD parameter intrinsics. Build the
+  // ownership map only when needed; all entry roots were seeded before this
+  // function can be translated, including in multi-entry library modules.
+  if (!amdParameterOwnershipCollected) {
+    collectAmdParameterEntryOwners();
+    amdParameterOwnershipCollected = true;
+  }
   if (!curFunction) {
     emitError("AMD vertex-parameter access requires a shader entry point", loc);
     return nullptr;
@@ -880,10 +887,6 @@ void SpirvEmitter::HandleTranslationUnit(ASTContext &context) {
     if (context.getDiagnostics().hasErrorOccurred())
       return;
   }
-
-  // Resolve helper ownership while the call graph still represents HLSL
-  // declarations, before the entry wrappers change the current entry pointer.
-  collectAmdParameterEntryOwners();
 
   // Translate all functions reachable from the entry function.
   // The queue can grow in the meanwhile; so need to keep evaluating
