@@ -23,6 +23,7 @@ class ASTContext;
 namespace spirv {
 
 class SpirvFunction;
+class SpirvFunctionCall;
 
 // Validates fragment-only instructions using the lowered module's real call
 // graph. Entry wrappers, implicit module initialization, and exported
@@ -42,6 +43,20 @@ public:
   // cannot acquire an entry-specific callable representation.
   bool isFragmentOnly(SpirvFunction *function) const {
     return reachableStages.lookup(function) == Fragment;
+  }
+
+  // Reuse recorded calls from the existing emitted call graph. Per-vertex
+  // lowering needs actual argument operands to preserve linkage call ABIs.
+  llvm::ArrayRef<SpirvFunctionCall *>
+  getCallsFrom(SpirvFunction *function) const {
+    const auto found = callGraph.find(function);
+    if (found == callGraph.end())
+      return {};
+    return found->second;
+  }
+
+  llvm::ArrayRef<SpirvFunction *> getEmittedFunctions() const {
+    return emittedFunctions;
   }
 
   // A missing stage mask means an emitted function has no reachable
@@ -88,7 +103,7 @@ private:
   ASTContext &astContext;
   SpirvFunction *currentFunction = nullptr;
   bool collectRecordTypes = false;
-  llvm::DenseMap<SpirvFunction *, llvm::SmallVector<SpirvFunction *, 4>>
+  llvm::DenseMap<SpirvFunction *, llvm::SmallVector<SpirvFunctionCall *, 4>>
       callGraph;
   llvm::SmallVector<std::pair<SpirvFunction *, unsigned>, 8> roots;
   llvm::DenseMap<SpirvFunction *, unsigned> reachableStages;
