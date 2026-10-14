@@ -24,8 +24,7 @@ public:
   PervertexInputVisitor(SpirvBuilder &spvBuilder, ASTContext &astCtx,
                         SpirvContext &spvCtx, const SpirvCodeGenOptions &opts)
       : Visitor(opts, spvCtx), inEntryFunctionWrapper(false),
-        spirvBuilder(spvBuilder), astContext(astCtx), currentMod(nullptr),
-        currentFunc(nullptr) {}
+        spirvBuilder(spvBuilder), astContext(astCtx), currentFunc(nullptr) {}
 
   ///< Don't add extra index to a simple vector/matrix elem access when base is
   ///< not expanded.
@@ -128,7 +127,6 @@ private:
   ///< Context related helpers, will use to modify spv instruction stream.
   SpirvBuilder &spirvBuilder;
   ASTContext &astContext;
-  SpirvModule *currentMod;
   SpirvFunction *currentFunc;
   llvm::DenseMap<SpirvFunctionParameter *, std::vector<SpirvInstruction *>>
       paramCaller;
