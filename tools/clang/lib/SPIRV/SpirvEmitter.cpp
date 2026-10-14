@@ -14,8 +14,6 @@
 
 #include "SpirvEmitter.h"
 
-#include <algorithm>
-
 #include "AlignmentSizeCalculator.h"
 #include "InitListHandler.h"
 #include "LowerTypeVisitor.h"
@@ -912,15 +910,6 @@ void SpirvEmitter::HandleTranslationUnit(ASTContext &context) {
     if (context.getDiagnostics().hasErrorOccurred())
       return;
   }
-
-  // Library exports may precede their owning shader entry in source order.
-  // Emit all entry wrappers first so an exported helper can resolve AMD
-  // pixel-input parameters against its already-created entry interface.
-  // Keep relative order within each group and leave discovered callees to
-  // the growing work queue below.
-  std::stable_partition(
-      workQueue.begin(), workQueue.end(),
-      [](const FunctionInfo *info) { return info->isEntryFunction; });
 
   // Translate all functions reachable from the entry function.
   // The queue can grow in the meanwhile; so need to keep evaluating

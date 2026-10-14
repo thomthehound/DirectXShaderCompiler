@@ -233,7 +233,7 @@ def main() -> int:
         counts=((r"\bInterpolateAtVertexAMD\b", 5),),
     )
     require_failure(
-        "AMD exported helper has no valid Vulkan linkage contract",
+        "Vulkan rejects independently exported HLSL library helper",
         compile_shader(
             "amd.intrinsics.vertex-parameter-shared-helper.hlsl",
             "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",

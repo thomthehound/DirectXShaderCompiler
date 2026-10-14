@@ -12,12 +12,8 @@
 // NONPIXEL: error: AMD vertex-parameter access is only valid in a pixel shader
 // EXPORT-BLOCKED: fatal error: generated SPIR-V is invalid: Capability Linkage is not allowed by Vulkan
 
-// This internal helper is declared before both entry points. Unlike an HLSL
-// export, it must produce a Vulkan-valid shader module when uniquely owned.
-// The exported variant separately checks the existing linkage limitation.
-#ifdef AMD_EXPORT_HELPER
-export
-#endif
+// Ordinary helpers must be usable from the correct entry without changing
+// the global work-queue order or requiring library linkage.
 float4 readPixelInput() {
   return vk::AmdVertexParameter(1u, 0u) +
          float4(vk::AmdVertexParameterComponent(1u, 0u, 0u), 0, 0, 0);
@@ -43,3 +39,9 @@ float4 second(float2 lo : TEXCOORD0, float2 hi : TEXCOORD1) : SV_Target {
   return readPixelInput();
 #endif
 }
+
+#ifdef AMD_EXPORT_HELPER
+// This export is deliberately unrelated to the AMD intrinsic. Vulkan linkage
+// validity is a separate question from pixel-input owner resolution.
+export float4 linkedFunction(float4 value) { return value; }
+#endif
