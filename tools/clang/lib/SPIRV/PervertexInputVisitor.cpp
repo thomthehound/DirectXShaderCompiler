@@ -85,7 +85,7 @@ void PervertexInputVisitor::protectRecordTypes(QualType type) {
     protectRecordTypes(type->getPointeeType());
     return;
   }
-  if (const auto *array = dyn_cast<ArrayType>(type.getTypePtr())) {
+  if (const auto *array = dyn_cast<clang::ArrayType>(type.getTypePtr())) {
     protectRecordTypes(array->getElementType());
     return;
   }
