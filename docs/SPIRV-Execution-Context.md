@@ -96,8 +96,10 @@ The existing `StageReachabilityVisitor` supplies emitted, transitive stage
 ownership to the per-vertex lowering pass: Fragment entry wrappers and their
 private callees can be specialized; exports and functions they transitively
 reach remain stage-unknown. The per-vertex visitor does not modify those
-non-Fragment callable signatures or bodies. An expanded input cannot be
-passed implicitly to a cross-stage or exported callee.
+non-Fragment callable signatures or bodies. A pixel entry may pass its
+ordinary provoking-vertex value to a cross-stage or exported callee via the
+existing operand-replacement mapping. It cannot implicitly pass an expanded
+array to a callable requiring the original scalar or vector ABI.
 
 For records, this is not yet a complete representation-separation solution.
 `PervertexInputVisitor` still expands record fields by mutating shared
