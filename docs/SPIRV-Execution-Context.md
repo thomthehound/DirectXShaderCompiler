@@ -30,10 +30,11 @@ not to introduce a parallel compiler pipeline.
   attachment; libraries can contain a legal pixel entry and must defer the
   execution-stage check.
 - `GetAttributeAtVertex` additionally changes data representation, input
-  and parameter layouts. Today `PervertexInputVisitor` is invoked under
-  `context.isPS()` in `takeModule()`. That **does not** establish library
-  correctness: it depends on mutable context after translating the work
-  queue. The mixed-stage library failure is a known, separate issue.
+  and parameter layouts. `PervertexInputVisitor` can run on a module whose
+  emitted entry points are all Fragment, including a pixel-only library;
+  its entry-input refinement uses the existing `SpirvEntryPoint` interfaces.
+  It still rewrites shared parameter and structure types, so this is **not**
+  sufficient for mixed-stage libraries or exported helper ownership.
 - AMD raw vertex-parameter intrinsics currently use
   `collectFunctionEntryReachability()`, a source-AST approximation of entry
   ownership, because their register lookup happens before the finished
