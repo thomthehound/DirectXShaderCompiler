@@ -91,13 +91,17 @@ The lowering contract is therefore:
 `pervertex.lib.export-stage-order.hlsl` and
 `pervertex.ps.export-signature.hlsl` characterize currently failing cases
 with explicit XFAIL expectations. `pervertex.lib.export-abi-control.hlsl`
-checks the unaffected baseline. The focused LIT gate counts XFAIL
-separately and independently checks the generated SPIR-V for the exact known
-symptoms: a translated Fragment entry and export without the required
-PerVertexKHR input lowering, or a translated Fragment entry whose unrelated
-export has acquired a three-vertex array parameter ABI. A compiler failure
-or missing linkage root is not evidence of either symptom. An unexpected
-pass requires reviewing the test and updating the expectation.
+checks the unaffected baseline. Two separate, ordinary passing LIT
+fixtures (`pervertex.lib.export-stage-order.baseline.test` and
+`pervertex.lib.export-signature.baseline.test`) verify the precise known
+incorrect representations using FileCheck, after confirming that DXC compiled
+successfully. The positive baseline checks require the real Fragment entry
+and linkage export; the ABI case also checks that pixel-input per-vertex
+lowering took place. The XFAIL cases assert the desired behavior separately.
+A compiler error or unrelated FileCheck failure therefore cannot masquerade
+as a proven compiler defect. A corrected implementation requires converting
+the XFAIL tests into passing tests and removing the obsolete failing-state
+checks.
 
 ## Existing regression coverage
 
