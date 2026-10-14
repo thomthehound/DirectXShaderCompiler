@@ -104,13 +104,17 @@ bool StageReachabilityVisitor::visit(SpirvModule *, Phase phase) {
       "discard statement may only be used in pixel shaders");
   bool valid = true;
   for (const auto &discard : discards) {
-    if (stages.lookup(discard.first) != Fragment) {
+    const unsigned mask = stages.lookup(discard.first);
+    // A helper may be emitted yet have no execution path from any entry
+    // point. Do not classify an unreachable internal function as nonpixel.
+    if (mask != 0 && mask != Fragment) {
       diags.Report(discard.second, errorId);
       valid = false;
     }
   }
   for (const auto &use : fragmentStageUses) {
-    if (stages.lookup(use.function) != Fragment) {
+    const unsigned mask = stages.lookup(use.function);
+    if (mask != 0 && mask != Fragment) {
       const unsigned id =
           diags.getCustomDiagID(DiagnosticsEngine::Error, use.diagnostic);
       diags.Report(use.loc, id);
