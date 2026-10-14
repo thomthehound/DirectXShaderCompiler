@@ -400,18 +400,22 @@ bool PervertexInputVisitor::visit(SpirvFunctionCall *inst) {
   /// functions. But pass it as an array if meet function call.
   if (inEntryFunctionWrapper)
     return true;
-  // An exported or cross-stage callee keeps its ordinary ABI. Carrying an
-  // expanded per-vertex value across that boundary requires a different
-  // representation or specialization and cannot be performed implicitly.
+  // Linkage-visible and cross-stage callees keep their ordinary ABI.
+  // A pixel input can still pass its provoking-vertex value through the
+  // existing replacement mapping, but never pass the expanded array to an
+  // unmodified callable signature.
   if (!stageReachability.isFragmentOnly(inst->getFunction())) {
     for (auto *arg : inst->getArgs()) {
-      if (arg->isNoninterpolated()) {
-        emitError("per-vertex input cannot be passed to a function reachable "
-                  "from a non-pixel stage",
+      if (arg->isNoninterpolated() && getMappedReplaceInstr(arg) == arg) {
+        emitError("cannot pass expanded per-vertex input to a function "
+                  "reachable from a non-pixel stage",
                   inst->getSourceLocation());
         return false;
       }
     }
+    inst->replaceOperand(
+        [this](SpirvInstruction *arg) { return getMappedReplaceInstr(arg); },
+        /*inEntryFunctionWrapper=*/false);
     return true;
   }
   /// Load/Store instructions related to this argument may have been replaced
