@@ -95,7 +95,13 @@ failing-state baseline tests are removed once these cases pass.
 The existing `StageReachabilityVisitor` supplies emitted, transitive stage
 ownership to the per-vertex lowering pass: Fragment entry wrappers and their
 private callees can be specialized; exports and functions they transitively
-reach remain stage-unknown. The per-vertex visitor does not modify those
+reach remain stage-unknown. Every emitted function is enumerated independently
+of the reachable-stage mask. In particular, an emitted helper with no live
+call edge has mask zero, and its record types must still be protected from
+Fragment-specific AST mutation even though it is not reachable from a root.
+`pervertex.lib.unreachable-record-helper.hlsl` exercises the disconnected
+basic block created after an early return and checks both the shared-record
+safety diagnostic and the emitted helper control variant. The per-vertex visitor does not modify those
 non-Fragment callable signatures or bodies. A pixel entry may pass its
 ordinary provoking-vertex value to a cross-stage or exported callee via the
 existing operand-replacement mapping. It cannot implicitly pass an expanded
