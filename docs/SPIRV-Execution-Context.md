@@ -61,6 +61,51 @@ not to introduce a parallel compiler pipeline.
    tests plus SPIR-V validation before considering an architectural change
    complete.
 
+## Per-vertex input representation and linkage
+
+`processGetAttributeAtVertex()` requests per-vertex interpolation during
+expression lowering. `PervertexInputVisitor` later expands nointerpolation
+inputs and propagates expanded values through function parameters and calls.
+Its current `expandNointerpStructure()` rewrites `FieldDecl` types on the
+shared Clang AST, so an entry-interface-only filter cannot isolate every
+representation change.
+
+An emitted `SpirvEntryPoint` interface identifies inputs for one shader
+entry. It does not describe the callable ABI of a function exported through
+`LinkageAttributes`. An export may be linked from a shader whose stage is
+not represented among this module's local entries. The same distinction
+applies to helpers reachable from both entries and exports.
+
+The lowering contract is therefore:
+
+- A pixel entry's per-vertex input representation must be determined from
+  its interface and values, not the last mutable `SpirvContext` stage.
+- An export's input parameter and return ABI must not vary with unrelated
+  local pixel entries, their declaration order, or interpolation intrinsics.
+- Shared callable signatures and record types require representation-safe
+  lowering; filtering only the entry's module variables is insufficient.
+- Correctness tests must exercise both the original late-library-work-item
+  trigger and the unrelated-export ABI case. Neither can be replaced by a
+  pixel-only root test that would pass under the original stage gate.
+
+`pervertex.lib.export-stage-order.hlsl` and
+`pervertex.ps.export-signature.hlsl` characterize currently failing cases
+with explicit XFAIL expectations. `pervertex.lib.export-abi-control.hlsl`
+checks the unaffected baseline. Two separate, ordinary passing LIT
+fixtures (`pervertex.lib.export-stage-order.baseline.test` and
+`pervertex.lib.export-signature.baseline.test`) verify the precise known
+failure mechanisms using FileCheck. The stage-order baseline requires the
+specific SPIR-V validator failure *and* uses `-Vd` to inspect the malformed
+output without running final validation. It checks the emitted Fragment
+entry, linkage export, missing `PerVertexKHR` lowering, and incorrect
+`OpAccessChain`. The unrelated-export ABI baseline compiles successfully
+and verifies the exported parameter's incorrect array type, alongside
+working pixel-input per-vertex lowering. The XFAIL cases assert the desired
+behavior separately; an unrelated diagnostic or FileCheck failure cannot
+satisfy these positive reproducer tests. A corrected implementation requires
+converting the XFAIL tests into passing tests and removing the obsolete
+failing-state checks.
+
 ## Existing regression coverage
 
 The focused `utils/amd_lit_smoke.py` gate includes upstream DXC

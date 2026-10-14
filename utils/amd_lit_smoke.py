@@ -38,6 +38,9 @@ CASES = (
     "CodeGenSPIRV/amd.shared-stage-discard-patch-constant.hlsl",
     "CodeGenSPIRV/amd.shared-stage-discard-global-init.hlsl",
     "CodeGenSPIRV/amd.shared-stage-attribute-at-vertex.hlsl",
+    "CodeGenSPIRV/pervertex.lib.export-abi-control.hlsl",
+    "CodeGenSPIRV/pervertex.lib.export-stage-order.baseline.test",
+    "CodeGenSPIRV/pervertex.lib.export-signature.baseline.test",
     "CodeGenSPIRV/intrinsics.get-attribute-at-vertex.s.funcParam.hlsl",
     "CodeGenSPIRV/intrinsics.get-attribute-at-vertex.s.callChain.hlsl",
     "CodeGenSPIRV/intrinsics.get-attribute-at-vertex.s.nestedStruct.hlsl",
@@ -55,18 +58,27 @@ CASES = (
     "CodeGenSPIRV/amd.shared-stage-discard-export.hlsl",
 )
 
+# These fixtures describe known incorrect output. They must fail until fixed.
+EXPECTED_FAILURES = (
+    "CodeGenSPIRV/pervertex.lib.export-stage-order.hlsl",
+    "CodeGenSPIRV/pervertex.ps.export-signature.hlsl",
+)
+
 
 def check_sources() -> list[str]:
     errors = []
-    for case in CASES:
+    for case in CASES + EXPECTED_FAILURES:
         source = TEST_ROOT / case
         if not source.is_file():
             errors.append(f"Missing upstream test: {case}")
-        elif not re.search(r"^\s*(//|;|#)\s*RUN:", source.read_text(
-            encoding="utf-8", errors="replace"
-        ), re.M):
-            errors.append(f"No LIT RUN lines found in {case}")
-    if len(CASES) != len(set(CASES)):
+        else:
+            content = source.read_text(encoding="utf-8", errors="replace")
+            if not re.search(r"^\s*(//|;|#)\s*RUN:", content, re.M):
+                errors.append(f"No LIT RUN lines found in {case}")
+            is_xfail = bool(re.search(r"^\s*(//|;|#)\s*XFAIL:\s*\*", content, re.M))
+            if is_xfail != (case in EXPECTED_FAILURES):
+                errors.append(f"Unexpected LIT XFAIL status: {case}")
+    if len(CASES + EXPECTED_FAILURES) != len(set(CASES + EXPECTED_FAILURES)):
         errors.append("Duplicate upstream test selection")
     return errors
 
@@ -84,7 +96,8 @@ def main() -> int:
             print("FAIL upstream LIT inventory: " + error, file=sys.stderr)
         return 2
     if args.self_test:
-        print(f"PASS upstream LIT fixture inventory ({len(CASES)} tests)")
+        print(f"PASS upstream LIT fixture inventory ({len(CASES)} passing tests, "
+              f"{len(EXPECTED_FAILURES)} known failures)")
         return 0
     if args.build_dir is None:
         parser.error("--build-dir is required without --self-test")
@@ -103,15 +116,15 @@ def main() -> int:
                   file=sys.stderr)
             return 2
 
-    command = [
-        sys.executable, str(ROOT / "utils/lit/lit.py"),
-        "-v", "--param", f"clang_site_config={site}",
-        *(str(TEST_ROOT / case) for case in CASES),
-    ]
     env = os.environ.copy()
     library_dir = str(bin_dir if sys.platform == "win32" else build / "lib")
     key = "PATH" if sys.platform == "win32" else "LD_LIBRARY_PATH"
     env[key] = library_dir + os.pathsep + env.get(key, "")
+    command = [
+        sys.executable, str(ROOT / "utils/lit/lit.py"),
+        "-v", "--param", f"clang_site_config={site}",
+        *(str(TEST_ROOT / case) for case in CASES + EXPECTED_FAILURES),
+    ]
     result = subprocess.run(
         command, cwd=ROOT, env=env, text=True, encoding="utf-8",
         errors="replace", stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -127,11 +140,14 @@ def main() -> int:
     # LIT may return success with every case unsupported or skipped. This
     # gate requires each explicitly selected test to actually pass.
     passed = len(re.findall(r"(?m)^PASS:\s+Clang\s+::", result.stdout))
-    if passed != len(CASES):
-        print(f"FAIL upstream LIT: {passed}/{len(CASES)} tests passed; "
-              "skips and unsupported tests do not qualify", file=sys.stderr)
+    xfailed = len(re.findall(r"(?m)^XFAIL:\s+Clang\s+::", result.stdout))
+    if passed != len(CASES) or xfailed != len(EXPECTED_FAILURES):
+        print(f"FAIL upstream LIT: {passed}/{len(CASES)} passes, "
+              f"{xfailed}/{len(EXPECTED_FAILURES)} known failures; "
+              "skips, unexpected passes, and unsupported tests do not "
+              "qualify", file=sys.stderr)
         return 1
-    print(f"PASS upstream LIT gate ({passed}/{len(CASES)} actual passes)")
+    print(f"PASS upstream LIT gate ({passed} passes, {xfailed} known failures)")
     return 0
 
 
