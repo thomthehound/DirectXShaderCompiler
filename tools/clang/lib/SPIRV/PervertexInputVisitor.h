@@ -19,13 +19,17 @@
 namespace clang {
 namespace spirv {
 
+class StageReachabilityVisitor;
+
 class PervertexInputVisitor : public Visitor {
 public:
   PervertexInputVisitor(SpirvBuilder &spvBuilder, ASTContext &astCtx,
-                        SpirvContext &spvCtx, const SpirvCodeGenOptions &opts)
+                        SpirvContext &spvCtx, const SpirvCodeGenOptions &opts,
+                        const StageReachabilityVisitor &stageReachability)
       : Visitor(opts, spvCtx), inEntryFunctionWrapper(false),
-        spirvBuilder(spvBuilder), astContext(astCtx), currentMod(nullptr),
-        currentFunc(nullptr) {}
+        processCurrentFunction(false), spirvBuilder(spvBuilder),
+        astContext(astCtx), stageReachability(stageReachability),
+        currentMod(nullptr), currentFunc(nullptr) {}
 
   ///< Don't add extra index to a simple vector/matrix elem access when base is
   ///< not expanded.
@@ -86,6 +90,8 @@ public:
 
 #define REMAP_FUNC_OP(CLASS)                                                   \
   bool visit(Spirv##CLASS *op) override {                                      \
+    if (!processCurrentFunction)                                               \
+      return true;                                                              \
     op->replaceOperand(                                                        \
         [this](SpirvInstruction *inst) {                                       \
           return getMappedReplaceInstr(inst);                                  \
@@ -119,6 +125,7 @@ public:
 private:
   ///< Whether in entry function wrapper, which will influence replace steps.
   bool inEntryFunctionWrapper;
+  bool processCurrentFunction;
   ///< Instruction replacement mapper.
   ///< For AccessChain and CompositeExtract, will only add extra index.
   llvm::DenseMap<SpirvInstruction *, SpirvInstruction *> m_instrReplaceMap;
@@ -128,6 +135,7 @@ private:
   ///< Context related helpers, will use to modify spv instruction stream.
   SpirvBuilder &spirvBuilder;
   ASTContext &astContext;
+  const StageReachabilityVisitor &stageReachability;
   SpirvModule *currentMod;
   SpirvFunction *currentFunc;
   llvm::DenseMap<SpirvFunctionParameter *, std::vector<SpirvInstruction *>>
