@@ -42,6 +42,7 @@ CASES = (
     "CodeGenSPIRV/pervertex.lib.export-stage-order.hlsl",
     "CodeGenSPIRV/pervertex.ps.export-signature.hlsl",
     "CodeGenSPIRV/pervertex.lib.export-shared-record.hlsl",
+    "CodeGenSPIRV/pervertex.lib.export-record-resource-use.hlsl",
     "CodeGenSPIRV/intrinsics.get-attribute-at-vertex.s.funcParam.hlsl",
     "CodeGenSPIRV/intrinsics.get-attribute-at-vertex.s.callChain.hlsl",
     "CodeGenSPIRV/intrinsics.get-attribute-at-vertex.s.nestedStruct.hlsl",
