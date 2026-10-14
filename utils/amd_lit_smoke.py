@@ -46,6 +46,8 @@ CASES = (
     "CodeGenSPIRV/cf.discard.hlsl",
     "CodeGenSPIRV/cf.discard.cs.hlsl",
     "CodeGenSPIRV/vk.subpass-input.shader.type.error.hlsl",
+    "CodeGenSPIRV/vk.subpass-input.hlsl",
+    "CodeGenSPIRV/vk.subpass-input.unused.hlsl",
     "CodeGenSPIRV/vk.subpass-input.shared-stages.hlsl",
     "CodeGenSPIRV/fn.export.with.entrypoint.hlsl",
     "CodeGenSPIRV/lib.fn.export.with.entrypoint.hlsl",

@@ -4536,6 +4536,14 @@ SpirvEmitter::processGetSamplePosition(const CXXMemberCallExpr *expr) {
 
 SpirvInstruction *
 SpirvEmitter::processSubpassLoad(const CXXMemberCallExpr *expr) {
+  // Standalone nonpixel compilations do not materialize input-attachment
+  // declarations. Report the existing stage error before loading a resource
+  // that does not exist. Libraries instead use emitted-call reachability.
+  if (!spvContext.isPS() && !spvContext.isLib()) {
+    emitError("SubpassInput(MS) only allowed in pixel shader",
+              expr->getExprLoc());
+    return nullptr;
+  }
   const auto *object = expr->getImplicitObjectArgument()->IgnoreParens();
   SpirvInstruction *sample =
       expr->getNumArgs() == 1 ? doExpr(expr->getArg(0)) : nullptr;
