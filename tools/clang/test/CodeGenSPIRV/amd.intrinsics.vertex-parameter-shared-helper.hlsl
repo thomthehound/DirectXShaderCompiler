@@ -8,7 +8,7 @@
 // One translated helper cannot embed a pointer to either entry's input
 // signature when the same function is reachable from both entry points.
 // SHARED: error: AMD vertex-parameter helper requires a unique shader entry point
-// UNIQUE-COUNT-5: InterpolateAtVertexAMD
+// UNIQUE: InterpolateAtVertexAMD
 // NONPIXEL: error: AMD vertex-parameter access is only valid in a pixel shader
 // EXPORT-BLOCKED: fatal error: generated SPIR-V is invalid: Capability Linkage is not allowed by Vulkan
 

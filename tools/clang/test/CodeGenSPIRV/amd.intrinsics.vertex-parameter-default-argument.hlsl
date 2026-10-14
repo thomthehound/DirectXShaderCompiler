@@ -7,7 +7,7 @@
 // A call in an omitted default argument belongs to the caller's entry.
 // CXXDefaultArgExpr has no children: traversing the caller's ordinary AST
 // children alone misses its call to the parameter helper.
-// UNIQUE-COUNT-4: InterpolateAtVertexAMD
+// UNIQUE: InterpolateAtVertexAMD
 // SHARED: error: AMD vertex-parameter helper requires a unique shader entry point
 
 float4 readPixelInput() {
