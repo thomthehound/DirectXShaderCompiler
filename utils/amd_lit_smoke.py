@@ -45,6 +45,8 @@ CASES = (
     "CodeGenSPIRV/intrinsics.get-attribute-at-vertex.non-pixel-shader.hlsl",
     "CodeGenSPIRV/cf.discard.hlsl",
     "CodeGenSPIRV/cf.discard.cs.hlsl",
+    "CodeGenSPIRV/vk.subpass-input.shader.type.error.hlsl",
+    "CodeGenSPIRV/vk.subpass-input.shared-stages.hlsl",
     "CodeGenSPIRV/fn.export.with.entrypoint.hlsl",
     "CodeGenSPIRV/lib.fn.export.with.entrypoint.hlsl",
     "CodeGenSPIRV/amd.shared-stage-discard-unevaluated.hlsl",

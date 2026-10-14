@@ -13,6 +13,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 
+#include <string>
 #include <utility>
 
 namespace clang {
@@ -36,6 +37,11 @@ public:
                            const SpirvCodeGenOptions &opts)
       : Visitor(opts, spvCtx), astContext(astCtx) {}
 
+  // Lowerings that become generic SPIR-V instructions can retain their
+  // source-level stage constraint without relying on AST caller inference.
+  void requireFragmentStage(SpirvFunction *function, SourceLocation loc,
+                            llvm::StringRef diagnostic);
+
   using Visitor::visit;
   bool visit(SpirvModule *, Phase phase) override;
   bool visit(SpirvFunction *, Phase phase) override;
@@ -56,6 +62,12 @@ private:
       callGraph;
   llvm::SmallVector<std::pair<SpirvFunction *, unsigned>, 8> roots;
   llvm::SmallVector<std::pair<SpirvFunction *, SourceLocation>, 8> discards;
+  struct FragmentStageUse {
+    SpirvFunction *function;
+    SourceLocation loc;
+    std::string diagnostic;
+  };
+  llvm::SmallVector<FragmentStageUse, 8> fragmentStageUses;
 };
 
 } // namespace spirv

@@ -66,6 +66,12 @@ public:
   /// Returns the SPIR-V module being built.
   SpirvModule *getModule() { return mod.get(); }
 
+  // The operation requires fragment-stage execution, but its generic SPIR-V
+  // lowering cannot by itself identify that HLSL semantic requirement.
+  // Attach the requirement to the emitted function; the final call-graph
+  // validation resolves all entry stages, including shared and implicit calls.
+  void requireFragmentStage(SourceLocation loc, llvm::StringRef diagnostic);
+
   /// Returns whether the active feature policy permits the given extension.
   bool isExtensionEnabled(Extension ext) const {
     return featureManager.isExtensionEnabled(ext);
@@ -941,7 +947,14 @@ private:
 
   std::unique_ptr<SpirvModule> mod; ///< The current module being built
   SpirvFunction *function;          ///< The current function being built
-  SpirvBasicBlock *insertPoint;     ///< The current basic block being built
+  SpirvBasicBlock *insertPoint;
+
+  struct FragmentStageUse {
+    SpirvFunction *function;
+    SourceLocation loc;
+    std::string diagnostic;
+  };
+  std::vector<FragmentStageUse> fragmentStageUses;     ///< The current basic block being built
 
   SpirvFunction *moduleInit;              ///< The module initialization
                                           ///< function

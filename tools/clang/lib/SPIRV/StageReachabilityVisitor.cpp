@@ -15,6 +15,11 @@
 namespace clang {
 namespace spirv {
 
+void StageReachabilityVisitor::requireFragmentStage(
+    SpirvFunction *function, SourceLocation loc, llvm::StringRef diagnostic) {
+  fragmentStageUses.push_back({function, loc, diagnostic.str()});
+}
+
 bool StageReachabilityVisitor::visit(SpirvEntryPoint *entry) {
   roots.emplace_back(entry->getEntryPoint(),
                      entry->getExecModel() == spv::ExecutionModel::Fragment
@@ -101,6 +106,14 @@ bool StageReachabilityVisitor::visit(SpirvModule *, Phase phase) {
   for (const auto &discard : discards) {
     if (stages.lookup(discard.first) != Fragment) {
       diags.Report(discard.second, errorId);
+      valid = false;
+    }
+  }
+  for (const auto &use : fragmentStageUses) {
+    if (stages.lookup(use.function) != Fragment) {
+      const unsigned id =
+          diags.getCustomDiagID(DiagnosticsEngine::Error, use.diagnostic);
+      diags.Report(use.loc, id);
       valid = false;
     }
   }

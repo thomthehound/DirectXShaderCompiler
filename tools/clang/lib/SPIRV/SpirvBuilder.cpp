@@ -134,6 +134,12 @@ void SpirvBuilder::endFunction() {
   insertPoint = nullptr;
 }
 
+void SpirvBuilder::requireFragmentStage(SourceLocation loc,
+                                        llvm::StringRef diagnostic) {
+  assert(function && "fragment-stage requirement requires an active function");
+  fragmentStageUses.push_back({function, loc, diagnostic.str()});
+}
+
 SpirvBasicBlock *SpirvBuilder::createBasicBlock(llvm::StringRef name) {
   assert(function && "found detached basic block");
   auto *bb = new (context) SpirvBasicBlock(name);
@@ -2196,6 +2202,8 @@ std::vector<uint32_t> SpirvBuilder::takeModule() {
   // calls have been attached to entry wrappers. This precedes type lowering
   // and binary emission so an invalid stage never reaches the SPIR-V validator.
   StageReachabilityVisitor stageValidator(astContext, context, spirvOptions);
+  for (const auto &use : fragmentStageUses)
+    stageValidator.requireFragmentStage(use.function, use.loc, use.diagnostic);
   if (!mod->invokeVisitor(&stageValidator))
     return {};
 

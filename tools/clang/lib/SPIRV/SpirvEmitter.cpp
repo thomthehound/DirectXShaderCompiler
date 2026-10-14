@@ -4535,11 +4535,6 @@ SpirvEmitter::processGetSamplePosition(const CXXMemberCallExpr *expr) {
 
 SpirvInstruction *
 SpirvEmitter::processSubpassLoad(const CXXMemberCallExpr *expr) {
-  if (!isCurrentFunctionPixelOnly()) {
-    emitError("SubpassInput(MS) only allowed in pixel shader",
-              expr->getExprLoc());
-    return nullptr;
-  }
   const auto *object = expr->getImplicitObjectArgument()->IgnoreParens();
   SpirvInstruction *sample =
       expr->getNumArgs() == 1 ? doExpr(expr->getArg(0)) : nullptr;
@@ -4547,9 +4542,15 @@ SpirvEmitter::processSubpassLoad(const CXXMemberCallExpr *expr) {
   auto *location = spvBuilder.getConstantComposite(
       astContext.getExtVectorType(astContext.IntTy, 2), {zero, zero});
 
-  return processBufferTextureLoad(object, location, /*constOffset*/ 0,
-                                  /*lod*/ sample,
-                                  /*residencyCode*/ 0, expr->getExprLoc());
+  auto *result = processBufferTextureLoad(object, location, /*constOffset*/ 0,
+                                          /*lod*/ sample,
+                                          /*residencyCode*/ 0,
+                                          expr->getExprLoc());
+  if (result)
+    spvBuilder.requireFragmentStage(
+        expr->getExprLoc(),
+        "SubpassInput(MS) only allowed in pixel shader");
+  return result;
 }
 
 SpirvInstruction *
