@@ -606,6 +606,7 @@ SpirvEmitter::SpirvEmitter(CompilerInstance &ci)
   // Get ShaderModel from command line hlsl profile option.
   const hlsl::ShaderModel *shaderModel =
       hlsl::ShaderModel::GetByName(ci.getCodeGenOpts().HLSLProfile.c_str());
+  compilationShaderKind = shaderModel->GetKind();
   if (shaderModel->GetKind() == hlsl::ShaderModel::Kind::Invalid)
     emitError("unknown shader module: %0", {}) << shaderModel->GetName();
 
@@ -2353,11 +2354,11 @@ void SpirvEmitter::doVarDecl(const VarDecl *decl) {
   }
 
   if (decl->getAttr<VKInputAttachmentIndexAttr>()) {
-    // Standalone nonpixel shaders do not expose input attachments. Libraries,
-    // however, can contain pixel entry points even though their ambient
-    // context is Library. Keep the declaration and let the emitted call-graph
-    // pass reject any SubpassLoad reached from a nonpixel entry.
-    if (!spvContext.isPS() && !spvContext.isLib())
+    // Standalone nonpixel shaders do not expose input attachments. Libraries
+    // can contain pixel entries regardless of whichever stage the function
+    // work queue is currently translating.
+    if (compilationShaderKind != hlsl::ShaderModel::Kind::Pixel &&
+        compilationShaderKind != hlsl::ShaderModel::Kind::Library)
       return;
   }
 
@@ -4537,9 +4538,12 @@ SpirvEmitter::processGetSamplePosition(const CXXMemberCallExpr *expr) {
 SpirvInstruction *
 SpirvEmitter::processSubpassLoad(const CXXMemberCallExpr *expr) {
   // Standalone nonpixel compilations do not materialize input-attachment
-  // declarations. Report the existing stage error before loading a resource
-  // that does not exist. Libraries instead use emitted-call reachability.
-  if (!spvContext.isPS() && !spvContext.isLib()) {
+  // declarations. A library helper can inherit a nonpixel *current* stage
+  // even when its input attachment is valid for a different pixel entry, so
+  // use the immutable compilation target here and defer library legality to
+  // the emitted call graph.
+  if (compilationShaderKind != hlsl::ShaderModel::Kind::Pixel &&
+      compilationShaderKind != hlsl::ShaderModel::Kind::Library) {
     emitError("SubpassInput(MS) only allowed in pixel shader",
               expr->getExprLoc());
     return nullptr;
