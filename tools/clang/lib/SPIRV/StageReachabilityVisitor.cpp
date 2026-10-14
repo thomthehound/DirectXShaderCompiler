@@ -130,9 +130,8 @@ bool StageReachabilityVisitor::visit(SpirvModule *, Phase phase) {
       continue; // This operation was in a discarded basic block.
     const unsigned mask = stages.lookup(owner);
     if (mask != 0 && mask != Fragment) {
-      const unsigned id =
-          diags.getCustomDiagID(DiagnosticsEngine::Error, use.diagnostic);
-      diags.Report(use.loc, id);
+      const unsigned id = diags.getCustomDiagID(DiagnosticsEngine::Error, "%0");
+      diags.Report(use.loc, id) << use.diagnostic;
       valid = false;
     }
   }
