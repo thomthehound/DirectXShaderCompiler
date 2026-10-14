@@ -23,7 +23,7 @@ bool containsAstRecord(QualType type) {
     return false;
   if (type->isStructureType())
     return true;
-  if (type->isPointerType())
+  if (type->isPointerType() || type->isReferenceType())
     return containsAstRecord(type->getPointeeType());
   if (const auto *array = dyn_cast<clang::ArrayType>(type.getTypePtr()))
     return containsAstRecord(array->getElementType());
