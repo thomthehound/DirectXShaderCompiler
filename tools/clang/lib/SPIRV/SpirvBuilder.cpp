@@ -2230,8 +2230,8 @@ std::vector<uint32_t> SpirvBuilder::takeModule() {
     if (entry->getExecModel() != spv::ExecutionModel::Fragment)
       onlyFragmentEntries = false;
   if (mod->isPerVertexInterpMode() && onlyFragmentEntries) {
-    PervertexInputVisitor pervertexInputVisitor(
-        *this, astContext, context, spirvOptions, stageValidator);
+    PervertexInputVisitor pervertexInputVisitor(*this, astContext, context,
+                                                spirvOptions, stageValidator);
     if (!mod->invokeVisitor(&pervertexInputVisitor))
       return {};
   }
