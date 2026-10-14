@@ -78,12 +78,61 @@ bool PervertexInputVisitor::expandNointerpVarAndParam(
   return isExpanded;
 }
 
+void PervertexInputVisitor::protectRecordTypes(QualType type) {
+  if (type.isNull())
+    return;
+  if (type->isPointerType()) {
+    protectRecordTypes(type->getPointeeType());
+    return;
+  }
+  if (const auto *array = dyn_cast<ArrayType>(type.getTypePtr())) {
+    protectRecordTypes(array->getElementType());
+    return;
+  }
+  if (const auto *record = type->getAs<RecordType>()) {
+    const auto *decl = record->getDecl();
+    if (!protectedRecords.insert(decl).second)
+      return;
+    for (const auto *field : decl->fields())
+      protectRecordTypes(field->getType());
+  }
+}
+
+bool PervertexInputVisitor::needsNointerpStructureExpansion(
+    QualType type, bool decorated) const {
+  const auto *record = type->getAs<RecordType>();
+  if (!record)
+    return false;
+  const auto *decl = record->getDecl();
+  const bool recordDecorated =
+      decorated || decl->hasAttr<HLSLNoInterpolationAttr>();
+  for (const auto *field : decl->fields()) {
+    const bool fieldDecorated =
+        recordDecorated || field->hasAttr<HLSLNoInterpolationAttr>();
+    if (field->getType()->isStructureType()) {
+      if (needsNointerpStructureExpansion(field->getType(), fieldDecorated))
+        return true;
+    } else if (fieldDecorated) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool PervertexInputVisitor::expandNointerpStructure(QualType type,
                                                     bool isVarDecoratedInterp) {
   QualType currentType = type;
   auto typePtr = type.getTypePtr();
   if (m_expandedStructureType.count(typePtr) > 0)
     return true;
+  if (protectedRecords.count(type->getAs<RecordType>()->getDecl()) &&
+      needsNointerpStructureExpansion(type, isVarDecoratedInterp)) {
+    if (!unsupportedSharedRecord)
+      emitError("cannot specialize per-vertex interpolation for a record "
+                "shared with a non-pixel or exported function");
+    unsupportedSharedRecord = true;
+    return false;
+  }
   bool hasNoInterp = false;
   if (typePtr->isStructureType()) {
     const auto *structDecl = type->getAs<RecordType>()->getDecl();
@@ -207,7 +256,22 @@ bool PervertexInputVisitor::isNotExpandedVectorAccess(QualType baseType,
 bool PervertexInputVisitor::visit(SpirvModule *m, Phase phase) {
   if (!m->isPerVertexInterpMode())
     return false;
+  if (phase == Phase::Done)
+    return !unsupportedSharedRecord;
   currentMod = m;
+  // The emitted call graph has already classified linkage-exported and
+  // other non-Fragment functions. A Clang FieldDecl is shared across every
+  // use of its record, so never silently rewrite one of these record types.
+  for (auto *func : stageReachability.getNonFragmentFunctions()) {
+    protectRecordTypes(func->getAstReturnType());
+    for (auto *param : func->getParameters())
+      protectRecordTypes(param->getAstResultType());
+    for (auto *var : func->getVariables())
+      protectRecordTypes(var->getAstResultType());
+  }
+  for (auto *var : m->getVariables())
+    if (var->getStorageClass() != spv::StorageClass::Input)
+      protectRecordTypes(var->getAstResultType());
   return true;
 }
 
