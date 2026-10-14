@@ -101,11 +101,19 @@ call edge has mask zero, and its record types must still be protected from
 Fragment-specific AST mutation even though it is not reachable from a root.
 `pervertex.lib.unreachable-record-helper.hlsl` exercises the disconnected
 basic block created after an early return and checks both the shared-record
-safety diagnostic and the emitted helper control variant. The per-vertex visitor does not modify those
-non-Fragment callable signatures or bodies. A pixel entry may pass its
-ordinary provoking-vertex value to a cross-stage or exported callee via the
-existing operand-replacement mapping. It cannot implicitly pass an expanded
-array to a callable requiring the original scalar or vector ABI.
+safety diagnostic and the emitted helper control variant.
+
+The per-vertex visitor does not modify non-Fragment callable signatures or
+bodies. For an ordinary pixel-to-export call, the emitter already allocates
+a dedicated Function-scope argument variable and initializes it at the call
+site. When emitted reachability shows that the callee requires its unchanged
+callable ABI, per-vertex lowering suppresses array expansion on that
+call-private variable while rewriting the source value to its ordinary
+provoking-vertex representation. It must not replace the OpFunctionCall
+argument with an OpAccessChain, because SPIR-V requires a memory-object
+declaration for ordinary pointer parameters. Other expanded values without
+a safe call-private representation are diagnosed rather than passed as
+incompatible argument pointers.
 
 For records, this is not yet a complete representation-separation solution.
 `PervertexInputVisitor` still expands record fields by mutating shared
@@ -114,7 +122,8 @@ record, the compiler diagnoses the conflict rather than silently changing
 its callable ABI. This protection includes records used by emitted
 temporaries and resource loads, not only function signatures and local
 declarations. `pervertex.lib.export-shared-record.hlsl` and
-`pervertex.lib.export-record-resource-use.hlsl` protect the fail-safe. A future lowering should replace global AST record mutation with
+`pervertex.lib.export-record-resource-use.hlsl` protect the fail-safe.
+A future lowering should replace global AST record mutation with
 SPIR-V-private types and explicit conversions where necessary.
 
 ## Existing regression coverage
