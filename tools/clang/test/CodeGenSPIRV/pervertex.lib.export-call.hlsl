@@ -8,6 +8,7 @@
 // CHECK-DAG: OpDecorate [[INPUT:%[a-zA-Z0-9_]+]] PerVertexKHR
 // CHECK: [[EXPORT]] = OpFunction %v4float
 // CHECK-NEXT: [[PARAM:%[a-zA-Z0-9_]+]] = OpFunctionParameter %_ptr_Function_v4float
+// CHECK: OpFunctionCall %v4float [[EXPORT]]
 
 export float4 exportedPassthrough(float4 value) {
   return value;
