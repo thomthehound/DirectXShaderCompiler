@@ -338,6 +338,49 @@ def main() -> int:
         "discard statement may only be used in pixel shaders",
     )
     require_failure(
+        "SPIR-V discard in patch-constant helper shared with pixel",
+        compile_shader(
+            "amd.shared-stage-discard-patch-constant.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+        ),
+        "discard statement may only be used in pixel shaders",
+    )
+    require_failure(
+        "SPIR-V discard in patch-constant helper with hull first",
+        compile_shader(
+            "amd.shared-stage-discard-patch-constant.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-DHULL_FIRST",
+        ),
+        "discard statement may only be used in pixel shaders",
+    )
+    require_success(
+        "SPIR-V discard helper not called from patch constants",
+        compile_shader(
+            "amd.shared-stage-discard-patch-constant.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-DNO_PATCH_CALL",
+        ),
+        required=(r"OpEntryPoint Fragment", r"OpEntryPoint TessellationControl"),
+    )
+    require_failure(
+        "SPIR-V global initializer reaches discard from multiple stages",
+        compile_shader(
+            "amd.shared-stage-discard-global-init.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+        ),
+        "discard statement may only be used in pixel shaders",
+    )
+    require_success(
+        "SPIR-V global initializer discard with only pixel callers",
+        compile_shader(
+            "amd.shared-stage-discard-global-init.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-DPIXEL_ONLY",
+        ),
+        required=(r"OpEntryPoint Fragment",),
+    )
+    require_failure(
         "AMD raw vertex-parameter register bounds",
         compile_shader(
             "amd.intrinsics.vertex-parameter-out-of-range.hlsl",

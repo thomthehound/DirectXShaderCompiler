@@ -764,11 +764,27 @@ llvm::StringRef SpirvEmitter::getEntryPointName(const FunctionInfo *entryInfo) {
   return entrypointName;
 }
 
-// Traverse the HLSL call graph to record unique entry ownership and all
-// reachable shader stages. The emitter translates shared helpers only once,
-// so the ambient stage from the first caller cannot validate stage-restricted
-// operations. Indirect/unresolved calls do not establish ownership; AMD raw
-// parameter access rejects helpers without a provable unique entry.
+FunctionDecl *SpirvEmitter::findPatchConstantFunction(
+    const FunctionDecl *hullEntry) {
+  const auto *pcfAttr = hullEntry->getAttr<HLSLPatchConstantFuncAttr>();
+  if (!pcfAttr)
+    return nullptr;
+
+  FunctionDecl *result = nullptr;
+  const llvm::StringRef name = pcfAttr->getFunctionName();
+  for (auto *decl : astContext.getTranslationUnitDecl()->decls())
+    if (auto *funcDecl = dyn_cast<FunctionDecl>(decl))
+      if (astContext.IsPatchConstantFunctionDecl(funcDecl) &&
+          funcDecl->getName() == name)
+        result = funcDecl;
+  return result;
+}
+
+// The emitter translates a shared helper only once, but callers can reach it
+// from several entry stages. Collect explicit AST calls, default arguments,
+// compiler-generated patch-constant calls, and each wrapper's global initializers
+// before lowering. AMD raw pixel-register access additionally requires a unique
+// entry, while generic fragment-only operations only require pixel-only stages.
 void SpirvEmitter::collectFunctionEntryReachability() {
   amdParameterEntryOwners.clear();
   functionReachableShaderStages.clear();
@@ -785,6 +801,50 @@ void SpirvEmitter::collectFunctionEntryReachability() {
     const uint32_t stageMask = uint32_t(1) << stageIndex;
     llvm::DenseSet<const FunctionDecl *> visited;
     llvm::SmallVector<const FunctionDecl *, 32> pending(1, root);
+
+    // HLSL never explicitly invokes hull patch-constant functions, but the
+    // wrapper calls and emits them. Seed the same function that the wrapper
+    // resolves so its transitive calls acquire the hull stage too.
+    if (entryInfo->shaderModelKind == hlsl::ShaderModel::Kind::Hull)
+      if (const auto *pcf = findPatchConstantFunction(root))
+        pending.push_back(pcf);
+
+    // The wrapper also evaluates every nonconstant file-scope initializer.
+    // Its calls must be attributed to each entry, not just to whichever
+    // shader stage first happens to emit a helper.
+    auto addCalls = [&pending](const Stmt *body) {
+      llvm::SmallVector<const Stmt *, 64> statements;
+      statements.push_back(body);
+      while (!statements.empty()) {
+        const Stmt *stmt = statements.pop_back_val();
+        if (const auto *call = dyn_cast<CallExpr>(stmt))
+          if (const auto *callee = call->getDirectCallee())
+            pending.push_back(callee);
+        // Default argument call expressions have no AST children even though
+        // codegen evaluates the parameter's initializer at the call site.
+        if (const auto *defaultArg = dyn_cast<CXXDefaultArgExpr>(stmt)) {
+          const auto *param = defaultArg->getParam();
+          const Expr *value = param->hasUninstantiatedDefaultArg()
+                                  ? param->getUninstantiatedDefaultArg()
+                                  : param->getDefaultArg();
+          if (value)
+            statements.push_back(value);
+        }
+        // Codegen also expands implicit vk namespace variables by evaluating
+        // their initializer rather than loading the variable.
+        if (const auto *ref = dyn_cast<DeclRefExpr>(stmt))
+          if (isImplicitVarDeclInVkNamespace(ref->getDecl()))
+            if (const auto *init = cast<VarDecl>(ref->getDecl())->getInit())
+              statements.push_back(init);
+        for (const Stmt *child : stmt->children())
+          if (child)
+            statements.push_back(child);
+      }
+    };
+    for (const auto *global : toInitGloalVars)
+      if (const auto *init = global->getInit())
+        addCalls(init);
+
     while (!pending.empty()) {
       const FunctionDecl *fn = pending.pop_back_val();
       const FunctionDecl *key = fn->getCanonicalDecl();
@@ -799,31 +859,8 @@ void SpirvEmitter::collectFunctionEntryReachability() {
         previous->second = nullptr;
 
       const FunctionDecl *definition = nullptr;
-      if (!fn->hasBody(definition))
-        continue;
-
-      llvm::SmallVector<const Stmt *, 64> statements;
-      statements.push_back(definition->getBody());
-      while (!statements.empty()) {
-        const Stmt *stmt = statements.pop_back_val();
-        if (const auto *call = dyn_cast<CallExpr>(stmt))
-          if (const auto *callee = call->getDirectCallee())
-            pending.push_back(callee);
-        // CXXDefaultArgExpr has no AST children, but codegen evaluates the
-        // referenced parameter's initializer at each omitted-argument call.
-        // Include its calls in reachability for this specific caller.
-        if (const auto *defaultArg = dyn_cast<CXXDefaultArgExpr>(stmt)) {
-          const auto *param = defaultArg->getParam();
-          const Expr *value = param->hasUninstantiatedDefaultArg()
-                                  ? param->getUninstantiatedDefaultArg()
-                                  : param->getDefaultArg();
-          if (value)
-            statements.push_back(value);
-        }
-        for (const Stmt *child : stmt->children())
-          if (child)
-            statements.push_back(child);
-      }
+      if (fn->hasBody(definition))
+        addCalls(definition->getBody());
     }
   }
 }
@@ -4485,7 +4522,7 @@ SpirvEmitter::processGetSamplePosition(const CXXMemberCallExpr *expr) {
 
 SpirvInstruction *
 SpirvEmitter::processSubpassLoad(const CXXMemberCallExpr *expr) {
-  if (!spvContext.isPS()) {
+  if (!isCurrentFunctionPixelOnly()) {
     emitError("SubpassInput(MS) only allowed in pixel shader",
               expr->getExprLoc());
     return nullptr;
@@ -15049,7 +15086,7 @@ void SpirvEmitter::processMeshOutputCounts(const CallExpr *callExpr) {
 
 SpirvInstruction *
 SpirvEmitter::processGetAttributeAtVertex(const CallExpr *expr) {
-  if (!spvContext.isPS()) {
+  if (!isCurrentFunctionPixelOnly()) {
     emitError("GetAttributeAtVertex only allowed in pixel shader",
               expr->getExprLoc());
     return nullptr;
@@ -15661,14 +15698,7 @@ bool SpirvEmitter::processTessellationShaderAttributes(
                                 spv::ExecutionMode::OutputVertices,
                                 {*numOutputControlPoints}, decl->getLocation());
   }
-  if (auto *pcf = decl->getAttr<HLSLPatchConstantFuncAttr>()) {
-    llvm::StringRef pcf_name = pcf->getFunctionName();
-    for (auto *decl : astContext.getTranslationUnitDecl()->decls())
-      if (auto *funcDecl = dyn_cast<FunctionDecl>(decl))
-        if (astContext.IsPatchConstantFunctionDecl(funcDecl) &&
-            funcDecl->getName() == pcf_name)
-          patchConstFunc = funcDecl;
-  }
+  patchConstFunc = findPatchConstantFunction(decl);
 
   return true;
 }

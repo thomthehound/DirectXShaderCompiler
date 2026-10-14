@@ -35,6 +35,8 @@ CASES = (
     "CodeGenSPIRV/amd.intrinsics.vertex-parameter-shared-helper.hlsl",
     "CodeGenSPIRV/amd.intrinsics.vertex-parameter-default-argument.hlsl",
     "CodeGenSPIRV/amd.shared-stage-discard.hlsl",
+    "CodeGenSPIRV/amd.shared-stage-discard-patch-constant.hlsl",
+    "CodeGenSPIRV/amd.shared-stage-discard-global-init.hlsl",
 )
 
 

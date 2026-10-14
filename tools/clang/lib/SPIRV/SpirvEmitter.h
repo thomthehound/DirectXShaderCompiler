@@ -1568,6 +1568,7 @@ private:
   // a function. Unlike the unique-owner map it preserves cross-stage callers.
   llvm::DenseMap<const FunctionDecl *, uint32_t> functionReachableShaderStages;
   bool functionEntryReachabilityCollected = false;
+  FunctionDecl *findPatchConstantFunction(const FunctionDecl *hullEntry);
   void collectFunctionEntryReachability();
   bool isCurrentFunctionPixelOnly();
   SpirvFunction *getAmdParameterEntryFunction(SourceLocation loc);
