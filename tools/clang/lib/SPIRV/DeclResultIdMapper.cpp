@@ -2243,7 +2243,9 @@ SpirvInstruction *DeclResultIdMapper::getAmdVertexParameterComponentPtr(
   for (const auto &stageVar : stageVars) {
     // A library module may contain several entry-point interfaces. D3D pixel
     // parameter registers are local to the owning entry point, not global.
-    if (stageVar.getEntryPoint() && stageVar.getEntryPoint() != owningEntry)
+    // Raw D3D pixel registers belong to one entry interface. Unlike ordinary
+    // shared stage variables, candidate PS inputs must have that provenance.
+    if (stageVar.getEntryPoint() != owningEntry)
       continue;
     if (!stageVar.getSigPoint() ||
         stageVar.getSigPoint()->GetKind() != hlsl::SigPoint::Kind::PSIn ||

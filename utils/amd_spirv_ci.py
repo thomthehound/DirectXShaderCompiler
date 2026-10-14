@@ -10,6 +10,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from amd_spirv_interface import check_pixel_parameter_interface
+
 
 @dataclass(frozen=True)
 class Result:
@@ -222,18 +224,24 @@ def main() -> int:
         required=(r'OpExtension "SPV_AMD_shader_explicit_vertex_parameter"',),
         counts=((r"\bInterpolateAtVertexAMD\b", 4),),
     )
+    unique_multi_entry = compile_shader(
+        "amd.intrinsics.vertex-parameter-shared-helper.hlsl",
+        "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+        "-fspv-extension=AMD", "-DUNIQUE_OWNER",
+    )
     require_success(
         "AMD raw vertex-parameter local helper in multi-entry library",
-        compile_shader(
-            "amd.intrinsics.vertex-parameter-shared-helper.hlsl",
-            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
-            "-fspv-extension=AMD", "-DUNIQUE_OWNER",
-        ),
+        unique_multi_entry,
         required=(r'OpExtension "SPV_AMD_shader_explicit_vertex_parameter"',),
         counts=((r"\bInterpolateAtVertexAMD\b", 5),),
     )
+    try:
+        check_pixel_parameter_interface(unique_multi_entry.stdout, "first", "second")
+    except ValueError as exc:
+        fail("AMD local helper pixel entry interface", unique_multi_entry, str(exc))
+    print("PASS AMD local helper pixel entry interface")
     require_failure(
-        "AMD exported helper has no valid Vulkan linkage contract",
+        "Vulkan rejects independently exported HLSL library helper",
         compile_shader(
             "amd.intrinsics.vertex-parameter-shared-helper.hlsl",
             "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
@@ -269,16 +277,22 @@ def main() -> int:
         required=(r'OpExtension "SPV_AMD_shader_explicit_vertex_parameter"',),
         counts=((r"\bInterpolateAtVertexAMD\b", 4),),
     )
+    default_second_owner = compile_shader(
+        "amd.intrinsics.vertex-parameter-default-argument.hlsl",
+        "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+        "-fspv-extension=AMD", "-DDEFAULT_SINGLE_OWNER",
+    )
     require_success(
         "AMD raw vertex-parameter default argument owned by second entry",
-        compile_shader(
-            "amd.intrinsics.vertex-parameter-default-argument.hlsl",
-            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
-            "-fspv-extension=AMD", "-DDEFAULT_SINGLE_OWNER",
-        ),
+        default_second_owner,
         required=(r'OpExtension "SPV_AMD_shader_explicit_vertex_parameter"',),
         counts=((r"\bInterpolateAtVertexAMD\b", 4),),
     )
+    try:
+        check_pixel_parameter_interface(default_second_owner.stdout, "second", "first")
+    except ValueError as exc:
+        fail("AMD default argument pixel entry interface", default_second_owner, str(exc))
+    print("PASS AMD default argument pixel entry interface")
     require_failure(
         "AMD raw vertex-parameter default argument shared across entries",
         compile_shader(

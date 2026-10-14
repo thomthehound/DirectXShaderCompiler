@@ -39,6 +39,8 @@ jobs:
             utils/apusr_amd_qualify.py \
             utils/apusr_amd_experimental_inventory.py \
             utils/amd_spirv_ci.py \
+            utils/amd_spirv_interface.py \
+            utils/test_amd_spirv_interface.py \
             utils/amd_lit_smoke.py \
             utils/amd_math_ci.py \
             utils/amd_subgroup_ci.py \
@@ -71,6 +73,7 @@ jobs:
         run: |
           python3 utils/amd_upstream_contract_audit.py
           python3 utils/amd_lit_smoke.py --self-test
+          python3 -m unittest discover -s utils -p 'test_amd_spirv_interface.py'
           python3 -m unittest discover -s utils/amd_vulkan_isa_probe -p 'test_probe_evidence.py'
           python3 -m unittest discover -s utils/amd_vulkan_isa_probe -p 'test_khr_cooperative_matrix_control.py'
           python3 utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py --self-test
