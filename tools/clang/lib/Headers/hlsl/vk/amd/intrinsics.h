@@ -177,6 +177,10 @@ WriteInvocation(T inputValue, T writeValue, uint invocationIndex);
 //   vk::AmdVertexParameterComponent(vertexIdx, parameterIdx, componentIdx)
 // They resolve D3D parameter-register packing independently of Vulkan
 // Location and lower to the same InterpolateAtVertexAMD instruction below.
+// A helper can reference registers if reachable from exactly one shader entry.
+// Sharing one such helper across entry points requires entry-specific function
+// specialization, which is not yet supported and is diagnosed rather than
+// resolving against the wrong entry-point signature.
 
 // SPV_AMD_shader_explicit_vertex_parameter. The source operand must remain a
 // pointer to fragment input storage, hence ext_reference.

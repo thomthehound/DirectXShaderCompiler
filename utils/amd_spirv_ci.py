@@ -212,6 +212,82 @@ def main() -> int:
         counts=((r"\bInterpolateAtVertexAMD\b", 4),),
     )
 
+    require_success(
+        "AMD raw vertex-parameter helper with one entry",
+        compile_shader(
+            "amd.intrinsics.vertex-parameter-helper.hlsl",
+            "-T", "ps_6_0", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-extension=AMD",
+        ),
+        required=(r'OpExtension "SPV_AMD_shader_explicit_vertex_parameter"',),
+        counts=((r"\bInterpolateAtVertexAMD\b", 4),),
+    )
+    require_success(
+        "AMD raw vertex-parameter local helper in multi-entry library",
+        compile_shader(
+            "amd.intrinsics.vertex-parameter-shared-helper.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-extension=AMD", "-DUNIQUE_OWNER",
+        ),
+        required=(r'OpExtension "SPV_AMD_shader_explicit_vertex_parameter"',),
+        counts=((r"\bInterpolateAtVertexAMD\b", 5),),
+    )
+    require_failure(
+        "AMD exported helper has no valid Vulkan linkage contract",
+        compile_shader(
+            "amd.intrinsics.vertex-parameter-shared-helper.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-extension=AMD", "-DUNIQUE_OWNER", "-DAMD_EXPORT_HELPER",
+        ),
+        "Capability Linkage is not allowed by Vulkan",
+    )
+    require_failure(
+        "AMD raw vertex-parameter non-pixel owner is rejected",
+        compile_shader(
+            "amd.intrinsics.vertex-parameter-shared-helper.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-extension=AMD", "-DUNIQUE_OWNER", "-DVERTEX_OWNER",
+        ),
+        "AMD vertex-parameter access is only valid in a pixel shader",
+    )
+    require_failure(
+        "AMD raw vertex-parameter shared helper has ambiguous entry owner",
+        compile_shader(
+            "amd.intrinsics.vertex-parameter-shared-helper.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-extension=AMD",
+        ),
+        "AMD vertex-parameter helper requires a unique shader entry point",
+    )
+    require_success(
+        "AMD raw vertex-parameter default argument unused by second entry",
+        compile_shader(
+            "amd.intrinsics.vertex-parameter-default-argument.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-extension=AMD",
+        ),
+        required=(r'OpExtension "SPV_AMD_shader_explicit_vertex_parameter"',),
+        counts=((r"\bInterpolateAtVertexAMD\b", 4),),
+    )
+    require_success(
+        "AMD raw vertex-parameter default argument owned by second entry",
+        compile_shader(
+            "amd.intrinsics.vertex-parameter-default-argument.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-extension=AMD", "-DDEFAULT_SINGLE_OWNER",
+        ),
+        required=(r'OpExtension "SPV_AMD_shader_explicit_vertex_parameter"',),
+        counts=((r"\bInterpolateAtVertexAMD\b", 4),),
+    )
+    require_failure(
+        "AMD raw vertex-parameter default argument shared across entries",
+        compile_shader(
+            "amd.intrinsics.vertex-parameter-default-argument.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-extension=AMD", "-DDEFAULT_USED",
+        ),
+        "AMD vertex-parameter helper requires a unique shader entry point",
+    )
     require_failure(
         "AMD raw vertex-parameter register bounds",
         compile_shader(

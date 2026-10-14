@@ -34,7 +34,7 @@ jobs:
           python3 -m json.tool utils/apusr_amd_acceleration_matrix.json >/dev/null
           python3 -m json.tool utils/apusr_amd_experimental_candidates.json >/dev/null
           python3 -m json.tool utils/apusr_amd_ingress_blockers.json >/dev/null
-          python3 -m json.tool utils/amd_contract_addendum_matrix_packing.json >/dev/null
+          python3 -m json.tool utils/amd_spirv_contracts.json >/dev/null
           python3 -m py_compile \
             utils/apusr_amd_qualify.py \
             utils/apusr_amd_experimental_inventory.py \
@@ -78,6 +78,7 @@ jobs:
   build-linux:
     name: Linux compiler + contracts
     needs: preflight
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[full-ci]')
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -138,6 +139,7 @@ jobs:
   build-windows:
     name: Windows compiler + contracts
     needs: preflight
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[full-ci]')
     runs-on: windows-latest
     timeout-minutes: 120
     steps:

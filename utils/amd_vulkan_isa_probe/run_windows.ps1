@@ -127,6 +127,7 @@ function Invoke-ProbeStep {
                 }
                 "completed-with-unsupported" { $evidenceStatus = "partially-unsupported" }
                 "isa-only" { $evidenceStatus = "isa-only" }
+                "compiler-only" { $evidenceStatus = "compiler-only" }
                 "failed" {
                     $evidenceStatus = "failed"
                     if ($rc -eq 0) { $rc = 2 }
@@ -396,6 +397,7 @@ $QualificationIncomplete = @($script:Results | Where-Object { $_.category -eq "q
 $QualificationUnsupported = @($script:Results | Where-Object { $_.evidence_status -eq "partially-unsupported" })
 $QualificationUnclassified = @($script:Results | Where-Object { $_.category -eq "qualification" -and $_.evidence_status -eq "unclassified" })
 $QualificationIsaOnly = @($script:Results | Where-Object { $_.evidence_status -eq "isa-only" })
+$QualificationCompilerOnly = @($script:Results | Where-Object { $_.evidence_status -eq "compiler-only" })
 if ($ContractFailures.Count -gt 0) {
     $OverallStatus = "failed-contract"
     $FinalExitCode = 1
@@ -413,7 +415,7 @@ $FinishedUtc = (Get-Date).ToUniversalTime()
 $Summary = [PSCustomObject]@{
     schema = 2
     overall_status = $OverallStatus
-    qualification_evidence_status = if ($QualificationUnclassified.Count -gt 0 -or $QualificationIsaOnly.Count -gt 0 -or $QualificationUnsupported.Count -gt 0) { "partial" } else { "classified" }
+    qualification_evidence_status = if ($QualificationUnclassified.Count -gt 0 -or $QualificationIsaOnly.Count -gt 0 -or $QualificationCompilerOnly.Count -gt 0 -or $QualificationUnsupported.Count -gt 0) { "partial" } else { "classified" }
     started_utc = $StartedUtc.ToString("o")
     finished_utc = $FinishedUtc.ToString("o")
     duration_seconds = [math]::Round(($FinishedUtc - $StartedUtc).TotalSeconds, 3)
