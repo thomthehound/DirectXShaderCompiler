@@ -3585,6 +3585,7 @@ SpirvInstruction *SpirvEmitter::processCall(const CallExpr *callExpr) {
 
       auto *tempVar = spvBuilder.addFnVar(varType, arg->getLocStart(), varName,
                                           isPrecise, isNoInterp);
+      tempVar->setFunctionCallArgumentTemporary();
 
       vars.push_back(tempVar);
       isTempVar.push_back(true);
