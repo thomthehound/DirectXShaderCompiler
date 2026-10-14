@@ -302,6 +302,170 @@ def main() -> int:
         ),
         "AMD vertex-parameter helper requires a unique shader entry point",
     )
+    require_success(
+        "SPIR-V pixel-only discard helper with pixel entry first",
+        compile_shader(
+            "amd.shared-stage-discard.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-DPIXEL_ONLY",
+        ),
+        required=(r'OpEntryPoint Fragment', r'OpEntryPoint Vertex'),
+    )
+    require_success(
+        "SPIR-V pixel-only discard helper with vertex entry first",
+        compile_shader(
+            "amd.shared-stage-discard.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-DPIXEL_ONLY", "-DVERTEX_FIRST",
+        ),
+        required=(r'OpEntryPoint Fragment', r'OpEntryPoint Vertex'),
+    )
+    require_failure(
+        "SPIR-V fragment discard helper cannot be shared with vertex",
+        compile_shader(
+            "amd.shared-stage-discard.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+        ),
+        "discard statement may only be used in pixel shaders",
+    )
+    require_failure(
+        "SPIR-V shared discard rejects vertex-first entry ordering",
+        compile_shader(
+            "amd.shared-stage-discard.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-DVERTEX_FIRST",
+        ),
+        "discard statement may only be used in pixel shaders",
+    )
+    require_failure(
+        "SPIR-V discard in patch-constant helper shared with pixel",
+        compile_shader(
+            "amd.shared-stage-discard-patch-constant.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+        ),
+        "discard statement may only be used in pixel shaders",
+    )
+    require_failure(
+        "SPIR-V discard in patch-constant helper with hull first",
+        compile_shader(
+            "amd.shared-stage-discard-patch-constant.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-DHULL_FIRST",
+        ),
+        "discard statement may only be used in pixel shaders",
+    )
+    require_success(
+        "SPIR-V discard helper not called from patch constants",
+        compile_shader(
+            "amd.shared-stage-discard-patch-constant.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-DNO_PATCH_CALL",
+        ),
+        required=(r"OpEntryPoint Fragment", r"OpEntryPoint TessellationControl"),
+    )
+    require_success(
+        "SPIR-V local fragment helper in universal SPIR-V",
+        compile_shader(
+            "amd.shared-stage-discard-export.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-target-env=universal1.5",
+        ),
+        required=(r"OpEntryPoint Fragment",),
+    )
+    require_failure(
+        "SPIR-V exported helper is not pixel-only",
+        compile_shader(
+            "amd.shared-stage-discard-export.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-target-env=universal1.5", "-DEXPORTED",
+        ),
+        "discard statement may only be used in pixel shaders",
+    )
+    require_failure(
+        "SPIR-V global initializer reaches discard from multiple stages",
+        compile_shader(
+            "amd.shared-stage-discard-global-init.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+        ),
+        "discard statement may only be used in pixel shaders",
+    )
+    require_success(
+        "SPIR-V global initializer discard with only pixel callers",
+        compile_shader(
+            "amd.shared-stage-discard-global-init.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-DPIXEL_ONLY",
+        ),
+        required=(r"OpEntryPoint Fragment",),
+    )
+    require_success(
+        "SPIR-V direct pixel input attribute-at-vertex",
+        compile_shader(
+            "amd.shared-stage-attribute-at-vertex.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+        ),
+        required=(r'SPV_KHR_fragment_shader_barycentric',),
+    )
+    require_success(
+        "SPIR-V upstream attribute-at-vertex function parameter",
+        compile_shader(
+            "intrinsics.get-attribute-at-vertex.s.funcParam.hlsl",
+            "-T", "ps_6_1", "-E", "main", "-fcgl", "-spirv",
+        ),
+        required=(r"OpEntryPoint Fragment", r"OpFunctionCall"),
+    )
+    require_failure(
+        "SPIR-V attribute-at-vertex helper cannot be shared with vertex",
+        compile_shader(
+            "amd.shared-stage-attribute-at-vertex.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv", "-DSHARED",
+        ),
+        "GetAttributeAtVertex only allowed in pixel shader",
+    )
+    require_failure(
+        "SPIR-V attribute-at-vertex helper rejects vertex-first sharing",
+        compile_shader(
+            "amd.shared-stage-attribute-at-vertex.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-DSHARED", "-DVERTEX_FIRST",
+        ),
+        "GetAttributeAtVertex only allowed in pixel shader",
+    )
+    require_success(
+        "SPIR-V sizeof expression does not call fragment-only helper",
+        compile_shader(
+            "amd.shared-stage-discard-unevaluated.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+        ),
+        required=(r"OpEntryPoint Fragment", r"OpEntryPoint Vertex"),
+    )
+    require_success(
+        "SPIR-V vertex-first sizeof does not call fragment-only helper",
+        compile_shader(
+            "amd.shared-stage-discard-unevaluated.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-DVERTEX_FIRST",
+        ),
+        required=(r"OpEntryPoint Fragment", r"OpEntryPoint Vertex"),
+    )
+    require_failure(
+        "SPIR-V executing fragment-only helper in vertex remains rejected",
+        compile_shader(
+            "amd.shared-stage-discard-unevaluated.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-DREAL_VERTEX_CALL",
+        ),
+        "discard statement may only be used in pixel shaders",
+    )
+    require_failure(
+        "SPIR-V vertex-first executing fragment-only helper is rejected",
+        compile_shader(
+            "amd.shared-stage-discard-unevaluated.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-DREAL_VERTEX_CALL", "-DVERTEX_FIRST",
+        ),
+        "discard statement may only be used in pixel shaders",
+    )
     require_failure(
         "AMD raw vertex-parameter register bounds",
         compile_shader(

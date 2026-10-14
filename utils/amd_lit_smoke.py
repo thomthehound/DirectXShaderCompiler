@@ -34,6 +34,13 @@ CASES = (
     "CodeGenSPIRV/amd.intrinsics.vertex-parameter-helper.hlsl",
     "CodeGenSPIRV/amd.intrinsics.vertex-parameter-shared-helper.hlsl",
     "CodeGenSPIRV/amd.intrinsics.vertex-parameter-default-argument.hlsl",
+    "CodeGenSPIRV/amd.shared-stage-discard.hlsl",
+    "CodeGenSPIRV/amd.shared-stage-discard-patch-constant.hlsl",
+    "CodeGenSPIRV/amd.shared-stage-discard-global-init.hlsl",
+    "CodeGenSPIRV/amd.shared-stage-attribute-at-vertex.hlsl",
+    "CodeGenSPIRV/intrinsics.get-attribute-at-vertex.s.funcParam.hlsl",
+    "CodeGenSPIRV/amd.shared-stage-discard-unevaluated.hlsl",
+    "CodeGenSPIRV/amd.shared-stage-discard-export.hlsl",
 )
 
 

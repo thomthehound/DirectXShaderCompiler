@@ -764,49 +764,79 @@ llvm::StringRef SpirvEmitter::getEntryPointName(const FunctionInfo *entryInfo) {
   return entrypointName;
 }
 
-// Map each reachable HLSL function to its unique shader entry point before
-// emitting any function bodies. The work queue translates shared helpers once
-// and cannot supply their caller's entry point when their bodies are emitted.
-// Traverse the source call graph instead of relying on the last wrapper built.
-// Indirect/unresolved calls are not used to infer ownership; a helper with no
-// provable entry owner is rejected at its raw parameter access.
-void SpirvEmitter::collectAmdParameterEntryOwners() {
+FunctionDecl *
+SpirvEmitter::findPatchConstantFunction(const FunctionDecl *hullEntry) {
+  const auto *pcfAttr = hullEntry->getAttr<HLSLPatchConstantFuncAttr>();
+  if (!pcfAttr)
+    return nullptr;
+
+  FunctionDecl *result = nullptr;
+  const llvm::StringRef name = pcfAttr->getFunctionName();
+  for (auto *decl : astContext.getTranslationUnitDecl()->decls())
+    if (auto *funcDecl = dyn_cast<FunctionDecl>(decl))
+      if (astContext.IsPatchConstantFunctionDecl(funcDecl) &&
+          funcDecl->getName() == name)
+        result = funcDecl;
+  return result;
+}
+
+// The emitter translates a shared helper only once, but callers can reach it
+// from several entry stages. Collect explicit AST calls, default arguments,
+// compiler-generated patch-constant calls, and each wrapper's global
+// initializers before lowering. AMD raw pixel-register access additionally
+// requires a unique entry, while generic fragment-only operations only require
+// pixel-only stages.
+void SpirvEmitter::collectFunctionEntryReachability() {
   amdParameterEntryOwners.clear();
+  functionReachableShaderStages.clear();
   for (const auto *entryInfo : workQueue) {
-    if (!entryInfo->isEntryFunction)
-      continue;
     const auto *root = dyn_cast<FunctionDecl>(entryInfo->funcDecl);
     if (!root)
       continue;
+    // Exported library functions may be linked into shaders of an unknown
+    // stage, even when the only local caller is a pixel shader.
+    const bool isExport = root->hasAttr<HLSLExportAttr>();
+    if (!entryInfo->isEntryFunction && !isExport)
+      continue;
 
+    constexpr uint32_t unknownStageMask = uint32_t(1) << 31;
+    uint32_t stageMask = unknownStageMask;
+    if (!isExport) {
+      const unsigned stageIndex =
+          static_cast<unsigned>(entryInfo->shaderModelKind);
+      assert(stageIndex < 31 && "shader stage mask must fit in uint32_t");
+      stageMask = uint32_t(1) << stageIndex;
+    }
     llvm::DenseSet<const FunctionDecl *> visited;
     llvm::SmallVector<const FunctionDecl *, 32> pending(1, root);
-    while (!pending.empty()) {
-      const FunctionDecl *fn = pending.pop_back_val();
-      const FunctionDecl *key = fn->getCanonicalDecl();
-      if (!visited.insert(key).second)
-        continue;
 
-      auto previous = amdParameterEntryOwners.find(key);
-      if (previous == amdParameterEntryOwners.end())
-        amdParameterEntryOwners[key] = root;
-      else if (previous->second != root)
-        previous->second = nullptr;
+    // HLSL never explicitly invokes hull patch-constant functions, but the
+    // wrapper calls and emits them. Seed the same function that the wrapper
+    // resolves so its transitive calls acquire the hull stage too.
+    if (entryInfo->isEntryFunction &&
+        entryInfo->shaderModelKind == hlsl::ShaderModel::Kind::Hull)
+      if (const auto *pcf = findPatchConstantFunction(root))
+        pending.push_back(pcf);
 
-      const FunctionDecl *definition = nullptr;
-      if (!fn->hasBody(definition))
-        continue;
-
+    // The wrapper also evaluates every nonconstant file-scope initializer.
+    // Its calls must be attributed to each entry, not just to whichever
+    // shader stage first happens to emit a helper.
+    auto addCalls = [&pending](const Stmt *body) {
       llvm::SmallVector<const Stmt *, 64> statements;
-      statements.push_back(definition->getBody());
+      statements.push_back(body);
       while (!statements.empty()) {
         const Stmt *stmt = statements.pop_back_val();
+        // sizeof(expr) does not evaluate expr. Its CallExpr children exist
+        // only for type checking and must not create runtime reachability.
+        // The SPIR-V emitter lowers sizeof to a constant without doExpr(arg).
+        if (const auto *typeQuery = dyn_cast<UnaryExprOrTypeTraitExpr>(stmt))
+          if (typeQuery->getKind() == UnaryExprOrTypeTrait::UETT_SizeOf)
+            continue;
         if (const auto *call = dyn_cast<CallExpr>(stmt))
           if (const auto *callee = call->getDirectCallee())
             pending.push_back(callee);
-        // CXXDefaultArgExpr has no AST children, but codegen evaluates the
-        // referenced parameter's initializer at each omitted-argument call.
-        // Include its calls in reachability for this specific caller.
+        // Default argument call expressions have no AST children even though
+        // codegen evaluates the parameter's initializer at the call site.
         if (const auto *defaultArg = dyn_cast<CXXDefaultArgExpr>(stmt)) {
           const auto *param = defaultArg->getParam();
           const Expr *value = param->hasUninstantiatedDefaultArg()
@@ -815,21 +845,64 @@ void SpirvEmitter::collectAmdParameterEntryOwners() {
           if (value)
             statements.push_back(value);
         }
+        // Codegen also expands implicit vk namespace variables by evaluating
+        // their initializer rather than loading the variable.
+        if (const auto *ref = dyn_cast<DeclRefExpr>(stmt))
+          if (isImplicitVarDeclInVkNamespace(ref->getDecl()))
+            if (const auto *init = cast<VarDecl>(ref->getDecl())->getInit())
+              statements.push_back(init);
         for (const Stmt *child : stmt->children())
           if (child)
             statements.push_back(child);
       }
+    };
+    if (entryInfo->isEntryFunction)
+      for (const auto *global : toInitGloalVars)
+        if (const auto *init = global->getInit())
+          addCalls(init);
+
+    while (!pending.empty()) {
+      const FunctionDecl *fn = pending.pop_back_val();
+      const FunctionDecl *key = fn->getCanonicalDecl();
+      if (!visited.insert(key).second)
+        continue;
+
+      functionReachableShaderStages[key] |= stageMask;
+      const FunctionDecl *uniqueOwner = isExport ? nullptr : root;
+      auto previous = amdParameterEntryOwners.find(key);
+      if (previous == amdParameterEntryOwners.end())
+        amdParameterEntryOwners[key] = uniqueOwner;
+      else if (previous->second != uniqueOwner)
+        previous->second = nullptr;
+
+      const FunctionDecl *definition = nullptr;
+      if (fn->hasBody(definition))
+        addCalls(definition->getBody());
     }
   }
 }
 
+bool SpirvEmitter::isCurrentFunctionPixelOnly() {
+  if (!functionEntryReachabilityCollected) {
+    collectFunctionEntryReachability();
+    functionEntryReachabilityCollected = true;
+  }
+  if (!curFunction)
+    return false;
+  const auto stage =
+      functionReachableShaderStages.find(curFunction->getCanonicalDecl());
+  const uint32_t pixelMask =
+      uint32_t(1) << static_cast<unsigned>(hlsl::ShaderModel::Kind::Pixel);
+  return stage != functionReachableShaderStages.end() &&
+         stage->second == pixelMask;
+}
+
 SpirvFunction *SpirvEmitter::getAmdParameterEntryFunction(SourceLocation loc) {
-  // Most shaders do not use the raw AMD parameter intrinsics. Build the
-  // ownership map only when needed; all entry roots were seeded before this
-  // function can be translated, including in multi-entry library modules.
-  if (!amdParameterOwnershipCollected) {
-    collectAmdParameterEntryOwners();
-    amdParameterOwnershipCollected = true;
+  // Build the same entry reachability once for stage-restricted operations
+  // and AMD D3D pixel register ownership. All roots are seeded by this point.
+  if (!functionEntryReachabilityCollected) {
+    collectFunctionEntryReachability();
+    functionEntryReachabilityCollected = true;
   }
   if (!curFunction) {
     emitError("AMD vertex-parameter access requires a shader entry point", loc);
@@ -2406,8 +2479,9 @@ spv::LoopControlMask SpirvEmitter::translateLoopAttribute(const Stmt *stmt,
 void SpirvEmitter::doDiscardStmt(const DiscardStmt *discardStmt) {
   assert(!spvBuilder.isCurrentBasicBlockTerminated());
 
-  // The discard statement can only be called from a pixel shader
-  if (!spvContext.isPS()) {
+  // A helper is translated only once. Its ambient shader kind is inherited
+  // from its first caller, so every reachable entry must be a pixel shader.
+  if (!isCurrentFunctionPixelOnly()) {
     emitError("discard statement may only be used in pixel shaders",
               discardStmt->getLoc());
     return;
@@ -4465,7 +4539,7 @@ SpirvEmitter::processGetSamplePosition(const CXXMemberCallExpr *expr) {
 
 SpirvInstruction *
 SpirvEmitter::processSubpassLoad(const CXXMemberCallExpr *expr) {
-  if (!spvContext.isPS()) {
+  if (!isCurrentFunctionPixelOnly()) {
     emitError("SubpassInput(MS) only allowed in pixel shader",
               expr->getExprLoc());
     return nullptr;
@@ -15029,7 +15103,7 @@ void SpirvEmitter::processMeshOutputCounts(const CallExpr *callExpr) {
 
 SpirvInstruction *
 SpirvEmitter::processGetAttributeAtVertex(const CallExpr *expr) {
-  if (!spvContext.isPS()) {
+  if (!isCurrentFunctionPixelOnly()) {
     emitError("GetAttributeAtVertex only allowed in pixel shader",
               expr->getExprLoc());
     return nullptr;
@@ -15051,13 +15125,22 @@ SpirvEmitter::processGetAttributeAtVertex(const CallExpr *expr) {
   //        to match surrounded workaround cast expr.
   auto *arg0NoCast = expr->getArg(0)->IgnoreCasts();
   SpirvInstruction *paramDeclInstr = doExpr(arg0NoCast);
-  // Hans't be redeclared before
+  // SPIR-V shader inputs are copied into Function-scope temporaries when
+  // lowering entry parameters. The later per-vertex lowering retains source
+  // provenance through SpirvBuilder's stage-input mapping.
+  if (!paramDeclInstr) {
+    emitError("attribute evaluation can only be done on values taken "
+              "directly from inputs.",
+              exprLoc);
+    return nullptr;
+  }
   QualType elementType = paramDeclInstr->getAstResultType();
 
   if (isBoolOrVecOfBoolType(elementType)) {
     emitError("attribute evaluation can only be done "
               "on values taken directly from inputs.",
-              {});
+              exprLoc);
+    return nullptr;
   }
   // Change to access chain instr
   SpirvInstruction *accessChainPtr = paramDeclInstr;
@@ -15641,14 +15724,7 @@ bool SpirvEmitter::processTessellationShaderAttributes(
                                 spv::ExecutionMode::OutputVertices,
                                 {*numOutputControlPoints}, decl->getLocation());
   }
-  if (auto *pcf = decl->getAttr<HLSLPatchConstantFuncAttr>()) {
-    llvm::StringRef pcf_name = pcf->getFunctionName();
-    for (auto *decl : astContext.getTranslationUnitDecl()->decls())
-      if (auto *funcDecl = dyn_cast<FunctionDecl>(decl))
-        if (astContext.IsPatchConstantFunctionDecl(funcDecl) &&
-            funcDecl->getName() == pcf_name)
-          patchConstFunc = funcDecl;
-  }
+  patchConstFunc = findPatchConstantFunction(decl);
 
   return true;
 }
