@@ -39,6 +39,8 @@ CASES = (
     "CodeGenSPIRV/amd.shared-stage-discard-global-init.hlsl",
     "CodeGenSPIRV/amd.shared-stage-attribute-at-vertex.hlsl",
     "CodeGenSPIRV/pervertex.lib.export-abi-control.hlsl",
+    "CodeGenSPIRV/pervertex.lib.export-stage-order.baseline.test",
+    "CodeGenSPIRV/pervertex.lib.export-signature.baseline.test",
     "CodeGenSPIRV/intrinsics.get-attribute-at-vertex.s.funcParam.hlsl",
     "CodeGenSPIRV/intrinsics.get-attribute-at-vertex.s.callChain.hlsl",
     "CodeGenSPIRV/intrinsics.get-attribute-at-vertex.s.nestedStruct.hlsl",
@@ -81,83 +83,6 @@ def check_sources() -> list[str]:
     return errors
 
 
-
-def verify_known_pervertex_failures(dxc: Path, env: dict[str, str]) -> list[str]:
-    """Confirm precise baseline miscompiles; arbitrary LIT XFAIL is not proof."""
-    problems = []
-    for case in EXPECTED_FAILURES:
-        source = TEST_ROOT / case
-        command = [
-            str(dxc), "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
-            "-fspv-target-env=universal1.5", str(source),
-        ]
-        process = subprocess.run(
-            command, cwd=ROOT, env=env, text=True, encoding="utf-8",
-            errors="replace", stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            check=False,
-        )
-        output = process.stdout
-        problem = None
-        if process.returncode:
-            problem = "unexpected DXC failure (not a confirmed miscompile)"
-        elif not re.search(r"\bOpEntryPoint\s+Fragment\b", output):
-            problem = "missing fragment entry in generated SPIR-V"
-        elif case.endswith("export-stage-order.hlsl"):
-            if not re.search(
-                r'\bOpDecorate\s+%[\w.]+\s+LinkageAttributes\s+'
-                r'"unrelated"\s+Export\b', output
-            ):
-                problem = "missing expected linkage export"
-            elif not re.search(r"\bOpAccessChain\b", output):
-                problem = "missing vertex-access instruction"
-            elif re.search(r"\bPerVertexKHR\b", output):
-                problem = "per-vertex decoration is present: known defect changed"
-        else:
-            export = re.search(
-                r'\bOpDecorate\s+(%[\w.]+)\s+LinkageAttributes\s+'
-                r'"exportedPassthrough"\s+Export\b', output
-            )
-            if not export:
-                problem = "missing expected linkage export"
-            elif not re.search(r"\bPerVertexKHR\b", output):
-                problem = "pixel per-vertex lowering was not performed"
-            else:
-                function = re.search(
-                    r"(?m)^\s*" + re.escape(export.group(1)) +
-                    r"\s*=\s*OpFunction\b[^\n]*", output
-                )
-                if not function:
-                    problem = "cannot find exported function definition"
-                else:
-                    tail = output[function.end():]
-                    label = re.search(r"\bOpLabel\b|\bOpFunctionEnd\b", tail)
-                    header = tail[:label.start()] if label else ""
-                    parameter = re.search(
-                        r"\bOpFunctionParameter\s+(%[\w.]+)", header
-                    )
-                    if not parameter:
-                        problem = "cannot find exported function parameter"
-                    else:
-                        ptr = re.search(
-                            r"(?m)^\s*" + re.escape(parameter.group(1)) +
-                            r"\s*=\s*OpTypePointer\s+Function\s+(%[\w.]+)",
-                            output,
-                        )
-                        if not ptr:
-                            problem = "cannot resolve exported parameter type"
-                        elif not re.search(
-                            r"(?m)^\s*" + re.escape(ptr.group(1)) +
-                            r"\s*=\s*OpTypeArray\s+%v4float\s+%uint_3\b",
-                            output,
-                        ):
-                            problem = "export parameter is not the known incorrect float4[3] ABI"
-        if problem:
-            problems.append(f"{case}: {problem}\n{output[:4500]}")
-        else:
-            print(f"CONFIRMED known SPIR-V defect: {case}", flush=True)
-    return problems
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--build-dir", type=Path)
@@ -195,17 +120,6 @@ def main() -> int:
     library_dir = str(bin_dir if sys.platform == "win32" else build / "lib")
     key = "PATH" if sys.platform == "win32" else "LD_LIBRARY_PATH"
     env[key] = library_dir + os.pathsep + env.get(key, "")
-    # LIT's XFAIL label accepts *any* failing command. Verify that each
-    # expected failure still exhibits its specific emitted-IR defect before
-    # allowing that label to contribute to a green compiler gate.
-    known_failure_problems = verify_known_pervertex_failures(
-        bin_dir / ("dxc.exe" if sys.platform == "win32" else "dxc"), env
-    )
-    if known_failure_problems:
-        for problem in known_failure_problems:
-            print("FAIL per-vertex baseline: " + problem, file=sys.stderr)
-        return 1
-
     command = [
         sys.executable, str(ROOT / "utils/lit/lit.py"),
         "-v", "--param", f"clang_site_config={site}",
