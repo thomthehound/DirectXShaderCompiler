@@ -233,6 +233,15 @@ def main() -> int:
         counts=((r"\bInterpolateAtVertexAMD\b", 5),),
     )
     require_failure(
+        "AMD exported helper has no valid Vulkan linkage contract",
+        compile_shader(
+            "amd.intrinsics.vertex-parameter-shared-helper.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-extension=AMD", "-DUNIQUE_OWNER", "-DAMD_EXPORT_HELPER",
+        ),
+        "Capability Linkage is not allowed by Vulkan",
+    )
+    require_failure(
         "AMD raw vertex-parameter non-pixel owner is rejected",
         compile_shader(
             "amd.intrinsics.vertex-parameter-shared-helper.hlsl",
