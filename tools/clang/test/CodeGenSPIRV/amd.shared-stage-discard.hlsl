@@ -6,8 +6,10 @@
 // The emitter translates helpers once and assigns an ambient stage from the
 // first caller. A helper containing discard is valid only when every calling
 // entry is a pixel shader, regardless of declaration/call order.
-// VALID: OpEntryPoint Fragment
-// VALID: OpEntryPoint Vertex
+// CHECK-DAG allows either module entry-point ordering. The two RUN lines
+// intentionally reverse source declaration order; both stages must survive.
+// VALID-DAG: OpEntryPoint Fragment
+// VALID-DAG: OpEntryPoint Vertex
 // SHARED: error: discard statement may only be used in pixel shaders
 
 void fragmentOnly() { discard; }
