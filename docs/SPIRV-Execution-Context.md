@@ -103,8 +103,10 @@ For records, this is not yet a complete representation-separation solution.
 `PervertexInputVisitor` still expands record fields by mutating shared
 `FieldDecl` objects. If a non-Fragment or exported function uses such a
 record, the compiler diagnoses the conflict rather than silently changing
-its callable ABI. `pervertex.lib.export-shared-record.hlsl` protects that
-fail-safe. A future lowering should replace global AST record mutation with
+its callable ABI. This protection includes records used by emitted
+temporaries and resource loads, not only function signatures and local
+declarations. `pervertex.lib.export-shared-record.hlsl` and
+`pervertex.lib.export-record-resource-use.hlsl` protect the fail-safe. A future lowering should replace global AST record mutation with
 SPIR-V-private types and explicit conversions where necessary.
 
 ## Existing regression coverage
