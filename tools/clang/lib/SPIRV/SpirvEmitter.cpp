@@ -15132,7 +15132,8 @@ SpirvEmitter::processGetAttributeAtVertex(const CallExpr *expr) {
       (!isa<SpirvVariableLike>(paramDeclInstr) &&
        !isa<SpirvAccessChain>(paramDeclInstr))) {
     emitError("attribute evaluation can only be done on values taken "
-              "directly from inputs.", exprLoc);
+              "directly from inputs.",
+              exprLoc);
     return nullptr;
   }
   QualType elementType = paramDeclInstr->getAstResultType();
