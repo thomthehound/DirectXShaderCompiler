@@ -2,10 +2,11 @@
 
 // Control: absent vertex interpolation, a library export with a
 // nointerpolation parameter retains its ordinary float4 ABI.
-// CHECK: OpDecorate %exportedPassthrough LinkageAttributes "exportedPassthrough" Export
+// CHECK: OpEntryPoint Fragment
+// CHECK: OpDecorate [[EXPORT:%[a-zA-Z0-9_]+]] LinkageAttributes "exportedPassthrough" Export
 // CHECK: %_ptr_Function_v4float = OpTypePointer Function %v4float
-// CHECK: %exportedPassthrough = OpFunction %v4float
-// CHECK: OpFunctionParameter %_ptr_Function_v4float
+// CHECK: [[EXPORT]] = OpFunction %v4float
+// CHECK-NEXT: [[PARAM:%[a-zA-Z0-9_]+]] = OpFunctionParameter %_ptr_Function_v4float
 
 [shader("pixel")]
 float4 pixelMain(nointerpolation float4 input : TEXCOORD0) : SV_Target {
