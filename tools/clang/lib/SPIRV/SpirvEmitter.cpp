@@ -764,14 +764,14 @@ llvm::StringRef SpirvEmitter::getEntryPointName(const FunctionInfo *entryInfo) {
   return entrypointName;
 }
 
-// Map each reachable HLSL function to its unique shader entry point before
-// emitting any function bodies. The work queue translates shared helpers once
-// and cannot supply their caller's entry point when their bodies are emitted.
-// Traverse the source call graph instead of relying on the last wrapper built.
-// Indirect/unresolved calls are not used to infer ownership; a helper with no
-// provable entry owner is rejected at its raw parameter access.
-void SpirvEmitter::collectAmdParameterEntryOwners() {
+// Traverse the HLSL call graph to record unique entry ownership and all
+// reachable shader stages. The emitter translates shared helpers only once,
+// so the ambient stage from the first caller cannot validate stage-restricted
+// operations. Indirect/unresolved calls do not establish ownership; AMD raw
+// parameter access rejects helpers without a provable unique entry.
+void SpirvEmitter::collectFunctionEntryReachability() {
   amdParameterEntryOwners.clear();
+  functionReachableShaderStages.clear();
   for (const auto *entryInfo : workQueue) {
     if (!entryInfo->isEntryFunction)
       continue;
@@ -779,6 +779,10 @@ void SpirvEmitter::collectAmdParameterEntryOwners() {
     if (!root)
       continue;
 
+    const unsigned stageIndex =
+        static_cast<unsigned>(entryInfo->shaderModelKind);
+    assert(stageIndex < 32 && "shader stage mask must fit in uint32_t");
+    const uint32_t stageMask = uint32_t(1) << stageIndex;
     llvm::DenseSet<const FunctionDecl *> visited;
     llvm::SmallVector<const FunctionDecl *, 32> pending(1, root);
     while (!pending.empty()) {
@@ -787,6 +791,7 @@ void SpirvEmitter::collectAmdParameterEntryOwners() {
       if (!visited.insert(key).second)
         continue;
 
+      functionReachableShaderStages[key] |= stageMask;
       auto previous = amdParameterEntryOwners.find(key);
       if (previous == amdParameterEntryOwners.end())
         amdParameterEntryOwners[key] = root;
@@ -823,13 +828,27 @@ void SpirvEmitter::collectAmdParameterEntryOwners() {
   }
 }
 
+bool SpirvEmitter::isCurrentFunctionPixelOnly() {
+  if (!functionEntryReachabilityCollected) {
+    collectFunctionEntryReachability();
+    functionEntryReachabilityCollected = true;
+  }
+  if (!curFunction)
+    return false;
+  const auto stage =
+      functionReachableShaderStages.find(curFunction->getCanonicalDecl());
+  const uint32_t pixelMask =
+      uint32_t(1) << static_cast<unsigned>(hlsl::ShaderModel::Kind::Pixel);
+  return stage != functionReachableShaderStages.end() &&
+         stage->second == pixelMask;
+}
+
 SpirvFunction *SpirvEmitter::getAmdParameterEntryFunction(SourceLocation loc) {
-  // Most shaders do not use the raw AMD parameter intrinsics. Build the
-  // ownership map only when needed; all entry roots were seeded before this
-  // function can be translated, including in multi-entry library modules.
-  if (!amdParameterOwnershipCollected) {
-    collectAmdParameterEntryOwners();
-    amdParameterOwnershipCollected = true;
+  // Build the same entry reachability once for stage-restricted operations
+  // and AMD D3D pixel register ownership. All roots are seeded by this point.
+  if (!functionEntryReachabilityCollected) {
+    collectFunctionEntryReachability();
+    functionEntryReachabilityCollected = true;
   }
   if (!curFunction) {
     emitError("AMD vertex-parameter access requires a shader entry point", loc);
@@ -2406,8 +2425,9 @@ spv::LoopControlMask SpirvEmitter::translateLoopAttribute(const Stmt *stmt,
 void SpirvEmitter::doDiscardStmt(const DiscardStmt *discardStmt) {
   assert(!spvBuilder.isCurrentBasicBlockTerminated());
 
-  // The discard statement can only be called from a pixel shader
-  if (!spvContext.isPS()) {
+  // A helper is translated only once. Its ambient shader kind is inherited
+  // from its first caller, so every reachable entry must be a pixel shader.
+  if (!isCurrentFunctionPixelOnly()) {
     emitError("discard statement may only be used in pixel shaders",
               discardStmt->getLoc());
     return;

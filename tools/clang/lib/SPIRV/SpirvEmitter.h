@@ -1564,8 +1564,12 @@ private:
   // Values are the unique entry declaration, or nullptr if ambiguous.
   llvm::DenseMap<const FunctionDecl *, const FunctionDecl *>
       amdParameterEntryOwners;
-  bool amdParameterOwnershipCollected = false;
-  void collectAmdParameterEntryOwners();
+  // Shader-stage reachability is the union of all entry points that can call
+  // a function. Unlike the unique-owner map it preserves cross-stage callers.
+  llvm::DenseMap<const FunctionDecl *, uint32_t> functionReachableShaderStages;
+  bool functionEntryReachabilityCollected = false;
+  void collectFunctionEntryReachability();
+  bool isCurrentFunctionPixelOnly();
   SpirvFunction *getAmdParameterEntryFunction(SourceLocation loc);
 
   /// Get SPIR-V entrypoint name for the given FunctionInfo.

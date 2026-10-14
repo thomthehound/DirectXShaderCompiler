@@ -302,6 +302,41 @@ def main() -> int:
         ),
         "AMD vertex-parameter helper requires a unique shader entry point",
     )
+    require_success(
+        "SPIR-V pixel-only discard helper with pixel entry first",
+        compile_shader(
+            "amd.shared-stage-discard.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-DPIXEL_ONLY",
+        ),
+        required=(r'OpEntryPoint Fragment', r'OpEntryPoint Vertex'),
+    )
+    require_success(
+        "SPIR-V pixel-only discard helper with vertex entry first",
+        compile_shader(
+            "amd.shared-stage-discard.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-DPIXEL_ONLY", "-DVERTEX_FIRST",
+        ),
+        required=(r'OpEntryPoint Fragment', r'OpEntryPoint Vertex'),
+    )
+    require_failure(
+        "SPIR-V fragment discard helper cannot be shared with vertex",
+        compile_shader(
+            "amd.shared-stage-discard.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+        ),
+        "discard statement may only be used in pixel shaders",
+    )
+    require_failure(
+        "SPIR-V shared discard rejects vertex-first entry ordering",
+        compile_shader(
+            "amd.shared-stage-discard.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-DVERTEX_FIRST",
+        ),
+        "discard statement may only be used in pixel shaders",
+    )
     require_failure(
         "AMD raw vertex-parameter register bounds",
         compile_shader(
