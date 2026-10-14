@@ -44,6 +44,16 @@ public:
     return reachableStages.lookup(function) == Fragment;
   }
 
+  // Reuse the same emitted reachability result when checking whether a shared
+  // AST record layout can safely be specialized for pixel inputs.
+  llvm::SmallVector<SpirvFunction *, 8> getNonFragmentFunctions() const {
+    llvm::SmallVector<SpirvFunction *, 8> result;
+    for (const auto &entry : reachableStages)
+      if (entry.second & Other)
+        result.push_back(entry.first);
+    return result;
+  }
+
   // Lowerings that become generic SPIR-V instructions can retain their
   // source-level stage constraint without relying on AST caller inference.
   void requireFragmentStage(SpirvInstruction *instruction, SourceLocation loc,
