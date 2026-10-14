@@ -7,6 +7,7 @@
 
 #include "StageReachabilityVisitor.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/Type.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/SPIRV/SpirvFunction.h"
 #include "clang/SPIRV/SpirvInstruction.h"
@@ -14,6 +15,22 @@
 
 namespace clang {
 namespace spirv {
+
+namespace {
+
+bool containsAstRecord(QualType type) {
+  if (type.isNull())
+    return false;
+  if (type->isStructureType())
+    return true;
+  if (type->isPointerType())
+    return containsAstRecord(type->getPointeeType());
+  if (const auto *array = dyn_cast<clang::ArrayType>(type.getTypePtr()))
+    return containsAstRecord(array->getElementType());
+  return false;
+}
+
+} // namespace
 
 void StageReachabilityVisitor::requireFragmentStage(
     SpirvInstruction *instruction, SourceLocation loc,
@@ -29,6 +46,9 @@ bool StageReachabilityVisitor::visitInstruction(SpirvInstruction *instruction) {
   auto use = liveStageUses.find(instruction);
   if (use != liveStageUses.end())
     use->second = currentFunction;
+  if (currentFunction && instruction->hasAstResultType() &&
+      containsAstRecord(instruction->getAstResultType()))
+    recordTypeUses[currentFunction].push_back(instruction);
   return true;
 }
 
