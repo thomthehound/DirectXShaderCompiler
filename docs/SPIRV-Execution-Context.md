@@ -94,14 +94,17 @@ with explicit XFAIL expectations. `pervertex.lib.export-abi-control.hlsl`
 checks the unaffected baseline. Two separate, ordinary passing LIT
 fixtures (`pervertex.lib.export-stage-order.baseline.test` and
 `pervertex.lib.export-signature.baseline.test`) verify the precise known
-incorrect representations using FileCheck, after confirming that DXC compiled
-successfully. The positive baseline checks require the real Fragment entry
-and linkage export; the ABI case also checks that pixel-input per-vertex
-lowering took place. The XFAIL cases assert the desired behavior separately.
-A compiler error or unrelated FileCheck failure therefore cannot masquerade
-as a proven compiler defect. A corrected implementation requires converting
-the XFAIL tests into passing tests and removing the obsolete failing-state
-checks.
+failure mechanisms using FileCheck. The stage-order baseline requires the
+specific SPIR-V validator failure *and* uses `-Vd` to inspect the malformed
+output without running final validation. It checks the emitted Fragment
+entry, linkage export, missing `PerVertexKHR` lowering, and incorrect
+`OpAccessChain`. The unrelated-export ABI baseline compiles successfully
+and verifies the exported parameter's incorrect array type, alongside
+working pixel-input per-vertex lowering. The XFAIL cases assert the desired
+behavior separately; an unrelated diagnostic or FileCheck failure cannot
+satisfy these positive reproducer tests. A corrected implementation requires
+converting the XFAIL tests into passing tests and removing the obsolete
+failing-state checks.
 
 ## Existing regression coverage
 
