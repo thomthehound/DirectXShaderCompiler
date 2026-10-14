@@ -98,7 +98,11 @@ bool StageReachabilityVisitor::visit(SpirvDemoteToHelperInvocation *demote) {
   return true;
 }
 
-bool StageReachabilityVisitor::visit(SpirvModule *, Phase phase) {
+bool StageReachabilityVisitor::visit(SpirvModule *module, Phase phase) {
+  if (phase == Phase::Init) {
+    collectRecordTypes = module->isPerVertexInterpMode();
+    return true;
+  }
   if (phase != Phase::Done)
     return true;
 
