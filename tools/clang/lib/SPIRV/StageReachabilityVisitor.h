@@ -44,13 +44,13 @@ public:
     return reachableStages.lookup(function) == Fragment;
   }
 
-  // Reuse the same emitted reachability result when checking whether a shared
-  // AST record layout can safely be specialized for pixel inputs.
+  // A missing stage mask means an emitted function has no reachable
+  // shader root, not that its record types are safe to specialize.
   llvm::SmallVector<SpirvFunction *, 8> getNonFragmentFunctions() const {
     llvm::SmallVector<SpirvFunction *, 8> result;
-    for (const auto &entry : reachableStages)
-      if (entry.second & Other)
-        result.push_back(entry.first);
+    for (auto *function : emittedFunctions)
+      if (!isFragmentOnly(function))
+        result.push_back(function);
     return result;
   }
 
@@ -92,6 +92,7 @@ private:
       callGraph;
   llvm::SmallVector<std::pair<SpirvFunction *, unsigned>, 8> roots;
   llvm::DenseMap<SpirvFunction *, unsigned> reachableStages;
+  llvm::SmallVector<SpirvFunction *, 16> emittedFunctions;
   llvm::DenseMap<SpirvFunction *, llvm::SmallVector<SpirvInstruction *, 8>>
       recordTypeUses;
   llvm::SmallVector<std::pair<SpirvFunction *, SourceLocation>, 8> discards;
