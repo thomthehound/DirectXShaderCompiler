@@ -15,6 +15,23 @@
 namespace clang {
 namespace spirv {
 
+void StageReachabilityVisitor::requireFragmentStage(
+    SpirvInstruction *instruction, SourceLocation loc,
+    llvm::StringRef diagnostic) {
+  fragmentStageUses.push_back({instruction, loc, diagnostic.str()});
+  liveStageUses[instruction] = nullptr;
+}
+
+bool StageReachabilityVisitor::visitInstruction(SpirvInstruction *instruction) {
+  // SpirvFunction visits only CFG-reachable blocks. Resolve each marked
+  // operation to the actual function traversed, not the builder's ambient
+  // function (which can differ for synthetic module.init instructions).
+  auto use = liveStageUses.find(instruction);
+  if (use != liveStageUses.end())
+    use->second = currentFunction;
+  return true;
+}
+
 bool StageReachabilityVisitor::visit(SpirvEntryPoint *entry) {
   roots.emplace_back(entry->getEntryPoint(),
                      entry->getExecModel() == spv::ExecutionModel::Fragment
@@ -99,8 +116,22 @@ bool StageReachabilityVisitor::visit(SpirvModule *, Phase phase) {
       "discard statement may only be used in pixel shaders");
   bool valid = true;
   for (const auto &discard : discards) {
-    if (stages.lookup(discard.first) != Fragment) {
+    const unsigned mask = stages.lookup(discard.first);
+    // A helper may be emitted yet have no execution path from any entry
+    // point. Do not classify an unreachable internal function as nonpixel.
+    if (mask != 0 && mask != Fragment) {
       diags.Report(discard.second, errorId);
+      valid = false;
+    }
+  }
+  for (const auto &use : fragmentStageUses) {
+    SpirvFunction *owner = liveStageUses.lookup(use.instruction);
+    if (!owner)
+      continue; // This operation was in a discarded basic block.
+    const unsigned mask = stages.lookup(owner);
+    if (mask != 0 && mask != Fragment) {
+      const unsigned id = diags.getCustomDiagID(DiagnosticsEngine::Error, "%0");
+      diags.Report(use.loc, id) << use.diagnostic;
       valid = false;
     }
   }

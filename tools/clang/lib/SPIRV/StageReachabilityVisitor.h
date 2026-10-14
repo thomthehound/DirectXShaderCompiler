@@ -13,6 +13,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 
+#include <string>
 #include <utility>
 
 namespace clang {
@@ -36,7 +37,13 @@ public:
                            const SpirvCodeGenOptions &opts)
       : Visitor(opts, spvCtx), astContext(astCtx) {}
 
+  // Lowerings that become generic SPIR-V instructions can retain their
+  // source-level stage constraint without relying on AST caller inference.
+  void requireFragmentStage(SpirvInstruction *instruction, SourceLocation loc,
+                            llvm::StringRef diagnostic);
+
   using Visitor::visit;
+  bool visitInstruction(SpirvInstruction *) override;
   bool visit(SpirvModule *, Phase phase) override;
   bool visit(SpirvFunction *, Phase phase) override;
   bool visit(SpirvEntryPoint *) override;
@@ -56,6 +63,16 @@ private:
       callGraph;
   llvm::SmallVector<std::pair<SpirvFunction *, unsigned>, 8> roots;
   llvm::SmallVector<std::pair<SpirvFunction *, SourceLocation>, 8> discards;
+  struct FragmentStageUse {
+    SpirvInstruction *instruction;
+    SourceLocation loc;
+    std::string diagnostic;
+  };
+  llvm::SmallVector<FragmentStageUse, 8> fragmentStageUses;
+  // The marker map is populated while the SPIR-V visitor is visiting the
+  // instruction itself, so synthetic module.init uses get their real owner.
+  // Null indicates the marked instruction did not survive CFG traversal.
+  llvm::DenseMap<SpirvInstruction *, SpirvFunction *> liveStageUses;
 };
 
 } // namespace spirv

@@ -606,6 +606,7 @@ SpirvEmitter::SpirvEmitter(CompilerInstance &ci)
   // Get ShaderModel from command line hlsl profile option.
   const hlsl::ShaderModel *shaderModel =
       hlsl::ShaderModel::GetByName(ci.getCodeGenOpts().HLSLProfile.c_str());
+  compilationShaderKind = shaderModel->GetKind();
   if (shaderModel->GetKind() == hlsl::ShaderModel::Kind::Invalid)
     emitError("unknown shader module: %0", {}) << shaderModel->GetName();
 
@@ -2353,11 +2354,12 @@ void SpirvEmitter::doVarDecl(const VarDecl *decl) {
   }
 
   if (decl->getAttr<VKInputAttachmentIndexAttr>()) {
-    if (!spvContext.isPS()) {
-      // SubpassInput(MS) variables are only allowed in pixel shaders. In this
-      // case, we avoid create the declaration because it should not be used.
+    // Standalone nonpixel shaders do not expose input attachments. Libraries
+    // can contain pixel entries regardless of whichever stage the function
+    // work queue is currently translating.
+    if (compilationShaderKind != hlsl::ShaderModel::Kind::Pixel &&
+        compilationShaderKind != hlsl::ShaderModel::Kind::Library)
       return;
-    }
   }
 
   SpirvVariableLike *var = nullptr;
@@ -4535,7 +4537,13 @@ SpirvEmitter::processGetSamplePosition(const CXXMemberCallExpr *expr) {
 
 SpirvInstruction *
 SpirvEmitter::processSubpassLoad(const CXXMemberCallExpr *expr) {
-  if (!isCurrentFunctionPixelOnly()) {
+  // Standalone nonpixel compilations do not materialize input-attachment
+  // declarations. A library helper can inherit a nonpixel *current* stage
+  // even when its input attachment is valid for a different pixel entry, so
+  // use the immutable compilation target here and defer library legality to
+  // the emitted call graph.
+  if (compilationShaderKind != hlsl::ShaderModel::Kind::Pixel &&
+      compilationShaderKind != hlsl::ShaderModel::Kind::Library) {
     emitError("SubpassInput(MS) only allowed in pixel shader",
               expr->getExprLoc());
     return nullptr;
@@ -4547,9 +4555,15 @@ SpirvEmitter::processSubpassLoad(const CXXMemberCallExpr *expr) {
   auto *location = spvBuilder.getConstantComposite(
       astContext.getExtVectorType(astContext.IntTy, 2), {zero, zero});
 
-  return processBufferTextureLoad(object, location, /*constOffset*/ 0,
-                                  /*lod*/ sample,
-                                  /*residencyCode*/ 0, expr->getExprLoc());
+  auto *result =
+      processBufferTextureLoad(object, location, /*constOffset*/ 0,
+                               /*lod*/ sample,
+                               /*residencyCode*/ 0, expr->getExprLoc());
+  if (result)
+    spvBuilder.requireFragmentStage(
+        result, expr->getExprLoc(),
+        "SubpassInput(MS) only allowed in pixel shader");
+  return result;
 }
 
 SpirvInstruction *
