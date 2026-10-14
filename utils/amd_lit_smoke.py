@@ -39,6 +39,7 @@ CASES = (
     "CodeGenSPIRV/amd.shared-stage-discard-global-init.hlsl",
     "CodeGenSPIRV/amd.shared-stage-attribute-at-vertex.hlsl",
     "CodeGenSPIRV/amd.shared-stage-discard-unevaluated.hlsl",
+    "CodeGenSPIRV/amd.shared-stage-discard-export.hlsl",
 )
 
 

@@ -363,6 +363,24 @@ def main() -> int:
         ),
         required=(r"OpEntryPoint Fragment", r"OpEntryPoint TessellationControl"),
     )
+    require_success(
+        "SPIR-V local fragment helper in universal SPIR-V",
+        compile_shader(
+            "amd.shared-stage-discard-export.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-target-env=spv1.5",
+        ),
+        required=(r"OpEntryPoint Fragment",),
+    )
+    require_failure(
+        "SPIR-V exported helper is not pixel-only",
+        compile_shader(
+            "amd.shared-stage-discard-export.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-fspv-target-env=spv1.5", "-DEXPORTED",
+        ),
+        "discard statement may only be used in pixel shaders",
+    )
     require_failure(
         "SPIR-V global initializer reaches discard from multiple stages",
         compile_shader(
@@ -381,12 +399,21 @@ def main() -> int:
         required=(r"OpEntryPoint Fragment",),
     )
     require_success(
-        "SPIR-V pixel-only attribute-at-vertex helper",
+        "SPIR-V direct pixel input attribute-at-vertex",
         compile_shader(
             "amd.shared-stage-attribute-at-vertex.hlsl",
             "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
         ),
         required=(r'SPV_KHR_fragment_shader_barycentric',),
+    )
+    require_failure(
+        "SPIR-V attribute-at-vertex rejects value-only helper parameter",
+        compile_shader(
+            "amd.shared-stage-attribute-at-vertex.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-DPARAMETER_HELPER",
+        ),
+        "attribute evaluation can only be done on values taken directly from inputs.",
     )
     require_failure(
         "SPIR-V attribute-at-vertex helper cannot be shared with vertex",

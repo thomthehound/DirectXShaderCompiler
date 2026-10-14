@@ -790,23 +790,31 @@ void SpirvEmitter::collectFunctionEntryReachability() {
   amdParameterEntryOwners.clear();
   functionReachableShaderStages.clear();
   for (const auto *entryInfo : workQueue) {
-    if (!entryInfo->isEntryFunction)
-      continue;
     const auto *root = dyn_cast<FunctionDecl>(entryInfo->funcDecl);
     if (!root)
       continue;
+    // Exported library functions may be linked into shaders of an unknown
+    // stage, even when the only local caller is a pixel shader.
+    const bool isExport = root->hasAttr<HLSLExportAttr>();
+    if (!entryInfo->isEntryFunction && !isExport)
+      continue;
 
-    const unsigned stageIndex =
-        static_cast<unsigned>(entryInfo->shaderModelKind);
-    assert(stageIndex < 32 && "shader stage mask must fit in uint32_t");
-    const uint32_t stageMask = uint32_t(1) << stageIndex;
+    constexpr uint32_t unknownStageMask = uint32_t(1) << 31;
+    uint32_t stageMask = unknownStageMask;
+    if (!isExport) {
+      const unsigned stageIndex =
+          static_cast<unsigned>(entryInfo->shaderModelKind);
+      assert(stageIndex < 31 && "shader stage mask must fit in uint32_t");
+      stageMask = uint32_t(1) << stageIndex;
+    }
     llvm::DenseSet<const FunctionDecl *> visited;
     llvm::SmallVector<const FunctionDecl *, 32> pending(1, root);
 
     // HLSL never explicitly invokes hull patch-constant functions, but the
     // wrapper calls and emits them. Seed the same function that the wrapper
     // resolves so its transitive calls acquire the hull stage too.
-    if (entryInfo->shaderModelKind == hlsl::ShaderModel::Kind::Hull)
+    if (entryInfo->isEntryFunction &&
+        entryInfo->shaderModelKind == hlsl::ShaderModel::Kind::Hull)
       if (const auto *pcf = findPatchConstantFunction(root))
         pending.push_back(pcf);
 
@@ -848,9 +856,10 @@ void SpirvEmitter::collectFunctionEntryReachability() {
             statements.push_back(child);
       }
     };
-    for (const auto *global : toInitGloalVars)
-      if (const auto *init = global->getInit())
-        addCalls(init);
+    if (entryInfo->isEntryFunction)
+      for (const auto *global : toInitGloalVars)
+        if (const auto *init = global->getInit())
+          addCalls(init);
 
     while (!pending.empty()) {
       const FunctionDecl *fn = pending.pop_back_val();
@@ -859,10 +868,11 @@ void SpirvEmitter::collectFunctionEntryReachability() {
         continue;
 
       functionReachableShaderStages[key] |= stageMask;
+      const FunctionDecl *uniqueOwner = isExport ? nullptr : root;
       auto previous = amdParameterEntryOwners.find(key);
       if (previous == amdParameterEntryOwners.end())
-        amdParameterEntryOwners[key] = root;
-      else if (previous->second != root)
+        amdParameterEntryOwners[key] = uniqueOwner;
+      else if (previous->second != uniqueOwner)
         previous->second = nullptr;
 
       const FunctionDecl *definition = nullptr;
@@ -15115,13 +15125,23 @@ SpirvEmitter::processGetAttributeAtVertex(const CallExpr *expr) {
   //        to match surrounded workaround cast expr.
   auto *arg0NoCast = expr->getArg(0)->IgnoreCasts();
   SpirvInstruction *paramDeclInstr = doExpr(arg0NoCast);
-  // Hans't be redeclared before
+  // The interpolation operand must be an actual Input pointer. A value passed
+  // through a helper parameter does not retain shader-interface provenance.
+  if (!paramDeclInstr ||
+      paramDeclInstr->getStorageClass() != spv::StorageClass::Input ||
+      (!isa<SpirvVariableLike>(paramDeclInstr) &&
+       !isa<SpirvAccessChain>(paramDeclInstr))) {
+    emitError("attribute evaluation can only be done on values taken "
+              "directly from inputs.", exprLoc);
+    return nullptr;
+  }
   QualType elementType = paramDeclInstr->getAstResultType();
 
   if (isBoolOrVecOfBoolType(elementType)) {
     emitError("attribute evaluation can only be done "
               "on values taken directly from inputs.",
-              {});
+              exprLoc);
+    return nullptr;
   }
   // Change to access chain instr
   SpirvInstruction *accessChainPtr = paramDeclInstr;
