@@ -368,7 +368,7 @@ def main() -> int:
         compile_shader(
             "amd.shared-stage-discard-export.hlsl",
             "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
-            "-fspv-target-env=spv1.5",
+            "-fspv-target-env=universal1.5",
         ),
         required=(r"OpEntryPoint Fragment",),
     )
@@ -377,7 +377,7 @@ def main() -> int:
         compile_shader(
             "amd.shared-stage-discard-export.hlsl",
             "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
-            "-fspv-target-env=spv1.5", "-DEXPORTED",
+            "-fspv-target-env=universal1.5", "-DEXPORTED",
         ),
         "discard statement may only be used in pixel shaders",
     )

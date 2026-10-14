@@ -1,5 +1,5 @@
-// RUN: %dxc -T lib_6_6 -E main -fcgl -spirv -fspv-target-env=spv1.5 %s | FileCheck %s --check-prefix=VALID
-// RUN: not %dxc -T lib_6_6 -E main -fcgl -spirv -fspv-target-env=spv1.5 -DEXPORTED %s 2>&1 | FileCheck %s --check-prefix=INVALID
+// RUN: %dxc -T lib_6_6 -E main -fcgl -spirv -fspv-target-env=universal1.5 %s | FileCheck %s --check-prefix=VALID
+// RUN: not %dxc -T lib_6_6 -E main -fcgl -spirv -fspv-target-env=universal1.5 -DEXPORTED %s 2>&1 | FileCheck %s --check-prefix=INVALID
 // VALID: OpEntryPoint Fragment
 // INVALID: error: discard statement may only be used in pixel shaders
 
