@@ -91,8 +91,13 @@ The lowering contract is therefore:
 `pervertex.lib.export-stage-order.hlsl` and
 `pervertex.ps.export-signature.hlsl` characterize currently failing cases
 with explicit XFAIL expectations. `pervertex.lib.export-abi-control.hlsl`
-checks the unaffected baseline. The focused LIT gate counts XFAIL separately;
-an unexpected pass requires reviewing the test and updating the expectation.
+checks the unaffected baseline. The focused LIT gate counts XFAIL
+separately and independently checks the generated SPIR-V for the exact known
+symptoms: a translated Fragment entry and export without the required
+PerVertexKHR input lowering, or a translated Fragment entry whose unrelated
+export has acquired a three-vertex array parameter ABI. A compiler failure
+or missing linkage root is not evidence of either symptom. An unexpected
+pass requires reviewing the test and updating the expectation.
 
 ## Existing regression coverage
 
