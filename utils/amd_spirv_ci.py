@@ -399,10 +399,10 @@ def main() -> int:
         required=(r"OpEntryPoint Fragment",),
     )
     require_success(
-        "SPIR-V direct pixel input attribute-at-vertex",
+        "SPIR-V standalone pixel input attribute-at-vertex",
         compile_shader(
             "amd.shared-stage-attribute-at-vertex.hlsl",
-            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-T", "ps_6_6", "-E", "pixelMain", "-fcgl", "-spirv",
         ),
         required=(r'SPV_KHR_fragment_shader_barycentric',),
     )
