@@ -259,6 +259,24 @@ bool PervertexInputVisitor::visit(SpirvModule *m, Phase phase) {
   if (phase == Phase::Done)
     return !unsupportedSharedRecord;
   currentMod = m;
+  // HLSL call sites already allocate private Function-scope temporaries
+  // for ordinary by-value arguments and store their values at the actual
+  // call site. A callee with an exported/cross-stage ABI must receive that
+  // memory-object declaration, not an OpAccessChain into a widened array.
+  // Clear interpolation propagation only on those explicitly identified
+  // call-private temporaries before visiting and lowering any variables.
+  for (auto *function : stageReachability.getEmittedFunctions()) {
+    if (!stageReachability.isFragmentOnly(function))
+      continue;
+    for (auto *call : stageReachability.getCallsFrom(function)) {
+      if (stageReachability.isFragmentOnly(call->getFunction()))
+        continue;
+      for (auto *arg : call->getArgs())
+        if (auto *var = dyn_cast<SpirvVariable>(arg))
+          if (var->isFunctionCallArgumentTemporary())
+            var->setNoninterpolated(false);
+    }
+  }
   // The emitted call graph has already classified linkage-exported and
   // other non-Fragment functions. A Clang FieldDecl is shared across every
   // use of its record, so never silently rewrite one of these record types.
@@ -400,22 +418,20 @@ bool PervertexInputVisitor::visit(SpirvFunctionCall *inst) {
   /// functions. But pass it as an array if meet function call.
   if (inEntryFunctionWrapper)
     return true;
-  // Linkage-visible and cross-stage callees keep their ordinary ABI.
-  // A pixel input can still pass its provoking-vertex value through the
-  // existing replacement mapping, but never pass the expanded array to an
-  // unmodified callable signature.
+  // Cross-stage callees require their original pointer ABI. The ordinary
+  // value is copied into a call-private Function variable by the emitter;
+  // its source loads are rewritten by this visitor as usual. Never replace
+  // an OpFunctionCall pointer argument with a provoking-vertex OpAccessChain:
+  // SPIR-V requires a memory-object declaration at this boundary.
   if (!stageReachability.isFragmentOnly(inst->getFunction())) {
     for (auto *arg : inst->getArgs()) {
-      if (arg->isNoninterpolated() && getMappedReplaceInstr(arg) == arg) {
+      if (arg->isNoninterpolated()) {
         emitError("cannot pass expanded per-vertex input to a function "
                   "reachable from a non-pixel stage",
                   inst->getSourceLocation());
         return false;
       }
     }
-    inst->replaceOperand(
-        [this](SpirvInstruction *arg) { return getMappedReplaceInstr(arg); },
-        /*inEntryFunctionWrapper=*/false);
     return true;
   }
   /// Load/Store instructions related to this argument may have been replaced
