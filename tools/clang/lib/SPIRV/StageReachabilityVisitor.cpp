@@ -81,7 +81,7 @@ bool StageReachabilityVisitor::visit(SpirvFunction *func, Phase phase) {
 bool StageReachabilityVisitor::visit(SpirvFunctionCall *call) {
   if (currentFunction)
     callGraph[currentFunction].push_back(call->getFunction());
-  return true;
+  return visitInstruction(call);
 }
 
 void StageReachabilityVisitor::recordDiscard(SourceLocation loc) {
