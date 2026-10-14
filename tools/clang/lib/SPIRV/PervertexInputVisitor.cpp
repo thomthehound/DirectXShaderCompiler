@@ -211,17 +211,16 @@ bool PervertexInputVisitor::visit(SpirvModule *m, Phase phase) {
 }
 
 bool PervertexInputVisitor::visit(SpirvEntryPoint *ep) {
-  // Add variable mapping here. First function would be main.
   currentFunc = ep->getEntryPoint();
-  /// Refine stage in/out variables
-  for (auto *var : currentMod->getVariables()) {
+  // Refine inputs belonging to this entry, not unrelated module variables.
+  // Entry interfaces are assembled by DeclResultIdMapper::collectStageVars().
+  for (auto *var : ep->getInterface()) {
     if (!var->isNoninterpolated() ||
         var->getStorageClass() != spv::StorageClass::Input)
       continue;
     auto *stgIOLoadPtr = spirvBuilder.getPerVertexStgInput(var);
-    if (!isa<SpirvBinaryOp>(stgIOLoadPtr)) {
+    if (stgIOLoadPtr && !isa<SpirvBinaryOp>(stgIOLoadPtr))
       stgIOLoadPtr->setAstResultType(var->getAstResultType());
-    }
   }
   return true;
 }
