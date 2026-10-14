@@ -125,11 +125,10 @@ bool StageReachabilityVisitor::visit(SpirvModule *, Phase phase) {
     }
   }
   for (const auto &use : fragmentStageUses) {
-    const SpirvFunction *owner = liveStageUses.lookup(use.instruction);
+    SpirvFunction *owner = liveStageUses.lookup(use.instruction);
     if (!owner)
       continue; // This operation was in a discarded basic block.
-    const unsigned mask =
-        stages.lookup(const_cast<SpirvFunction *>(owner));
+    const unsigned mask = stages.lookup(owner);
     if (mask != 0 && mask != Fragment) {
       const unsigned id =
           diags.getCustomDiagID(DiagnosticsEngine::Error, use.diagnostic);
