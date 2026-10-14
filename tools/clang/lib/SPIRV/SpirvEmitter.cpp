@@ -2358,8 +2358,7 @@ void SpirvEmitter::doVarDecl(const VarDecl *decl) {
     // Standalone nonpixel shaders do not expose input attachments. Libraries
     // can contain pixel entries regardless of whichever stage the function
     // work queue is currently translating.
-    if (!compilationShaderModel->IsPS() &&
-        !compilationShaderModel->IsLib())
+    if (!compilationShaderModel->IsPS() && !compilationShaderModel->IsLib())
       return;
   }
 
@@ -4543,8 +4542,7 @@ SpirvEmitter::processSubpassLoad(const CXXMemberCallExpr *expr) {
   // even when its input attachment is valid for a different pixel entry, so
   // use the immutable compilation target here and defer library legality to
   // the emitted call graph.
-  if (!compilationShaderModel->IsPS() &&
-      !compilationShaderModel->IsLib()) {
+  if (!compilationShaderModel->IsPS() && !compilationShaderModel->IsLib()) {
     emitError("SubpassInput(MS) only allowed in pixel shader",
               expr->getExprLoc());
     return nullptr;
