@@ -268,6 +268,8 @@ bool PervertexInputVisitor::visit(SpirvModule *m, Phase phase) {
       protectRecordTypes(param->getAstResultType());
     for (auto *var : func->getVariables())
       protectRecordTypes(var->getAstResultType());
+    for (auto *instruction : stageReachability.getRecordTypeUses(func))
+      protectRecordTypes(instruction->getAstResultType());
   }
   for (auto *var : m->getVariables())
     if (var->getStorageClass() != spv::StorageClass::Input)
