@@ -46,7 +46,8 @@ bool StageReachabilityVisitor::visitInstruction(SpirvInstruction *instruction) {
   auto use = liveStageUses.find(instruction);
   if (use != liveStageUses.end())
     use->second = currentFunction;
-  if (currentFunction && instruction->hasAstResultType() &&
+  if (collectRecordTypes && currentFunction &&
+      instruction->hasAstResultType() &&
       containsAstRecord(instruction->getAstResultType()))
     recordTypeUses[currentFunction].push_back(instruction);
   return true;
