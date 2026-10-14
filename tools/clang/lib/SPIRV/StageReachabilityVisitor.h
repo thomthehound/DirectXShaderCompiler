@@ -37,6 +37,13 @@ public:
                            const SpirvCodeGenOptions &opts)
       : Visitor(opts, spvCtx), astContext(astCtx) {}
 
+  // The same emitted call graph identifies whether a function has only
+  // Fragment entry roots. Linkage exports are unknown-stage roots and therefore
+  // cannot acquire an entry-specific callable representation.
+  bool isFragmentOnly(SpirvFunction *function) const {
+    return reachableStages.lookup(function) == Fragment;
+  }
+
   // Lowerings that become generic SPIR-V instructions can retain their
   // source-level stage constraint without relying on AST caller inference.
   void requireFragmentStage(SpirvInstruction *instruction, SourceLocation loc,
@@ -62,6 +69,7 @@ private:
   llvm::DenseMap<SpirvFunction *, llvm::SmallVector<SpirvFunction *, 4>>
       callGraph;
   llvm::SmallVector<std::pair<SpirvFunction *, unsigned>, 8> roots;
+  llvm::DenseMap<SpirvFunction *, unsigned> reachableStages;
   llvm::SmallVector<std::pair<SpirvFunction *, SourceLocation>, 8> discards;
   struct FragmentStageUse {
     SpirvInstruction *instruction;
