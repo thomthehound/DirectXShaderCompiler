@@ -380,6 +380,31 @@ def main() -> int:
         ),
         required=(r"OpEntryPoint Fragment",),
     )
+    require_success(
+        "SPIR-V pixel-only attribute-at-vertex helper",
+        compile_shader(
+            "amd.shared-stage-attribute-at-vertex.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+        ),
+        required=(r'SPV_KHR_fragment_shader_barycentric',),
+    )
+    require_failure(
+        "SPIR-V attribute-at-vertex helper cannot be shared with vertex",
+        compile_shader(
+            "amd.shared-stage-attribute-at-vertex.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv", "-DSHARED",
+        ),
+        "GetAttributeAtVertex only allowed in pixel shader",
+    )
+    require_failure(
+        "SPIR-V attribute-at-vertex helper rejects vertex-first sharing",
+        compile_shader(
+            "amd.shared-stage-attribute-at-vertex.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-DSHARED", "-DVERTEX_FIRST",
+        ),
+        "GetAttributeAtVertex only allowed in pixel shader",
+    )
     require_failure(
         "AMD raw vertex-parameter register bounds",
         compile_shader(

@@ -764,8 +764,8 @@ llvm::StringRef SpirvEmitter::getEntryPointName(const FunctionInfo *entryInfo) {
   return entrypointName;
 }
 
-FunctionDecl *SpirvEmitter::findPatchConstantFunction(
-    const FunctionDecl *hullEntry) {
+FunctionDecl *
+SpirvEmitter::findPatchConstantFunction(const FunctionDecl *hullEntry) {
   const auto *pcfAttr = hullEntry->getAttr<HLSLPatchConstantFuncAttr>();
   if (!pcfAttr)
     return nullptr;
@@ -782,9 +782,10 @@ FunctionDecl *SpirvEmitter::findPatchConstantFunction(
 
 // The emitter translates a shared helper only once, but callers can reach it
 // from several entry stages. Collect explicit AST calls, default arguments,
-// compiler-generated patch-constant calls, and each wrapper's global initializers
-// before lowering. AMD raw pixel-register access additionally requires a unique
-// entry, while generic fragment-only operations only require pixel-only stages.
+// compiler-generated patch-constant calls, and each wrapper's global
+// initializers before lowering. AMD raw pixel-register access additionally
+// requires a unique entry, while generic fragment-only operations only require
+// pixel-only stages.
 void SpirvEmitter::collectFunctionEntryReachability() {
   amdParameterEntryOwners.clear();
   functionReachableShaderStages.clear();
