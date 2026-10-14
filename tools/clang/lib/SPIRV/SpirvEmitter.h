@@ -1529,10 +1529,10 @@ private:
   /// and should be const.
   const llvm::StringRef hlslEntryFunctionName;
 
-  // The compilation-wide target profile is immutable. Do not confuse this
-  // with SpirvContext's current stage, which changes for each queued library
-  // entry and helper as HLSL functions are translated.
-  hlsl::ShaderModel::Kind compilationShaderKind;
+  // The profile selected by -T is fixed for this compilation. This differs
+  // from SpirvContext's current stage, which changes when translating library
+  // entries and their callees.
+  const hlsl::ShaderModel *const compilationShaderModel;
 
   /// \brief Structure to maintain record of all entry functions and any
   /// reachable functions.

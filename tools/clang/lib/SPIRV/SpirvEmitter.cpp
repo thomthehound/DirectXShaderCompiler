@@ -594,6 +594,8 @@ SpirvEmitter::SpirvEmitter(CompilerInstance &ci)
       diags(ci.getDiagnostics()),
       spirvOptions(ci.getCodeGenOpts().SpirvOptions),
       hlslEntryFunctionName(ci.getCodeGenOpts().HLSLEntryFunction),
+      compilationShaderModel(hlsl::ShaderModel::GetByName(
+          ci.getCodeGenOpts().HLSLProfile.c_str())),
       spvContext(), featureManager(diags, spirvOptions),
       spvBuilder(astContext, spvContext, spirvOptions, featureManager),
       declIdMapper(astContext, spvContext, spvBuilder, *this, featureManager,
@@ -603,10 +605,9 @@ SpirvEmitter::SpirvEmitter(CompilerInstance &ci)
       isSpecConstantMode(false), needsLegalization(false),
       beforeHlslLegalization(false), mainSourceFile(nullptr) {
 
-  // Get ShaderModel from command line hlsl profile option.
-  const hlsl::ShaderModel *shaderModel =
-      hlsl::ShaderModel::GetByName(ci.getCodeGenOpts().HLSLProfile.c_str());
-  compilationShaderKind = shaderModel->GetKind();
+  // Get ShaderModel from the command-line HLSL profile option. Keep the
+  // compilation profile independent of the stage used for the current callee.
+  const hlsl::ShaderModel *shaderModel = compilationShaderModel;
   if (shaderModel->GetKind() == hlsl::ShaderModel::Kind::Invalid)
     emitError("unknown shader module: %0", {}) << shaderModel->GetName();
 
@@ -957,7 +958,7 @@ void SpirvEmitter::HandleTranslationUnit(ASTContext &context) {
   // The entry function is the seed of the queue.
   for (auto *decl : tu->decls()) {
     if (auto *funcDecl = dyn_cast<FunctionDecl>(decl)) {
-      if (spvContext.isLib()) {
+      if (compilationShaderModel->IsLib()) {
         if (const auto *shaderAttr = funcDecl->getAttr<HLSLShaderAttr>()) {
           // If we are compiling as a library then add everything that has a
           // ShaderAttr.
@@ -965,15 +966,15 @@ void SpirvEmitter::HandleTranslationUnit(ASTContext &context) {
                                  funcDecl, /*isEntryFunction*/ true);
           numEntryPoints++;
         } else if (funcDecl->getAttr<HLSLExportAttr>()) {
-          addFunctionToWorkQueue(spvContext.getCurrentShaderModelKind(),
-                                 funcDecl, /*isEntryFunction*/ false);
+          addFunctionToWorkQueue(compilationShaderModel->GetKind(), funcDecl,
+                                 /*isEntryFunction*/ false);
         }
       } else {
         const bool isPrototype = !funcDecl->isThisDeclarationADefinition();
         if (funcDecl->getIdentifier() &&
             funcDecl->getName() == hlslEntryFunctionName && !isPrototype) {
-          addFunctionToWorkQueue(spvContext.getCurrentShaderModelKind(),
-                                 funcDecl, /*isEntryFunction*/ true);
+          addFunctionToWorkQueue(compilationShaderModel->GetKind(), funcDecl,
+                                 /*isEntryFunction*/ true);
           numEntryPoints++;
         }
       }
@@ -2357,8 +2358,8 @@ void SpirvEmitter::doVarDecl(const VarDecl *decl) {
     // Standalone nonpixel shaders do not expose input attachments. Libraries
     // can contain pixel entries regardless of whichever stage the function
     // work queue is currently translating.
-    if (compilationShaderKind != hlsl::ShaderModel::Kind::Pixel &&
-        compilationShaderKind != hlsl::ShaderModel::Kind::Library)
+    if (!compilationShaderModel->IsPS() &&
+        !compilationShaderModel->IsLib())
       return;
   }
 
@@ -4542,8 +4543,8 @@ SpirvEmitter::processSubpassLoad(const CXXMemberCallExpr *expr) {
   // even when its input attachment is valid for a different pixel entry, so
   // use the immutable compilation target here and defer library legality to
   // the emitted call graph.
-  if (compilationShaderKind != hlsl::ShaderModel::Kind::Pixel &&
-      compilationShaderKind != hlsl::ShaderModel::Kind::Library) {
+  if (!compilationShaderModel->IsPS() &&
+      !compilationShaderModel->IsLib()) {
     emitError("SubpassInput(MS) only allowed in pixel shader",
               expr->getExprLoc());
     return nullptr;
