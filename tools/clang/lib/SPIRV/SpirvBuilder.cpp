@@ -137,9 +137,8 @@ void SpirvBuilder::endFunction() {
 void SpirvBuilder::requireFragmentStage(SpirvInstruction *instruction,
                                         SourceLocation loc,
                                         llvm::StringRef diagnostic) {
-  assert(function && instruction &&
-         "fragment-stage requirement requires an emitted instruction");
-  fragmentStageUses.push_back({function, instruction, loc, diagnostic.str()});
+  assert(instruction && "fragment-stage requirement needs an instruction");
+  fragmentStageUses.push_back({instruction, loc, diagnostic.str()});
 }
 
 SpirvBasicBlock *SpirvBuilder::createBasicBlock(llvm::StringRef name) {
@@ -2205,7 +2204,7 @@ std::vector<uint32_t> SpirvBuilder::takeModule() {
   // and binary emission so an invalid stage never reaches the SPIR-V validator.
   StageReachabilityVisitor stageValidator(astContext, context, spirvOptions);
   for (const auto &use : fragmentStageUses)
-    stageValidator.requireFragmentStage(use.function, use.instruction, use.loc,
+    stageValidator.requireFragmentStage(use.instruction, use.loc,
                                         use.diagnostic);
   if (!mod->invokeVisitor(&stageValidator))
     return {};

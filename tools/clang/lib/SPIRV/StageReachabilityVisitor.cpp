@@ -16,16 +16,19 @@ namespace clang {
 namespace spirv {
 
 void StageReachabilityVisitor::requireFragmentStage(
-    SpirvFunction *function, SpirvInstruction *instruction, SourceLocation loc,
+    SpirvInstruction *instruction, SourceLocation loc,
     llvm::StringRef diagnostic) {
-  fragmentStageUses.push_back({function, instruction, loc, diagnostic.str()});
+  fragmentStageUses.push_back({instruction, loc, diagnostic.str()});
+  liveStageUses[instruction] = nullptr;
 }
 
 bool StageReachabilityVisitor::visitInstruction(SpirvInstruction *instruction) {
-  // SpirvFunction visits only CFG-reachable blocks. Remember which lowered
-  // operations actually survive, rather than attributing dead operations to
-  // every shader stage that reaches their containing function.
-  visitedInstructions.insert(instruction);
+  // SpirvFunction visits only CFG-reachable blocks. Resolve each marked
+  // operation to the actual function traversed, not the builder's ambient
+  // function (which can differ for synthetic module.init instructions).
+  auto use = liveStageUses.find(instruction);
+  if (use != liveStageUses.end())
+    use->second = currentFunction;
   return true;
 }
 
@@ -122,9 +125,11 @@ bool StageReachabilityVisitor::visit(SpirvModule *, Phase phase) {
     }
   }
   for (const auto &use : fragmentStageUses) {
-    if (!visitedInstructions.count(use.instruction))
-      continue;
-    const unsigned mask = stages.lookup(use.function);
+    const SpirvFunction *owner = liveStageUses.lookup(use.instruction);
+    if (!owner)
+      continue; // This operation was in a discarded basic block.
+    const unsigned mask =
+        stages.lookup(const_cast<SpirvFunction *>(owner));
     if (mask != 0 && mask != Fragment) {
       const unsigned id =
           diags.getCustomDiagID(DiagnosticsEngine::Error, use.diagnostic);

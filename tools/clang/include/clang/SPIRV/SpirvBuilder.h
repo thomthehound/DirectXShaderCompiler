@@ -951,7 +951,6 @@ private:
   SpirvBasicBlock *insertPoint;     ///< The current basic block being built
 
   struct FragmentStageUse {
-    SpirvFunction *function;
     SpirvInstruction *instruction;
     SourceLocation loc;
     std::string diagnostic;
