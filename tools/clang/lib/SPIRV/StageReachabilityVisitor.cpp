@@ -85,7 +85,7 @@ bool StageReachabilityVisitor::visit(SpirvFunction *func, Phase phase) {
 
 bool StageReachabilityVisitor::visit(SpirvFunctionCall *call) {
   if (currentFunction)
-    callGraph[currentFunction].push_back(call->getFunction());
+    callGraph[currentFunction].push_back(call);
   return visitInstruction(call);
 }
 
@@ -133,8 +133,8 @@ bool StageReachabilityVisitor::visit(SpirvModule *module, Phase phase) {
     auto callees = callGraph.find(caller);
     if (callees == callGraph.end())
       continue;
-    for (SpirvFunction *callee : callees->second)
-      mark(callee, reachableStages.lookup(caller));
+    for (SpirvFunctionCall *call : callees->second)
+      mark(call->getFunction(), reachableStages.lookup(caller));
   }
 
   // Reject both OpKill and OpDemoteToHelperInvocation in any function whose
