@@ -81,7 +81,7 @@ bool PervertexInputVisitor::expandNointerpVarAndParam(
 void PervertexInputVisitor::protectRecordTypes(QualType type) {
   if (type.isNull())
     return;
-  if (type->isPointerType()) {
+  if (type->isPointerType() || type->isReferenceType()) {
     protectRecordTypes(type->getPointeeType());
     return;
   }
