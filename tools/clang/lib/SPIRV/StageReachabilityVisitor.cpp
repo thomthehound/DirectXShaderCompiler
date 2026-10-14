@@ -74,7 +74,12 @@ bool StageReachabilityVisitor::visit(SpirvDecoration *decor) {
 }
 
 bool StageReachabilityVisitor::visit(SpirvFunction *func, Phase phase) {
-  currentFunction = phase == Phase::Init ? func : nullptr;
+  if (phase == Phase::Init) {
+    emittedFunctions.push_back(func);
+    currentFunction = func;
+  } else {
+    currentFunction = nullptr;
+  }
   return true;
 }
 
