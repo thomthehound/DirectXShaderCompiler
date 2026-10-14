@@ -1,0 +1,13 @@
+// RUN: %dxc -T lib_6_6 -E main -fcgl -spirv -fspv-target-env=universal1.5 %S/pervertex.ps.export-signature.hlsl -Fo %t
+// RUN: %dxc -T lib_6_6 -E main -fcgl -spirv -fspv-target-env=universal1.5 %S/pervertex.ps.export-signature.hlsl | FileCheck %s
+
+// Positive evidence for the unresolved linkage ABI defect. The pixel input
+// must have been lowered to PerVertexKHR, and the unrelated export's actual
+// function parameter must nonetheless have been changed to a float4[3].
+// CHECK: OpEntryPoint Fragment
+// CHECK-DAG: OpDecorate [[EXPORT:%[a-zA-Z0-9_]+]] LinkageAttributes "exportedPassthrough" Export
+// CHECK-DAG: OpDecorate [[INPUT:%[a-zA-Z0-9_]+]] PerVertexKHR
+// CHECK: %_arr_v4float_uint_3 = OpTypeArray %v4float %uint_3
+// CHECK: %_ptr_Function__arr_v4float_uint_3 = OpTypePointer Function %_arr_v4float_uint_3
+// CHECK: [[EXPORT]] = OpFunction %v4float
+// CHECK-NEXT: [[PARAM:%[a-zA-Z0-9_]+]] = OpFunctionParameter %_ptr_Function__arr_v4float_uint_3
