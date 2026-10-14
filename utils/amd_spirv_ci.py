@@ -405,6 +405,41 @@ def main() -> int:
         ),
         "GetAttributeAtVertex only allowed in pixel shader",
     )
+    require_success(
+        "SPIR-V sizeof expression does not call fragment-only helper",
+        compile_shader(
+            "amd.shared-stage-discard-unevaluated.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+        ),
+        required=(r"OpEntryPoint Fragment", r"OpEntryPoint Vertex"),
+    )
+    require_success(
+        "SPIR-V vertex-first sizeof does not call fragment-only helper",
+        compile_shader(
+            "amd.shared-stage-discard-unevaluated.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-DVERTEX_FIRST",
+        ),
+        required=(r"OpEntryPoint Fragment", r"OpEntryPoint Vertex"),
+    )
+    require_failure(
+        "SPIR-V executing fragment-only helper in vertex remains rejected",
+        compile_shader(
+            "amd.shared-stage-discard-unevaluated.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-DREAL_VERTEX_CALL",
+        ),
+        "discard statement may only be used in pixel shaders",
+    )
+    require_failure(
+        "SPIR-V vertex-first executing fragment-only helper is rejected",
+        compile_shader(
+            "amd.shared-stage-discard-unevaluated.hlsl",
+            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
+            "-DREAL_VERTEX_CALL", "-DVERTEX_FIRST",
+        ),
+        "discard statement may only be used in pixel shaders",
+    )
     require_failure(
         "AMD raw vertex-parameter register bounds",
         compile_shader(

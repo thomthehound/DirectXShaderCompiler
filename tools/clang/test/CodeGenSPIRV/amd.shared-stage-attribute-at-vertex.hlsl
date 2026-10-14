@@ -10,7 +10,7 @@ float4 readVertex(nointerpolation float4 value) {
 
 #ifdef VERTEX_FIRST
 [shader("vertex")]
-float4 vertexMain(float4 pos : POSITION) : SV_Position {
+float4 vertexMain(nointerpolation float4 pos : POSITION) : SV_Position {
 #ifdef SHARED
   return readVertex(pos);
 #else
@@ -26,7 +26,7 @@ float4 pixelMain(nointerpolation float4 input : TEXCOORD0) : SV_Target {
 
 #ifndef VERTEX_FIRST
 [shader("vertex")]
-float4 vertexMain(float4 pos : POSITION) : SV_Position {
+float4 vertexMain(nointerpolation float4 pos : POSITION) : SV_Position {
 #ifdef SHARED
   return readVertex(pos);
 #else

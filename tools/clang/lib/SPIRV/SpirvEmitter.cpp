@@ -818,6 +818,12 @@ void SpirvEmitter::collectFunctionEntryReachability() {
       statements.push_back(body);
       while (!statements.empty()) {
         const Stmt *stmt = statements.pop_back_val();
+        // sizeof(expr) does not evaluate expr. Its CallExpr children exist
+        // only for type checking and must not create runtime reachability.
+        // The SPIR-V emitter lowers sizeof to a constant without doExpr(arg).
+        if (const auto *typeQuery = dyn_cast<UnaryExprOrTypeTraitExpr>(stmt))
+          if (typeQuery->getKind() == UnaryExprOrTypeTrait::UETT_SizeOf)
+            continue;
         if (const auto *call = dyn_cast<CallExpr>(stmt))
           if (const auto *callee = call->getDirectCallee())
             pending.push_back(callee);
