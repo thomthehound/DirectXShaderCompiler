@@ -1,13 +1,14 @@
 // XFAIL: *
 // RUN: %dxc -T lib_6_6 -E main -fcgl -spirv -fspv-target-env=universal1.5 %s | FileCheck %s
 
-// A following export is translated with Library stage context. It must not
-// prevent per-vertex input lowering for the preceding Fragment entry.
-// Unlike a pixel-only entry fixture, this fails with the old context.isPS()
-// module gate and must produce PerVertexKHR and the expanded input layout.
+// The entry is translated before the export, which leaves SpirvContext in
+// Library mode. Per-vertex lowering is nevertheless required for the pixel
+// entry's actual interface, without modifying the unrelated export's ABI.
 // CHECK: OpEntryPoint Fragment
-// CHECK: OpDecorate {{%[a-zA-Z0-9_]+}} PerVertexKHR
+// CHECK-DAG: OpDecorate [[EXPORT:%[a-zA-Z0-9_]+]] LinkageAttributes "unrelated" Export
+// CHECK-DAG: OpDecorate [[INPUT:%[a-zA-Z0-9_]+]] PerVertexKHR
 // CHECK: OpTypeArray %v4float %uint_3
+// CHECK: [[INPUT]] = OpVariable %_ptr_Input__arr_v4float_uint_3 Input
 
 [shader("pixel")]
 float4 pixelMain(nointerpolation float4 input : TEXCOORD0) : SV_Target {
