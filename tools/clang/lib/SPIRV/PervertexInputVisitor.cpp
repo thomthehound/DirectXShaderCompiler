@@ -8,6 +8,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "PervertexInputVisitor.h"
+#include "StageReachabilityVisitor.h"
 #include "clang/SPIRV/AstTypeProbe.h"
 #include "clang/SPIRV/SpirvFunction.h"
 #include "clang/SPIRV/SpirvType.h"
@@ -211,17 +212,16 @@ bool PervertexInputVisitor::visit(SpirvModule *m, Phase phase) {
 }
 
 bool PervertexInputVisitor::visit(SpirvEntryPoint *ep) {
-  // Add variable mapping here. First function would be main.
+  // Entry interfaces, not the global variable list, own stage inputs.
+  // All local entries were checked to be Fragment before this pass runs.
   currentFunc = ep->getEntryPoint();
-  /// Refine stage in/out variables
-  for (auto *var : currentMod->getVariables()) {
+  for (auto *var : ep->getInterface()) {
     if (!var->isNoninterpolated() ||
         var->getStorageClass() != spv::StorageClass::Input)
       continue;
     auto *stgIOLoadPtr = spirvBuilder.getPerVertexStgInput(var);
-    if (!isa<SpirvBinaryOp>(stgIOLoadPtr)) {
+    if (stgIOLoadPtr && !isa<SpirvBinaryOp>(stgIOLoadPtr))
       stgIOLoadPtr->setAstResultType(var->getAstResultType());
-    }
   }
   return true;
 }
@@ -229,7 +229,12 @@ bool PervertexInputVisitor::visit(SpirvEntryPoint *ep) {
 bool PervertexInputVisitor::visit(SpirvFunction *sf, Phase phase) {
   // Add variable mapping here. First function would be main.
   currentFunc = sf;
+  processCurrentFunction = stageReachability.isFragmentOnly(sf);
   inEntryFunctionWrapper = false;
+  // An exported function may be called by a non-pixel entry after linking.
+  // Its signature and body must not acquire pixel-specific representations.
+  if (!processCurrentFunction)
+    return true;
   if (sf->isEntryFunctionWrapper()) {
     if (phase != Phase::Done) {
       inEntryFunctionWrapper = true;
@@ -263,6 +268,11 @@ bool PervertexInputVisitor::visit(SpirvFunction *sf, Phase phase) {
 
 /// Spirv Instruction check and pointer replacement if needed.
 bool PervertexInputVisitor::visit(SpirvVariable *inst) {
+  // Module input variables are processed for Fragment entries. Function
+  // variables are rewritten only when the function has Fragment-only roots.
+  if (inst->getStorageClass() != spv::StorageClass::Input &&
+      !processCurrentFunction)
+    return true;
   if (expandNointerpVarAndParam(inst) &&
       inst->getStorageClass() == spv::StorageClass::Input)
     spirvBuilder.decoratePerVertexKHR(inst, inst->getSourceLocation());
@@ -270,11 +280,14 @@ bool PervertexInputVisitor::visit(SpirvVariable *inst) {
 }
 
 bool PervertexInputVisitor::visit(SpirvFunctionParameter *inst) {
-  expandNointerpVarAndParam(inst);
+  if (processCurrentFunction)
+    expandNointerpVarAndParam(inst);
   return true;
 }
 
 bool PervertexInputVisitor::visit(SpirvCompositeExtract *inst) {
+  if (!processCurrentFunction)
+    return true;
   if (inst->isNoninterpolated() &&
       !isNotExpandedVectorAccess(inst->getComposite()->getAstResultType(),
                                  inst->getAstResultType())) {
@@ -287,6 +300,8 @@ bool PervertexInputVisitor::visit(SpirvCompositeExtract *inst) {
 }
 
 bool PervertexInputVisitor::visit(SpirvAccessChain *inst) {
+  if (!processCurrentFunction)
+    return true;
   llvm::SmallVector<uint32_t, 4> indexes;
   SpirvInstruction *zero =
       spirvBuilder.getConstantInt(astContext.UnsignedIntTy, llvm::APInt(32, 0));
@@ -313,10 +328,26 @@ bool PervertexInputVisitor::visit(SpirvAccessChain *inst) {
 // If an expanded variable/parameter is passed to a function,
 // recreate a pair of Store/Load instructions.
 bool PervertexInputVisitor::visit(SpirvFunctionCall *inst) {
+  if (!processCurrentFunction)
+    return true;
   /// Replace each use of pervertex inputs with its vertex0 element within
   /// functions. But pass it as an array if meet function call.
   if (inEntryFunctionWrapper)
     return true;
+  // An exported or cross-stage callee keeps its ordinary ABI. Carrying an
+  // expanded per-vertex value across that boundary requires a different
+  // representation or specialization and cannot be performed implicitly.
+  if (!stageReachability.isFragmentOnly(inst->getFunction())) {
+    for (auto *arg : inst->getArgs()) {
+      if (arg->isNoninterpolated()) {
+        emitError("per-vertex input cannot be passed to a function reachable "
+                  "from a non-pixel stage",
+                  inst->getSourceLocation());
+        return false;
+      }
+    }
+    return true;
+  }
   /// Load/Store instructions related to this argument may have been replaced
   /// with other instructions, so we need to get its original mapped variables.
   unsigned argIndex = 0;
