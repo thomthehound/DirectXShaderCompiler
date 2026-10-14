@@ -2221,11 +2221,19 @@ std::vector<uint32_t> SpirvBuilder::takeModule() {
       astContext, context, spirvOptions, featureManager);
   EmitVisitor emitVisitor(astContext, context, spirvOptions, featureManager);
 
-  // pervertex inputs refine
-  if (context.isPS()) {
-    PervertexInputVisitor pervertexInputVisitor(*this, astContext, context,
-                                                spirvOptions);
-    mod->invokeVisitor(&pervertexInputVisitor);
+  // Per-vertex interpolation is a property of the emitted pixel entries,
+  // not of whichever function was translated last. The current visitor
+  // changes shared types, so mixed-stage libraries still need entry-specific
+  // lowering before this module pass can be enabled for them.
+  bool onlyFragmentEntries = !mod->getEntryPoints().empty();
+  for (const auto *entry : mod->getEntryPoints())
+    if (entry->getExecModel() != spv::ExecutionModel::Fragment)
+      onlyFragmentEntries = false;
+  if (mod->isPerVertexInterpMode() && onlyFragmentEntries) {
+    PervertexInputVisitor pervertexInputVisitor(
+        *this, astContext, context, spirvOptions, stageValidator);
+    if (!mod->invokeVisitor(&pervertexInputVisitor))
+      return {};
   }
 
   mod->invokeVisitor(&literalTypeVisitor, true);
