@@ -18,6 +18,7 @@ add_clang_library(clangSPIRV
   LiteralTypeVisitor.cpp
   LowerTypeVisitor.cpp
   SortDebugInfoVisitor.cpp
+  StageReachabilityVisitor.cpp
   NonUniformVisitor.cpp
   PreciseVisitor.cpp
   PervertexInputVisitor.cpp

@@ -2479,13 +2479,9 @@ spv::LoopControlMask SpirvEmitter::translateLoopAttribute(const Stmt *stmt,
 void SpirvEmitter::doDiscardStmt(const DiscardStmt *discardStmt) {
   assert(!spvBuilder.isCurrentBasicBlockTerminated());
 
-  // A helper is translated only once. Its ambient shader kind is inherited
-  // from its first caller, so every reachable entry must be a pixel shader.
-  if (!isCurrentFunctionPixelOnly()) {
-    emitError("discard statement may only be used in pixel shaders",
-              discardStmt->getLoc());
-    return;
-  }
+  // Stage legality is checked against the lowered OpFunctionCall graph by
+  // StageReachabilityVisitor before any SPIR-V binary is emitted. That check
+  // includes generated wrappers, exported functions, and module initializers.
 
   if (featureManager.isExtensionEnabled(
           Extension::EXT_demote_to_helper_invocation) ||

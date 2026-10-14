@@ -19,6 +19,7 @@
 #include "RelaxedPrecisionVisitor.h"
 #include "RemoveBufferBlockVisitor.h"
 #include "SortDebugInfoVisitor.h"
+#include "StageReachabilityVisitor.h"
 #include "clang/SPIRV/AstTypeProbe.h"
 #include "clang/SPIRV/String.h"
 
@@ -2190,6 +2191,13 @@ void SpirvBuilder::endModuleInitFunction() {
 std::vector<uint32_t> SpirvBuilder::takeModule() {
   endModuleInitFunction();
   addModuleInitCallToEntryPoints();
+
+  // Check the actual emitted call graph, after implicit module-initialization
+  // calls have been attached to entry wrappers. This precedes type lowering
+  // and binary emission so an invalid stage never reaches the SPIR-V validator.
+  StageReachabilityVisitor stageValidator(astContext, context, spirvOptions);
+  if (!mod->invokeVisitor(&stageValidator))
+    return {};
 
   // Run necessary visitor passes first
   LiteralTypeVisitor literalTypeVisitor(astContext, context, spirvOptions);
