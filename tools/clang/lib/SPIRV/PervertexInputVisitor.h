@@ -98,7 +98,7 @@ public:
 #define REMAP_FUNC_OP(CLASS)                                                   \
   bool visit(Spirv##CLASS *op) override {                                      \
     if (!processCurrentFunction)                                               \
-      return true;                                                              \
+      return true;                                                             \
     op->replaceOperand(                                                        \
         [this](SpirvInstruction *inst) {                                       \
           return getMappedReplaceInstr(inst);                                  \
