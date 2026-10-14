@@ -2353,11 +2353,12 @@ void SpirvEmitter::doVarDecl(const VarDecl *decl) {
   }
 
   if (decl->getAttr<VKInputAttachmentIndexAttr>()) {
-    if (!spvContext.isPS()) {
-      // SubpassInput(MS) variables are only allowed in pixel shaders. In this
-      // case, we avoid create the declaration because it should not be used.
+    // Standalone nonpixel shaders do not expose input attachments. Libraries,
+    // however, can contain pixel entry points even though their ambient
+    // context is Library. Keep the declaration and let the emitted call-graph
+    // pass reject any SubpassLoad reached from a nonpixel entry.
+    if (!spvContext.isPS() && !spvContext.isLib())
       return;
-    }
   }
 
   SpirvVariableLike *var = nullptr;
