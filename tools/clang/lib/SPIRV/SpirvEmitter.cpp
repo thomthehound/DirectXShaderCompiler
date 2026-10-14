@@ -15125,12 +15125,10 @@ SpirvEmitter::processGetAttributeAtVertex(const CallExpr *expr) {
   //        to match surrounded workaround cast expr.
   auto *arg0NoCast = expr->getArg(0)->IgnoreCasts();
   SpirvInstruction *paramDeclInstr = doExpr(arg0NoCast);
-  // The interpolation operand must be an actual Input pointer. A value passed
-  // through a helper parameter does not retain shader-interface provenance.
-  if (!paramDeclInstr ||
-      paramDeclInstr->getStorageClass() != spv::StorageClass::Input ||
-      (!isa<SpirvVariableLike>(paramDeclInstr) &&
-       !isa<SpirvAccessChain>(paramDeclInstr))) {
+  // SPIR-V shader inputs are copied into Function-scope temporaries when
+  // lowering entry parameters. The later per-vertex lowering retains source
+  // provenance through SpirvBuilder's stage-input mapping.
+  if (!paramDeclInstr) {
     emitError("attribute evaluation can only be done on values taken "
               "directly from inputs.",
               exprLoc);

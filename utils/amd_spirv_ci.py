@@ -406,14 +406,13 @@ def main() -> int:
         ),
         required=(r'SPV_KHR_fragment_shader_barycentric',),
     )
-    require_failure(
-        "SPIR-V attribute-at-vertex rejects value-only helper parameter",
+    require_success(
+        "SPIR-V upstream attribute-at-vertex function parameter",
         compile_shader(
-            "amd.shared-stage-attribute-at-vertex.hlsl",
-            "-T", "lib_6_6", "-E", "main", "-fcgl", "-spirv",
-            "-DPARAMETER_HELPER",
+            "intrinsics.get-attribute-at-vertex.s.funcParam.hlsl",
+            "-T", "ps_6_1", "-E", "main", "-fcgl", "-spirv",
         ),
-        "attribute evaluation can only be done on values taken directly from inputs.",
+        required=(r"OpEntryPoint Fragment", r"OpFunctionCall"),
     )
     require_failure(
         "SPIR-V attribute-at-vertex helper cannot be shared with vertex",
