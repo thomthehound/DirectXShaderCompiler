@@ -16,8 +16,17 @@ namespace clang {
 namespace spirv {
 
 void StageReachabilityVisitor::requireFragmentStage(
-    SpirvFunction *function, SourceLocation loc, llvm::StringRef diagnostic) {
-  fragmentStageUses.push_back({function, loc, diagnostic.str()});
+    SpirvFunction *function, SpirvInstruction *instruction, SourceLocation loc,
+    llvm::StringRef diagnostic) {
+  fragmentStageUses.push_back({function, instruction, loc, diagnostic.str()});
+}
+
+bool StageReachabilityVisitor::visitInstruction(SpirvInstruction *instruction) {
+  // SpirvFunction visits only CFG-reachable blocks. Remember which lowered
+  // operations actually survive, rather than attributing dead operations to
+  // every shader stage that reaches their containing function.
+  visitedInstructions.insert(instruction);
+  return true;
 }
 
 bool StageReachabilityVisitor::visit(SpirvEntryPoint *entry) {
@@ -113,6 +122,8 @@ bool StageReachabilityVisitor::visit(SpirvModule *, Phase phase) {
     }
   }
   for (const auto &use : fragmentStageUses) {
+    if (!visitedInstructions.count(use.instruction))
+      continue;
     const unsigned mask = stages.lookup(use.function);
     if (mask != 0 && mask != Fragment) {
       const unsigned id =

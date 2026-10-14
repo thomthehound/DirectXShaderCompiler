@@ -4551,13 +4551,13 @@ SpirvEmitter::processSubpassLoad(const CXXMemberCallExpr *expr) {
   auto *location = spvBuilder.getConstantComposite(
       astContext.getExtVectorType(astContext.IntTy, 2), {zero, zero});
 
-  auto *result = processBufferTextureLoad(object, location, /*constOffset*/ 0,
-                                          /*lod*/ sample,
-                                          /*residencyCode*/ 0,
-                                          expr->getExprLoc());
+  auto *result =
+      processBufferTextureLoad(object, location, /*constOffset*/ 0,
+                               /*lod*/ sample,
+                               /*residencyCode*/ 0, expr->getExprLoc());
   if (result)
     spvBuilder.requireFragmentStage(
-        expr->getExprLoc(),
+        result, expr->getExprLoc(),
         "SubpassInput(MS) only allowed in pixel shader");
   return result;
 }

@@ -11,6 +11,7 @@
 #include "clang/Basic/SourceLocation.h"
 #include "clang/SPIRV/SpirvVisitor.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <string>
@@ -39,10 +40,12 @@ public:
 
   // Lowerings that become generic SPIR-V instructions can retain their
   // source-level stage constraint without relying on AST caller inference.
-  void requireFragmentStage(SpirvFunction *function, SourceLocation loc,
+  void requireFragmentStage(SpirvFunction *function,
+                            SpirvInstruction *instruction, SourceLocation loc,
                             llvm::StringRef diagnostic);
 
   using Visitor::visit;
+  bool visitInstruction(SpirvInstruction *) override;
   bool visit(SpirvModule *, Phase phase) override;
   bool visit(SpirvFunction *, Phase phase) override;
   bool visit(SpirvEntryPoint *) override;
@@ -64,10 +67,12 @@ private:
   llvm::SmallVector<std::pair<SpirvFunction *, SourceLocation>, 8> discards;
   struct FragmentStageUse {
     SpirvFunction *function;
+    SpirvInstruction *instruction;
     SourceLocation loc;
     std::string diagnostic;
   };
   llvm::SmallVector<FragmentStageUse, 8> fragmentStageUses;
+  llvm::DenseSet<SpirvInstruction *> visitedInstructions;
 };
 
 } // namespace spirv
