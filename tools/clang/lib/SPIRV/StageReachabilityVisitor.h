@@ -87,6 +87,7 @@ private:
 
   ASTContext &astContext;
   SpirvFunction *currentFunction = nullptr;
+  bool collectRecordTypes = false;
   llvm::DenseMap<SpirvFunction *, llvm::SmallVector<SpirvFunction *, 4>>
       callGraph;
   llvm::SmallVector<std::pair<SpirvFunction *, unsigned>, 8> roots;
