@@ -15,6 +15,7 @@
 #include "clang/SPIRV/SpirvContext.h"
 #include "clang/SPIRV/SpirvModule.h"
 #include "clang/SPIRV/SpirvVisitor.h"
+#include "llvm/ADT/SmallPtrSet.h"
 
 namespace clang {
 namespace spirv {
@@ -41,6 +42,12 @@ public:
   bool expandNointerpVarAndParam(SpirvInstruction *spvInst);
 
   bool expandNointerpStructure(QualType qtype, bool isVarDecoratedInterp);
+
+  // Clang record declarations are shared by all functions. Preserve records
+  // used by non-pixel or linkage-exported code until representation-specific
+  // record lowering can replace their in-place AST rewriting.
+  void protectRecordTypes(QualType type);
+  bool needsNointerpStructureExpansion(QualType type, bool decorated) const;
 
   ///< Add temp function variables, for operand replacement. An original usage
   ///< to a nointerpolated variable/parameter should be treated as an access to
@@ -132,6 +139,8 @@ private:
   ///< Global declared structure type is special,
   ///< we won't redeclare/expand it more than once.
   llvm::SmallSet<const Type *, 4> m_expandedStructureType;
+  llvm::SmallPtrSet<const RecordDecl *, 16> protectedRecords;
+  bool unsupportedSharedRecord = false;
   ///< Context related helpers, will use to modify spv instruction stream.
   SpirvBuilder &spirvBuilder;
   ASTContext &astContext;
