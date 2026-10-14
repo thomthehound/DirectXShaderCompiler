@@ -948,7 +948,7 @@ private:
 
   std::unique_ptr<SpirvModule> mod; ///< The current module being built
   SpirvFunction *function;          ///< The current function being built
-  SpirvBasicBlock *insertPoint; ///< The current basic block being built
+  SpirvBasicBlock *insertPoint;     ///< The current basic block being built
 
   struct FragmentStageUse {
     SpirvFunction *function;
