@@ -1,0 +1,11 @@
+// RUN: %dxc -T lib_6_6 -E main -fcgl -spirv -fspv-target-env=universal1.5 %S/pervertex.lib.export-stage-order.hlsl -Fo %t
+// RUN: %dxc -T lib_6_6 -E main -fcgl -spirv -fspv-target-env=universal1.5 %S/pervertex.lib.export-stage-order.hlsl | FileCheck %s
+
+// Positive evidence for the unresolved stage-order defect. LIT XFAIL alone
+// would also accept unrelated compiler or FileCheck errors. This must PASS
+// only if both roots were emitted and the pixel vertex access was generated
+// without the required PerVertexKHR decoration.
+// CHECK: OpEntryPoint Fragment
+// CHECK: OpDecorate [[EXPORT:%[a-zA-Z0-9_]+]] LinkageAttributes "unrelated" Export
+// CHECK-NOT: PerVertexKHR
+// CHECK: OpAccessChain
