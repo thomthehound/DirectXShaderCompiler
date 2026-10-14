@@ -2221,8 +2221,18 @@ std::vector<uint32_t> SpirvBuilder::takeModule() {
       astContext, context, spirvOptions, featureManager);
   EmitVisitor emitVisitor(astContext, context, spirvOptions, featureManager);
 
-  // pervertex inputs refine
-  if (context.isPS()) {
+  // Per-vertex input refinement also applies to pixel-only libraries.
+  // The mutable current shader kind is not a property of the whole module.
+  // The visitor transforms shared parameter and structure types, so mixed-stage
+  // libraries require entry-specific lowering before they can use this pass.
+  bool hasOnlyPixelEntries = !mod->getEntryPoints().empty();
+  for (const auto *entry : mod->getEntryPoints()) {
+    if (entry->getExecModel() != spv::ExecutionModel::Fragment) {
+      hasOnlyPixelEntries = false;
+      break;
+    }
+  }
+  if (mod->isPerVertexInterpMode() && hasOnlyPixelEntries) {
     PervertexInputVisitor pervertexInputVisitor(*this, astContext, context,
                                                 spirvOptions);
     mod->invokeVisitor(&pervertexInputVisitor);
