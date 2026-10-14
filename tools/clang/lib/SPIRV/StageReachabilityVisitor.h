@@ -54,6 +54,17 @@ public:
     return result;
   }
 
+  // AST record types used by emitted instructions must also be protected:
+  // neither export parameters nor its local variable declarations necessarily
+  // capture the types of temporary composite and resource-load values.
+  llvm::ArrayRef<SpirvInstruction *>
+  getRecordTypeUses(SpirvFunction *function) const {
+    const auto found = recordTypeUses.find(function);
+    if (found == recordTypeUses.end())
+      return {};
+    return found->second;
+  }
+
   // Lowerings that become generic SPIR-V instructions can retain their
   // source-level stage constraint without relying on AST caller inference.
   void requireFragmentStage(SpirvInstruction *instruction, SourceLocation loc,
@@ -80,6 +91,8 @@ private:
       callGraph;
   llvm::SmallVector<std::pair<SpirvFunction *, unsigned>, 8> roots;
   llvm::DenseMap<SpirvFunction *, unsigned> reachableStages;
+  llvm::DenseMap<SpirvFunction *, llvm::SmallVector<SpirvInstruction *, 8>>
+      recordTypeUses;
   llvm::SmallVector<std::pair<SpirvFunction *, SourceLocation>, 8> discards;
   struct FragmentStageUse {
     SpirvInstruction *instruction;
