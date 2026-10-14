@@ -204,10 +204,7 @@ bool PervertexInputVisitor::isNotExpandedVectorAccess(QualType baseType,
 }
 
 bool PervertexInputVisitor::visit(SpirvModule *m, Phase phase) {
-  if (!m->isPerVertexInterpMode())
-    return false;
-  currentMod = m;
-  return true;
+  return m->isPerVertexInterpMode();
 }
 
 bool PervertexInputVisitor::visit(SpirvEntryPoint *ep) {
