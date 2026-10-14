@@ -84,12 +84,12 @@ bool StageReachabilityVisitor::visit(SpirvModule *, Phase phase) {
   // Fixed-point propagation is necessary for shared helpers and recursion.
   // The call graph is recorded from actual OpFunctionCall instructions,
   // including wrapper-generated calls and the synthetic module initializer.
-  llvm::DenseMap<SpirvFunction *, unsigned> stages;
+  reachableStages.clear();
   llvm::SmallVector<SpirvFunction *, 16> pending;
   auto mark = [&](SpirvFunction *fn, unsigned mask) {
     if (!fn)
       return;
-    unsigned &existing = stages[fn];
+    unsigned &existing = reachableStages[fn];
     if ((existing | mask) != existing) {
       existing |= mask;
       pending.push_back(fn);
@@ -104,7 +104,7 @@ bool StageReachabilityVisitor::visit(SpirvModule *, Phase phase) {
     if (callees == callGraph.end())
       continue;
     for (SpirvFunction *callee : callees->second)
-      mark(callee, stages.lookup(caller));
+      mark(callee, reachableStages.lookup(caller));
   }
 
   // Reject both OpKill and OpDemoteToHelperInvocation in any function whose
@@ -116,7 +116,7 @@ bool StageReachabilityVisitor::visit(SpirvModule *, Phase phase) {
       "discard statement may only be used in pixel shaders");
   bool valid = true;
   for (const auto &discard : discards) {
-    const unsigned mask = stages.lookup(discard.first);
+    const unsigned mask = reachableStages.lookup(discard.first);
     // A helper may be emitted yet have no execution path from any entry
     // point. Do not classify an unreachable internal function as nonpixel.
     if (mask != 0 && mask != Fragment) {
@@ -128,7 +128,7 @@ bool StageReachabilityVisitor::visit(SpirvModule *, Phase phase) {
     SpirvFunction *owner = liveStageUses.lookup(use.instruction);
     if (!owner)
       continue; // This operation was in a discarded basic block.
-    const unsigned mask = stages.lookup(owner);
+    const unsigned mask = reachableStages.lookup(owner);
     if (mask != 0 && mask != Fragment) {
       const unsigned id = diags.getCustomDiagID(DiagnosticsEngine::Error, "%0");
       diags.Report(use.loc, id) << use.diagnostic;
