@@ -46,6 +46,8 @@ class CaseResult:
     flags: list[str]
     compile: CommandResult | None = None
     compile_status: str = "not-run"
+    validation: CommandResult | None = None
+    validation_status: str = "not-probed"
     spv: str | None = None
     spirv_disassembly: str | None = None
     spirv_status: str = "not-probed"
@@ -214,7 +216,10 @@ def driver_verdict(cases: list[CaseResult]) -> dict[str, object]:
 
     # A partial three-way experiment cannot select the winning lowering,
     # even if an individually completed case recovered the exact instruction.
-    if failed or (unsupported or not_probed) and len(unsupported) + len(not_probed) != len(cases):
+    if failed or (
+        (unsupported or not_probed)
+        and len(unsupported) + len(not_probed) != len(cases)
+    ):
         verdict = "incomplete-driver-probe"
     elif unsupported and len(unsupported) == len(cases):
         verdict = "driver-disassembly-unsupported"
@@ -246,7 +251,7 @@ def command_dict(value: CommandResult | None) -> dict[str, object] | None:
 
 def case_dict(value: CaseResult) -> dict[str, object]:
     result = asdict(value)
-    for field_name in ("compile", "driver_probe", "rga_live", "rga_offline"):
+    for field_name in ("compile", "validation", "driver_probe", "rga_live", "rga_offline"):
         result[field_name] = command_dict(getattr(value, field_name))
     return result
 
@@ -279,6 +284,8 @@ def write_markdown(
         "# APUSR QSad native-lowering comparison",
         "",
         f"Shader profile: `{profile}`. SPIR-V target: `{target_env}`.",
+        "The shader comparisons assume the reference bytes were clamped nonzero",
+        "before packing, as in APUSR's optical-flow fast path.",
         "",
         "The three cases model the same 8-row x 2-QSad optical-flow search shape:",
         "ordinary DXC `msad4` expansion, the AMD-oriented packed-UDOT `msad4` expansion,",
@@ -343,6 +350,7 @@ def write_markdown(
     for case in cases:
         for label, result in (
             ("DXC", case.compile),
+            ("SPIR-V validation", case.validation),
             ("installed driver", case.driver_probe),
             ("RGA live", case.rga_live),
             ("RGA offline", case.rga_offline),
@@ -361,6 +369,7 @@ def main() -> int:
         "--dxc", help="DXC executable containing the AMD SPIR-V work"
     )
     parser.add_argument("--spirv-dis", dest="spirv_dis", help="spirv-dis executable")
+    parser.add_argument("--spirv-val", dest="spirv_val", help="spirv-val executable")
     parser.add_argument("--driver-probe", help="amd_vulkan_isa_probe executable")
     parser.add_argument("--rga", help="RGA CLI executable")
     parser.add_argument("--rga-target", help="Offline RGA target, e.g. gfx1151")
@@ -379,6 +388,7 @@ def main() -> int:
     if not dxc:
         parser.error("DXC not found; pass --dxc")
     spirv_dis = resolve_tool(args.spirv_dis, "spirv-dis")
+    spirv_val = resolve_tool(args.spirv_val, "spirv-val")
     driver_probe = resolve_tool(args.driver_probe, "amd_vulkan_isa_probe")
     rga = resolve_tool(args.rga, "rga") or (
         None if args.rga else resolve_tool(None, "rga.exe")
@@ -437,6 +447,16 @@ def main() -> int:
             continue
         case.compile_status = "ok"
         print(f"[{name}] DXC -> 0")
+
+        if spirv_val:
+            validation = run([spirv_val, "--target-env", args.target_env, str(spv_path)])
+            case.validation = validation
+            case.validation_status = "ok" if validation.returncode == 0 else "failed"
+            if validation.returncode != 0:
+                print(f"[{name}] spirv-val -> {validation.returncode}")
+                print(validation.stderr, end="")
+                failed = True
+                continue
 
         if spirv_dis:
             asm_path = out_dir / f"{name}.spvasm"
@@ -546,6 +566,7 @@ def main() -> int:
         "schema": 2,
         "dxc": dxc,
         "spirv_dis": spirv_dis,
+        "spirv_val": spirv_val,
         "driver_probe": driver_probe,
         "rga": rga,
         "rga_target": args.rga_target,
