@@ -97,6 +97,39 @@ def random_packed(rng: random.Random, *, nonzero: bool) -> int:
     return pack_u8(tuple(rng.randint(lo, 255) for _ in range(4)))
 
 
+def apusr_probe_result(
+    source0: int, source1: int, source2: int,
+    reference0: int, reference1: int, salt: int, *, masked: bool
+) -> tuple[int, int, int, int]:
+    """Model the complete eight-row workload in both ISA comparison shaders."""
+    perturb = u32(salt)  # The probe's dispatched invocation has x == 0.
+    a0 = u32(source0 ^ perturb)
+    a1 = u32(source1 + perturb)
+    a2 = u32(source2 ^ u32(perturb << 8))
+    p0 = reference0
+    p1 = reference1
+    sad = (0, 0, 0, 0)
+
+    for _ in range(8):
+        if masked:
+            sad = msad4_oracle(p0, a0, a1, sad)
+            sad = msad4_oracle(p1, a1, a2, sad)
+        else:
+            left = q_sad_fallback(a0, a1, p0)
+            right = q_sad_fallback(a1, a2, p1)
+            sad = tuple(sad[i] + left[i] + right[i] for i in range(4))
+
+        a0 = u32((a0 >> 1) | (a0 << 31))
+        a1 = u32(a1 ^ 0x9E3779B9)
+        a2 = u32(a2 + 0x7F4A7C15)
+        # Full-byte rotations cannot introduce a zero reference byte.
+        p0 = u32((p0 >> 8) | (p0 << 24))
+        p1 = u32((p1 >> 24) | (p1 << 8))
+
+    return sad
+
+
+
 def verify(samples: int, seed: int) -> None:
     rng = random.Random(seed)
 
@@ -151,6 +184,25 @@ def verify(samples: int, seed: int) -> None:
                 f"{fallback_nz} != {native_shape}"
             )
 
+        # Verify the entire shader recurrence, not just one QSad call. The
+        # previous probe changed reference bytes with XOR/add, allowing zeros
+        # even when the supplied luma was preclamped.
+        if _ % 32 == 0:
+            source2_nz = clamp_nonzero_luma(random_packed(rng, nonzero=False))
+            reference1_nz = clamp_nonzero_luma(random_packed(rng, nonzero=False))
+            salt = rng.getrandbits(32)
+            params = (
+                source0_nz, source1_nz, source2_nz,
+                reference_nz, reference1_nz, salt,
+            )
+            full_swar = apusr_probe_result(*params, masked=False)
+            full_msad = apusr_probe_result(*params, masked=True)
+            if full_swar != full_msad:
+                raise AssertionError(
+                    "eight-row APUSR ISA-probe mismatch: "
+                    f"inputs={params!r} swar={full_swar} msad={full_msad}"
+                )
+
     # Guard the reason for the nonzero-luma invariant itself. Without the clamp,
     # ordinary SAD and msad4 are deliberately not equivalent when a reference
     # byte is zero.
@@ -162,9 +214,16 @@ def verify(samples: int, seed: int) -> None:
     if ordinary == masked:
         raise AssertionError("zero-reference control did not expose msad4 masking")
 
+    probe_args = (0x01010101, 0x02020202, 0x03030303,
+                  0x00000000, 0x04040404, 0)
+    if (apusr_probe_result(*probe_args, masked=False) ==
+            apusr_probe_result(*probe_args, masked=True)):
+        raise AssertionError("eight-row zero-reference control did not expose masking")
+
     print(f"PASS packed SWAR SAD == scalar SAD ({samples} random cases + edge corpus)")
     print(f"PASS rolling QSad == byte-window oracle ({samples} random cases)")
     print(f"PASS clamped-nonzero QSad == msad4 semantics ({samples} random cases)")
+    print(f"PASS eight-row APUSR MSAD/SWAR equivalence ({(samples + 31) // 32} random cases)")
     print("PASS zero-reference control proves the luma clamp is semantically required")
 
 
