@@ -157,9 +157,11 @@ def evidence_status(
 ) -> str:
     if command is None:
         return "not-probed"
+    if command.returncode in (3, 4):
+        return "unsupported"
     if command.returncode != 0:
         return "probe-failed"
-    if isa_path is None or not isa_path.exists():
+    if isa_path is None or not isa_path.exists() or isa_path.stat().st_size == 0:
         return "missing-output"
     if counts.get(EXACT_MQSAD, 0):
         return "native-mqsad"
@@ -171,6 +173,8 @@ def evidence_status(
 def fmt_evidence(status: str, counts: dict[str, int]) -> str:
     if status == "not-probed":
         return "not probed"
+    if status == "unsupported":
+        return "driver disassembly unsupported"
     if status == "probe-failed":
         return "probe failed"
     if status == "missing-output":
@@ -204,13 +208,22 @@ def driver_verdict(cases: list[CaseResult]) -> dict[str, object]:
     not_probed = [
         case.name for case in cases if case.driver_status == "not-probed"
     ]
+    unsupported = [
+        case.name for case in cases if case.driver_status == "unsupported"
+    ]
 
-    if exact:
-        verdict = "mqsad-recovered"
-    elif failed:
+    # A partial three-way experiment cannot select the winning lowering,
+    # even if an individually completed case recovered the exact instruction.
+    if failed or (unsupported or not_probed) and len(unsupported) + len(not_probed) != len(cases):
         verdict = "incomplete-driver-probe"
-    elif not_probed:
+    elif unsupported and len(unsupported) == len(cases):
+        verdict = "driver-disassembly-unsupported"
+    elif not_probed and len(not_probed) == len(cases):
         verdict = "driver-not-probed"
+    elif unsupported or not_probed:
+        verdict = "incomplete-driver-probe"
+    elif exact:
+        verdict = "mqsad-recovered"
     elif other:
         verdict = "sad-family-but-no-mqsad"
     else:
@@ -223,6 +236,7 @@ def driver_verdict(cases: list[CaseResult]) -> dict[str, object]:
         "no_sad_family_cases": none,
         "failed_cases": failed,
         "not_probed_cases": not_probed,
+        "unsupported_cases": unsupported,
     }
 
 
@@ -303,6 +317,7 @@ def write_markdown(
         f"- Probed with no SAD-family ISA: {', '.join(verdict['no_sad_family_cases']) or 'none'}",
         f"- Probe failures/missing output: {', '.join(verdict['failed_cases']) or 'none'}",
         f"- Not probed: {', '.join(verdict['not_probed_cases']) or 'none'}",
+        f"- Driver disassembly unsupported: {', '.join(verdict['unsupported_cases']) or 'none'}",
         "",
         "## SPIR-V shape notes",
         "",
