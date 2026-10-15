@@ -20,7 +20,7 @@
 | Current Microsoft `main` at audit | `5e8c6aa90c6a1f84f657517773456eabf0e16554` (2026-10-14) |
 | Microsoft `main` vs fork `main` | At audit, Microsoft is **2 commits ahead** of fork `main` (no fork-only divergence for this comparison) |
 | PR #22 | Internally **squash-merged** into `amd-sad-msad`; Linux and Windows passed 38/38 focused LIT regressions at `3d8b9e8`. This is **not** evidence of full upstream readiness |
-| PR #23 | Still **draft, unmerged and architecturally blocked** at `24176f6`; six unresolved Codex findings (five P1, one P2); formatter failed; Linux focused LIT had **39 passes and 1 failure** (`pervertex.lib.unreachable-record-helper.hlsl`), as of this snapshot. Do not promote the experiment |
+| PR #23 | Still **draft, unmerged and architecturally blocked** at `24176f6`; six unresolved Codex findings (five P1, one P2); formatter failed; **both Linux and Windows focused LIT each had 39 passes and 1 failure** (`pervertex.lib.unreachable-record-helper.hlsl`), as of this snapshot. Do not promote the experiment |
 
 Source reference: [GitHub baseline comparison](https://github.com/thomthehound/DirectXShaderCompiler/compare/main...amd-sad-msad), [PR #22](https://github.com/thomthehound/DirectXShaderCompiler/pull/22), [PR #23](https://github.com/thomthehound/DirectXShaderCompiler/pull/23), [Microsoft DXC](https://github.com/microsoft/DirectXShaderCompiler).
 
@@ -104,7 +104,7 @@ Codex independently raised **five P1 findings and one P2** against the proposed 
 
 These defects share **one missing abstraction**: stage ownership is not representation provenance. A correct design must follow actual emitted pointers/values from stage inputs, distinguish ordinary inputs and resource-loaded values, and make conversions explicit at each incompatible producer-consumer edge. Do not 'fix' this by adding six context-sensitive type heuristics.
 
-Linux [run 38661997026](https://github.com/thomthehound/DirectXShaderCompiler/actions/runs/38661997026) additionally reports **39 passed / 1 failed** in focused LIT: the old `pervertex.lib.unreachable-record-helper.hlsl` safety-diagnostic check no longer observes its expected error. This confirms the experimental implementation **changes an established protective behavior** and cannot be accepted on review comments alone.
+Both Linux and Windows in [run 38661997026](https://github.com/thomthehound/DirectXShaderCompiler/actions/runs/38661997026) additionally report **39 passed / 1 failed** in focused LIT: the old `pervertex.lib.unreachable-record-helper.hlsl` safety-diagnostic check no longer observes its expected error. This confirms the experimental implementation **changes an established protective behavior** and cannot be accepted on review comments alone.
 
 Recommended action: retain the draft as a **non-mergeable historical experiment** while transferring findings into a design brief; then close it rather than continuing patch-by-patch. No source changes from #23 have entered `amd-sad-msad` or fork `main`.
 
@@ -132,7 +132,7 @@ A large breadth-first cleanup of the 208-file delta is **not** the right first c
 
 ### Audit limitations and confidence
 
-**High confidence:** recorded heads, GitHub compare counts and paths, presence of selected source hunks, verified current upstream extension-registry absence, PR #22/#23 state and review findings, recorded Linux failing LIT case.  
+**High confidence:** recorded heads, GitHub compare counts and paths, presence of selected source hunks, verified current upstream extension-registry absence, PR #22/#23 state and review findings, recorded Linux and Windows failing LIT case.  
 **Medium confidence:** provisional grouping and relative engineering risk; these follow source/patch observations but have not been independently reproduced for each feature.  
 **Not established:** full DXC upstream test suite, AMD driver ISA/performance, clean-base builds for extraction candidates, approval from Microsoft maintainers, fully correct general per-vertex record representation.
 
