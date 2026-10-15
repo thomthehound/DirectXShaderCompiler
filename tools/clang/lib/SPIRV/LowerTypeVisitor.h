@@ -85,6 +85,11 @@ private:
   llvm::SmallVector<StructType::FieldInfo, 4>
   lowerStructFields(const RecordDecl *structType, SpirvLayoutRule rule);
 
+  // Lower a flat record into a distinct pixel-only SPIR-V representation.
+  // Source FieldDecl types remain authoritative and unchanged.
+  const SpirvType *lowerPerVertexRecord(QualType type, SpirvLayoutRule rule,
+                                        bool decorated);
+
   /// Creates the default AST type from a TemplateName for HLSL templates
   /// which have optional parameters (e.g. Texture2D).
   QualType createASTTypeFromTemplateName(TemplateName templateName);
