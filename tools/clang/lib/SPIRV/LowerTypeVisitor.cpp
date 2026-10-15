@@ -114,6 +114,14 @@ bool LowerTypeVisitor::visitInstruction(SpirvInstruction *instr) {
         lowerType(hybridType, instr->getLayoutRule(), instr->getSourceLocation());
     instr->setResultType(spirvType);
   }
+  // A pixel-private record uses a distinct SPIR-V structure. Do not
+  // rewrite the Clang FieldDecl: the same AST record may be used by exports
+  // and resource types whose ABI must retain the original member types.
+  else if (instr->usesPerVertexRecordType() &&
+           !astType.isNull() && astType->getAs<RecordType>()) {
+    instr->setResultType(lowerPerVertexRecord(
+        astType, instr->getLayoutRule(), instr->isNoninterpolated()));
+  }
   // Lower QualType to SpirvType
   else if (astType != QualType({})) {
     const SpirvType *spirvType =
@@ -1263,6 +1271,34 @@ LowerTypeVisitor::lowerResourceType(QualType type, SpirvLayoutRule rule,
   }
 
   return nullptr;
+}
+
+const SpirvType *
+LowerTypeVisitor::lowerPerVertexRecord(QualType type, SpirvLayoutRule rule,
+                                       bool decorated) {
+  const auto *decl = type->getAs<RecordType>()->getDecl();
+  auto fields = lowerStructFields(decl, rule);
+  const bool expandAll =
+      decorated || decl->hasAttr<HLSLNoInterpolationAttr>();
+
+  // Only flat, non-bitfield records are specialized at this stage. The
+  // preceding per-vertex visitor rejects more complex shared records.
+  unsigned index = 0;
+  for (const auto *field : decl->fields()) {
+    assert(index < fields.size() && !field->isBitField());
+    if (expandAll || field->hasAttr<HLSLNoInterpolationAttr>()) {
+      QualType arrayType = astContext.getConstantArrayType(
+          field->getType(), llvm::APInt(32, 3), clang::ArrayType::Normal, 0);
+      fields[index].type =
+          lowerType(arrayType, rule, /*isRowMajor*/ llvm::None, {});
+    }
+    ++index;
+  }
+
+  const auto *specialized = spvContext.getStructType(
+      fields, (decl->getName() + ".pervertex").str());
+  spvContext.registerStructDeclForSpirvType(specialized, decl);
+  return specialized;
 }
 
 llvm::SmallVector<StructType::FieldInfo, 4>
