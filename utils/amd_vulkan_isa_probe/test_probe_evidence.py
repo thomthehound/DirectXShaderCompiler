@@ -124,5 +124,82 @@ class ProbeEvidenceTest(unittest.TestCase):
                 self.assertEqual(report["records"][0]["status"], "failed")
 
 
+
+class QSadEvidenceTest(unittest.TestCase):
+    def make_case(self, name, status):
+        from apusr_qsad_probe import CaseResult
+
+        case = CaseResult(name=name, shader="shader.hlsl", flags=[])
+        case.driver_status = status
+        if status == "native-mqsad":
+            case.driver_sad_counts = {"v_mqsad_u32_u8": 1}
+        return case
+
+    def test_shader_info_unsupported_is_not_probe_failure(self):
+        from apusr_qsad_probe import CommandResult, evidence_status
+
+        for code in (3, 4):
+            with self.subTest(code=code):
+                result = CommandResult(["driver-probe"], code, "", "")
+                self.assertEqual(evidence_status(result, None, {}), "unsupported")
+
+    def test_driver_error_and_empty_disassembly_are_failures(self):
+        from apusr_qsad_probe import CommandResult, evidence_status
+
+        bad = CommandResult(["driver-probe"], 1, "", "")
+        self.assertEqual(evidence_status(bad, None, {}), "probe-failed")
+        with tempfile.TemporaryDirectory() as folder:
+            empty_isa = Path(folder) / "shader.isa"
+            empty_isa.write_text("")
+            good = CommandResult(["driver-probe"], 0, "", "")
+            self.assertEqual(evidence_status(good, empty_isa, {}), "missing-output")
+
+    def test_complete_three_way_native_verdict(self):
+        from apusr_qsad_probe import driver_verdict
+
+        cases = [
+            self.make_case("scalar", "no-sad-family"),
+            self.make_case("udot", "native-mqsad"),
+            self.make_case("swar", "other-sad-family"),
+        ]
+        result = driver_verdict(cases)
+        self.assertEqual(result["verdict"], "mqsad-recovered")
+        self.assertEqual(result["exact_mqsad_cases"], ["udot"])
+
+    def test_incomplete_three_way_does_not_promote_native_hit(self):
+        from apusr_qsad_probe import driver_verdict
+
+        cases = [
+            self.make_case("scalar", "native-mqsad"),
+            self.make_case("udot", "unsupported"),
+            self.make_case("swar", "no-sad-family"),
+        ]
+        result = driver_verdict(cases)
+        self.assertEqual(result["verdict"], "incomplete-driver-probe")
+        self.assertEqual(result["exact_mqsad_cases"], ["scalar"])
+        self.assertEqual(result["unsupported_cases"], ["udot"])
+
+    def test_all_driver_disassembly_unsupported(self):
+        from apusr_qsad_probe import driver_verdict
+
+        cases = [self.make_case(name, "unsupported") for name in ("scalar", "udot", "swar")]
+        self.assertEqual(driver_verdict(cases)["verdict"], "driver-disassembly-unsupported")
+
+    def test_full_probe_reference_rotation_preserves_equivalence(self):
+        from sad_semantics import apusr_probe_result
+
+        args = (0x01020304, 0x10203040, 0x50607080,
+                0x01FF8002, 0x7F030C08, 0x98765432)
+        self.assertEqual(
+            apusr_probe_result(*args, masked=True),
+            apusr_probe_result(*args, masked=False),
+        )
+        with_zero = (args[0], args[1], args[2], 0, args[4], args[5])
+        self.assertNotEqual(
+            apusr_probe_result(*with_zero, masked=True),
+            apusr_probe_result(*with_zero, masked=False),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
