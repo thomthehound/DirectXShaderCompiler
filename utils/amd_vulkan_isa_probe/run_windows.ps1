@@ -204,6 +204,7 @@ $QsadArgs = @(
     "--dxc", $Dxc,
     "--driver-probe", $DriverProbe,
     "--spirv-dis", $SpirvDis,
+    "--spirv-val", $SpirvVal,
     "--target-env", "vulkan1.2",
     "--shader-profile", "cs_6_6",
     "--out-dir", (Join-Path $OutDir "apusr-qsad")
