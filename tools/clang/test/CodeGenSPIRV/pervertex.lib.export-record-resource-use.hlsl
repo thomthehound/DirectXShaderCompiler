@@ -1,9 +1,9 @@
-// RUN: not %dxc -T lib_6_6 -E main -fcgl -spirv -fspv-target-env=universal1.5 %s 2>&1 | FileCheck %s
+// RUN: %dxc -T lib_6_6 -E main -fcgl -spirv -fspv-target-env=universal1.5 %s | FileCheck %s
 
-// A record used only as the result of a resource load in a library export
-// still shares its Clang FieldDecl with the pixel input. Protect emitted
-// record-valued expressions as well as declared function parameters/locals.
-// CHECK: error: cannot specialize per-vertex interpolation for a record shared with a non-pixel or exported function
+// An exported resource-load result uses the source record without widening,
+// even when the same record is used by a fragment input.
+// CHECK: OpEntryPoint Fragment
+// CHECK: PerVertexKHR
 
 struct SharedData {
   nointerpolation float4 color : TEXCOORD0;
