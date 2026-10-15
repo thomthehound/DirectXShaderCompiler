@@ -12,6 +12,19 @@ This is a **derivative of Microsoft DXC**, not a competing shader compiler. Pref
 
 **Correctness first; clean CI second; upstreamability third.** CI is necessary but not sufficient. A change can be correct yet unsuitable upstream, or pass focused tests while remaining incorrect.
 
+## Founding objective: APUSR SAD/MSAD hardware lowering
+
+**Do not confuse the first small upstream contribution with the project's primary performance objective.** This work originated because HLSL `msad4` was lowered by DXC into many generic SPIR-V byte extracts, subtract/absolute-difference operations and additions rather than conveying the packed, masked four-window SAD operation to the AMD Vulkan compiler. The intended target is the Radeon instruction `v_mqsad_u32_u8`, used to accelerate APUSR's 8-row × 2-QSad optical-flow hot path. LLVM AMDGPU's `llvm.amdgcn.mqsad.u32.u8` lowering establishes an AMD backend instruction-selection path; it **does not** prove the Vulkan SPIR-V ingress path can recognize that operation.
+
+Current status:
+- Ordinary DXC `msad4` uses a scalar/vector SPIR-V expansion. The private `-fspv-enable-amd-intrinsics` mode uses an **experimental four-`OpUDot` candidate**, not a dedicated SPIR-V MQSAD contract. `-fspv-require-native-intrinsics` deliberately rejects `msad4`; it audits only this case and is not a general ISA guarantee.
+- The private probe compares `msad4-scalar`, `msad4-udot`, and APUSR's `swar-udot` implementation over the same optical-flow kernel. APUSR QSad/SWAR equivalence to masked `msad4` depends on the actual **nonzero-luma/reference-byte input contract**; the zero-reference case is a required counterexample in the semantic oracle.
+- **No installed-driver ISA result or performance result is recorded in this engineering audit.** Do not claim an MQSAD win from correct SPIR-V, LLVM instruction selection, or an RGA offline ISA report. The live AMD Vulkan driver disassembly and workload timing decide.
+- If a legal SPIR-V pattern is selected as MQSAD (or otherwise proves faster), prefer the smallest upstream-compatible producer change or APUSR shader expression that preserves it. If no legal pattern recovers MQSAD, investigate the downstream AMD Vulkan compiler's pattern recognition or a **properly specified, validator/driver-supported extension**. Never invent private SPIR-V opcodes in ordinary Vulkan output or present decomposition as hardware preservation.
+- `SPV_AMD_shader_trinary_minmax` is an unrelated, deliberately low-risk **relationship-building B-group candidate**, not the SAD/MSAD solution. Pursue it independently; don't let it block decisive SAD/driver evidence.
+
+Source files: [SAD native probe protocol](../SPIRV-AMD-SAD-Native-Probe.md), [AMD native contract inventory](../SPIRV-AMD-Native-Contract-Inventory.md), and [probe README](../../utils/amd_vulkan_isa_probe/README.md). The relevant three-way experiment is `utils/amd_vulkan_isa_probe/apusr_qsad_probe.py`; preserve its control conditions and report categories.
+
 ## The three destinations—and the extraction flag
 
 | Code | Destination | What belongs | Review rule |
