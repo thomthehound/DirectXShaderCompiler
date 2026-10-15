@@ -31,6 +31,8 @@ elif name == "fake_driver":
     Path(sys.argv[2]).write_text("v_perm_b32 v_dot4_i32_i8")
 elif name == "fake_verifier":
     sys.exit({"pass": 0, "mismatch": 1, "error": 2}[os.getenv("TEST_VERIFY", "pass")])
+elif name == "fake_spirv_val":
+    sys.exit(0 if os.getenv("TEST_VAL", "pass") == "pass" else 9)
 else:
     sys.exit(17)
 """
@@ -41,7 +43,7 @@ class ProbeEvidenceTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        for name in ("fake_dxc", "fake_driver", "fake_verifier"):
+        for name in ("fake_dxc", "fake_driver", "fake_verifier", "fake_spirv_val"):
             p = self.root / name
             p.write_text(FAKE, encoding="utf-8")
             p.chmod(0o755)
@@ -134,6 +136,35 @@ class QSadEvidenceTest(unittest.TestCase):
         if status == "native-mqsad":
             case.driver_sad_counts = {"v_mqsad_u32_u8": 1}
         return case
+
+    def execute_qsad(self, settings=None):
+        out = self.root / "qsad-out"
+        args = [
+            sys.executable, str(ROOT / "apusr_qsad_probe.py"),
+            "--dxc", str(self.root / "fake_dxc"),
+            "--driver-probe", str(self.root / "fake_driver"),
+            "--spirv-val", str(self.root / "fake_spirv_val"),
+            "--spirv-dis", "not-an-executable-spirv-dis",
+            "--out-dir", str(out),
+        ]
+        proc = subprocess.run(
+            args, cwd=self.root, env={**os.environ, **(settings or {})},
+            text=True, capture_output=True, check=False,
+        )
+        return proc.returncode, json.loads((out / "report.json").read_text())
+
+    def test_qsad_unsupported_hardware_is_classified(self):
+        rc, report = self.execute_qsad({"TEST_DRIVER": "unsupported"})
+        self.assertEqual(rc, 0)
+        self.assertEqual(report["installed_driver_verdict"]["verdict"],
+                         "driver-disassembly-unsupported")
+        self.assertTrue(all(case["validation_status"] == "ok" for case in report["cases"]))
+
+    def test_qsad_validation_failure_blocks_driver_probe(self):
+        rc, report = self.execute_qsad({"TEST_VAL": "fail"})
+        self.assertEqual(rc, 1)
+        self.assertTrue(all(case["validation_status"] == "failed" for case in report["cases"]))
+        self.assertTrue(all(case["driver_status"] == "not-probed" for case in report["cases"]))
 
     def test_shader_info_unsupported_is_not_probe_failure(self):
         from apusr_qsad_probe import CommandResult, evidence_status
