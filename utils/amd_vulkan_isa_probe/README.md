@@ -151,8 +151,11 @@ python utils\amd_vulkan_isa_probe\sad_semantics.py
 
 This checks the current APUSR packed SWAR byte-absolute-difference helper,
 the rolling four-window QSad construction, and QSad equivalence to `msad4`
-under FidelityFX's required nonzero-luma input contract. A zero-reference-byte
-negative control is included so the test also proves why that contract matters.
+under FidelityFX's required nonzero-luma input contract. The CPU test also
+compares the complete eight-row ISA probe recurrence. Both HLSL fixtures rotate
+their reference bytes between rows rather than modifying them with XOR/add;
+rotation preserves the nonzero-reference contract. A zero-reference-byte
+negative control proves why the input constraint matters.
 
 The installed-driver comparison is one run:
 
@@ -160,6 +163,7 @@ The installed-driver comparison is one run:
 python utils\amd_vulkan_isa_probe\apusr_qsad_probe.py `
   --dxc <path-to-forked-dxc.exe> `
   --spirv-dis <path-to-spirv-dis.exe> `
+  --spirv-val <path-to-spirv-val.exe> `
   --driver-probe out\amd-vulkan-isa-probe\Release\amd_vulkan_isa_probe.exe
 ```
 
@@ -172,10 +176,14 @@ hot 8-row x 2-QSad search shape:
    packed-UDOT lowering.
 3. `apusr.qsad.swar-udot`: APUSR's current Vulkan SWAR + packed-UDOT workaround.
 
-The generated `REPORT.md` and `report.json` distinguish `not-probed`, probe
-failure, successful ISA extraction with no SAD-family instruction, other
-SAD-family lowering, and exact `v_mqsad_u32_u8`. Stale output files are removed
-before each stage, so an earlier ISA dump cannot be mistaken for a new result.
+The generated `REPORT.md` and `report.json` distinguish `not-probed`,
+unsupported driver disassembly (including missing `VK_AMD_shader_info`),
+probe failure, successful ISA extraction with no SAD-family instruction, other
+SAD-family lowering, and exact `v_mqsad_u32_u8`. An incomplete three-way
+comparison is not promoted to a decisive verdict. The optional `--spirv-val`
+argument validates each candidate before driver submission. Stale output
+files are removed before each stage, so earlier ISA output cannot be mistaken
+for new evidence.
 
 The installed-driver result determines the next compiler move:
 

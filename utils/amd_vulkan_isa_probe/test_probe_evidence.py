@@ -31,6 +31,10 @@ elif name == "fake_driver":
     Path(sys.argv[2]).write_text("v_perm_b32 v_dot4_i32_i8")
 elif name == "fake_verifier":
     sys.exit({"pass": 0, "mismatch": 1, "error": 2}[os.getenv("TEST_VERIFY", "pass")])
+elif name == "fake_spirv_val":
+    sys.exit(0 if os.getenv("TEST_VAL", "pass") == "pass" else 9)
+elif name == "fake_spirv_dis":
+    Path(sys.argv[sys.argv.index("-o") + 1]).write_text("OpUDot\\n")
 else:
     sys.exit(17)
 """
@@ -41,7 +45,7 @@ class ProbeEvidenceTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        for name in ("fake_dxc", "fake_driver", "fake_verifier"):
+        for name in ("fake_dxc", "fake_driver", "fake_verifier", "fake_spirv_val", "fake_spirv_dis"):
             p = self.root / name
             p.write_text(FAKE, encoding="utf-8")
             p.chmod(0o755)
@@ -122,6 +126,132 @@ class ProbeEvidenceTest(unittest.TestCase):
                 self.assertEqual(rc, 2)
                 self.assertEqual(report["hit_count"], 0)
                 self.assertEqual(report["records"][0]["status"], "failed")
+
+
+
+class QSadEvidenceTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        for name in ("fake_dxc", "fake_driver", "fake_verifier", "fake_spirv_val", "fake_spirv_dis"):
+            path = self.root / name
+            path.write_text(FAKE, encoding="utf-8")
+            path.chmod(0o755)
+
+    def make_case(self, name, status):
+        from apusr_qsad_probe import CaseResult
+
+        case = CaseResult(name=name, shader="shader.hlsl", flags=[])
+        case.driver_status = status
+        if status == "native-mqsad":
+            case.driver_sad_counts = {"v_mqsad_u32_u8": 1}
+        return case
+
+    def execute_qsad(self, settings=None):
+        out = self.root / "qsad-out"
+        args = [
+            sys.executable, str(ROOT / "apusr_qsad_probe.py"),
+            "--dxc", str(self.root / "fake_dxc"),
+            "--driver-probe", str(self.root / "fake_driver"),
+            "--spirv-val", str(self.root / "fake_spirv_val"),
+            "--spirv-dis", str(self.root / "fake_spirv_dis"),
+            "--out-dir", str(out),
+        ]
+        proc = subprocess.run(
+            args, cwd=self.root, env={**os.environ, **(settings or {})},
+            text=True, capture_output=True, check=False,
+        )
+        return proc.returncode, json.loads((out / "report.json").read_text())
+
+    def test_qsad_unsupported_hardware_is_classified(self):
+        rc, report = self.execute_qsad({"TEST_DRIVER": "unsupported"})
+        self.assertEqual(rc, 0)
+        self.assertEqual(report["installed_driver_verdict"]["verdict"],
+                         "driver-disassembly-unsupported")
+        self.assertTrue(all(case["validation_status"] == "ok" for case in report["cases"]))
+
+    def test_qsad_rejects_missing_requested_validator(self):
+        args = [
+            sys.executable, str(ROOT / "apusr_qsad_probe.py"),
+            "--dxc", str(self.root / "fake_dxc"),
+            "--spirv-val", str(self.root / "missing_validator"),
+        ]
+        proc = subprocess.run(args, cwd=self.root, text=True,
+                              capture_output=True, check=False)
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("spirv-val not found", proc.stderr)
+
+    def test_qsad_validation_failure_blocks_driver_probe(self):
+        rc, report = self.execute_qsad({"TEST_VAL": "fail"})
+        self.assertEqual(rc, 1)
+        self.assertTrue(all(case["validation_status"] == "failed" for case in report["cases"]))
+        self.assertTrue(all(case["driver_status"] == "not-probed" for case in report["cases"]))
+
+    def test_shader_info_unsupported_is_not_probe_failure(self):
+        from apusr_qsad_probe import CommandResult, evidence_status
+
+        for code in (3, 4):
+            with self.subTest(code=code):
+                result = CommandResult(["driver-probe"], code, "", "")
+                self.assertEqual(evidence_status(result, None, {}), "unsupported")
+
+    def test_driver_error_and_empty_disassembly_are_failures(self):
+        from apusr_qsad_probe import CommandResult, evidence_status
+
+        bad = CommandResult(["driver-probe"], 1, "", "")
+        self.assertEqual(evidence_status(bad, None, {}), "probe-failed")
+        with tempfile.TemporaryDirectory() as folder:
+            empty_isa = Path(folder) / "shader.isa"
+            empty_isa.write_text("")
+            good = CommandResult(["driver-probe"], 0, "", "")
+            self.assertEqual(evidence_status(good, empty_isa, {}), "missing-output")
+
+    def test_complete_three_way_native_verdict(self):
+        from apusr_qsad_probe import driver_verdict
+
+        cases = [
+            self.make_case("scalar", "no-sad-family"),
+            self.make_case("udot", "native-mqsad"),
+            self.make_case("swar", "other-sad-family"),
+        ]
+        result = driver_verdict(cases)
+        self.assertEqual(result["verdict"], "mqsad-recovered")
+        self.assertEqual(result["exact_mqsad_cases"], ["udot"])
+
+    def test_incomplete_three_way_does_not_promote_native_hit(self):
+        from apusr_qsad_probe import driver_verdict
+
+        cases = [
+            self.make_case("scalar", "native-mqsad"),
+            self.make_case("udot", "unsupported"),
+            self.make_case("swar", "no-sad-family"),
+        ]
+        result = driver_verdict(cases)
+        self.assertEqual(result["verdict"], "incomplete-driver-probe")
+        self.assertEqual(result["exact_mqsad_cases"], ["scalar"])
+        self.assertEqual(result["unsupported_cases"], ["udot"])
+
+    def test_all_driver_disassembly_unsupported(self):
+        from apusr_qsad_probe import driver_verdict
+
+        cases = [self.make_case(name, "unsupported") for name in ("scalar", "udot", "swar")]
+        self.assertEqual(driver_verdict(cases)["verdict"], "driver-disassembly-unsupported")
+
+    def test_full_probe_reference_rotation_preserves_equivalence(self):
+        from sad_semantics import apusr_probe_result
+
+        args = (0x01020304, 0x10203040, 0x50607080,
+                0x01FF8002, 0x7F030C08, 0x98765432)
+        self.assertEqual(
+            apusr_probe_result(*args, masked=True),
+            apusr_probe_result(*args, masked=False),
+        )
+        with_zero = (args[0], args[1], args[2], 0, args[4], args[5])
+        self.assertNotEqual(
+            apusr_probe_result(*with_zero, masked=True),
+            apusr_probe_result(*with_zero, masked=False),
+        )
 
 
 if __name__ == "__main__":
