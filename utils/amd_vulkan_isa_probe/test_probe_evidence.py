@@ -33,6 +33,8 @@ elif name == "fake_verifier":
     sys.exit({"pass": 0, "mismatch": 1, "error": 2}[os.getenv("TEST_VERIFY", "pass")])
 elif name == "fake_spirv_val":
     sys.exit(0 if os.getenv("TEST_VAL", "pass") == "pass" else 9)
+elif name == "fake_spirv_dis":
+    Path(sys.argv[sys.argv.index("-o") + 1]).write_text("OpUDot\\n")
 else:
     sys.exit(17)
 """
@@ -43,7 +45,7 @@ class ProbeEvidenceTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        for name in ("fake_dxc", "fake_driver", "fake_verifier", "fake_spirv_val"):
+        for name in ("fake_dxc", "fake_driver", "fake_verifier", "fake_spirv_val", "fake_spirv_dis"):
             p = self.root / name
             p.write_text(FAKE, encoding="utf-8")
             p.chmod(0o755)
@@ -132,7 +134,7 @@ class QSadEvidenceTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        for name in ("fake_dxc", "fake_driver", "fake_verifier", "fake_spirv_val"):
+        for name in ("fake_dxc", "fake_driver", "fake_verifier", "fake_spirv_val", "fake_spirv_dis"):
             path = self.root / name
             path.write_text(FAKE, encoding="utf-8")
             path.chmod(0o755)
@@ -153,7 +155,7 @@ class QSadEvidenceTest(unittest.TestCase):
             "--dxc", str(self.root / "fake_dxc"),
             "--driver-probe", str(self.root / "fake_driver"),
             "--spirv-val", str(self.root / "fake_spirv_val"),
-            "--spirv-dis", "not-an-executable-spirv-dis",
+            "--spirv-dis", str(self.root / "fake_spirv_dis"),
             "--out-dir", str(out),
         ]
         proc = subprocess.run(
@@ -168,6 +170,17 @@ class QSadEvidenceTest(unittest.TestCase):
         self.assertEqual(report["installed_driver_verdict"]["verdict"],
                          "driver-disassembly-unsupported")
         self.assertTrue(all(case["validation_status"] == "ok" for case in report["cases"]))
+
+    def test_qsad_rejects_missing_requested_validator(self):
+        args = [
+            sys.executable, str(ROOT / "apusr_qsad_probe.py"),
+            "--dxc", str(self.root / "fake_dxc"),
+            "--spirv-val", str(self.root / "missing_validator"),
+        ]
+        proc = subprocess.run(args, cwd=self.root, text=True,
+                              capture_output=True, check=False)
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("spirv-val not found", proc.stderr)
 
     def test_qsad_validation_failure_blocks_driver_probe(self):
         rc, report = self.execute_qsad({"TEST_VAL": "fail"})
