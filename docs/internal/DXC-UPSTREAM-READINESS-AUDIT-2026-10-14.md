@@ -5,6 +5,14 @@
 > **Exhaustive provisional file inventory:** [208-file CSV ledger](DXC-DELTA-LEDGER-2026-10-14.csv).  
 > **Method:** GitHub repository comparison and source/hunk inspection, current PR reviews, focused CI history, and current Microsoft upstream `main` inspection. **Not** a complete independently compiled correctness audit of every feature. New results supersede this dated snapshot only when documented.
 
+## Follow-up synchronization (2026-10-14 local / 2026-10-15 UTC)
+
+The fork's clean `main` was **fast-forwarded**, without force or unrelated AMD changes, to Microsoft's observed current head `5e8c6aa90c6a1f84f657517773456eabf0e16554`. That imports the upstream worklist change and SPIR-V resource-classification cleanup. The integration branch `amd-sad-msad` still has its original `e4d9cfb7` head.
+
+A two-parent ancestry-preserving merge was prepared on **staging only**, `sync/dxc-upstream-integration-20261014` at `2f330900d361760f741458844015b4742282b1a5`. Six upstream files intersected previous integration edits. Five applied textually without conflict; `LowerTypeVisitor.cpp` needed one explicit three-way reconciliation: upstream `ResourceKind::RawBuffer` / `ResourceClass` detection plus our extension-gated `KHR_untyped_pointers` representation. This is **draft [PR #25](https://github.com/thomthehound/DirectXShaderCompiler/pull/25)**; Linux/Windows compiler + LIT validation and independent review must pass before it can enter integration. The earlier merge-probe [PR #24](https://github.com/thomthehound/DirectXShaderCompiler/pull/24) was satisfied when the staging merge gained Microsoft's upstream commit as a parent.
+
+Read Microsoft's [AI contribution policy](https://github.com/microsoft/DirectXShaderCompiler/blob/main/AIToolPolicy.md): substantial AI-assisted contributions must be disclosed; a human must personally review all generated material and answer technical questions before asking maintainers to review. This is a required gate for our future extracted A/B PRs.
+
 ## Decision in one paragraph
 
 **Do not propose `amd-sad-msad` to upstream as a unit, and do not split its current commits mechanically into upstream PRs.** Keep it as a private integration/testbed branch. Extract only a minimal, independently proven A (DXC bugfix) or B (legal AMD/KHR/core SPIR-V feature) change on a fresh Microsoft DXC baseline. Retain all C-group hardware probes, inventories, private CI, experimental flags and guide documents privately; they are valuable without being upstream obligations. Any X-group compiler file must be split **by independent behavior and test**, not by path or commit count.
