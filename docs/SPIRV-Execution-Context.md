@@ -115,16 +115,27 @@ declaration for ordinary pointer parameters. Other expanded values without
 a safe call-private representation are diagnosed rather than passed as
 incompatible argument pointers.
 
-For records, this is not yet a complete representation-separation solution.
-`PervertexInputVisitor` still expands record fields by mutating shared
-`FieldDecl` objects. If a non-Fragment or exported function uses such a
-record, the compiler diagnoses the conflict rather than silently changing
-its callable ABI. This protection includes records used by emitted
-temporaries and resource loads, not only function signatures and local
-declarations. `pervertex.lib.export-shared-record.hlsl` and
-`pervertex.lib.export-record-resource-use.hlsl` protect the fail-safe.
-A future lowering should replace global AST record mutation with
-SPIR-V-private types and explicit conversions where necessary.
+Record representation separation now has a first conservative production slice.
+For a flat scalar/vector record used by an export (including an exported
+resource-load result) and a Fragment entry, `PervertexInputVisitor` marks
+only emitted pixel-owned instructions requiring expansion. `LowerTypeVisitor`
+constructs a distinct SPIR-V `StructType` containing three-element arrays
+for interpolated-at-vertex members. The original `FieldDecl` and the
+exported function's ordinary SPIR-V `StructType` remain unchanged. This
+is representation-specific lowering, not a cloned or rewritten HLSL AST.
+
+This is **not** general record conversion support. Nested records, bitfields,
+base-class members, and record-value transfers to exported or other-stage
+functions are still rejected with diagnostics when per-vertex expansion
+would affect them. In particular, a pixel-to-export record call requires
+materializing an ordinary record value at the call site, not passing the
+pixel-specific structure through the exported pointer ABI. Existing
+unshared-record handling still uses the older AST-mutation path; eliminating
+that path and supporting complex record graphs remain subsequent work.
+`pervertex.lib.export-shared-record.hlsl`,
+`pervertex.lib.export-record-resource-use.hlsl`,
+`pervertex.lib.export-nested-shared-record.hlsl`, and
+`pervertex.lib.export-record-call-boundary.hlsl` fence these distinctions.
 
 ## Existing regression coverage
 

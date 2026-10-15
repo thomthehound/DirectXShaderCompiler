@@ -48,6 +48,9 @@ public:
   // record lowering can replace their in-place AST rewriting.
   void protectRecordTypes(QualType type);
   bool needsNointerpStructureExpansion(QualType type, bool decorated) const;
+  // First representation-separation slice supports flat scalar/vector
+  // records only. Keep the established diagnostic for other shared layouts.
+  bool canSpecializeSharedRecord(QualType type) const;
 
   ///< Add temp function variables, for operand replacement. An original usage
   ///< to a nointerpolated variable/parameter should be treated as an access to

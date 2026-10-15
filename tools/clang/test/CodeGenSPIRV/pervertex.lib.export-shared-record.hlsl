@@ -1,10 +1,12 @@
-// RUN: not %dxc -T lib_6_6 -E main -fcgl -spirv -fspv-target-env=universal1.5 %s 2>&1 | FileCheck %s
+// RUN: %dxc -T lib_6_6 -E main -fcgl -spirv -fspv-target-env=universal1.5 %s | FileCheck %s
 
-// A shared Clang record declaration must not have its FieldDecl types changed
-// by pixel-only per-vertex lowering when an unrelated linkage export uses it.
-// Until record representations can be specialized without mutating the shared
-// AST, diagnose this conflict rather than emitting a broken exported ABI.
-// CHECK: error: cannot specialize per-vertex interpolation for a record shared with a non-pixel or exported function
+// One source record must be lowered to two distinct SPIR-V representations:
+// the exported callable keeps its ordinary float4 field, while the pixel
+// input receives a per-vertex array. No FieldDecl mutation is permitted.
+// CHECK: OpEntryPoint Fragment
+// CHECK: PerVertexKHR
+// CHECK-DAG: [[ORDINARY:%[a-zA-Z0-9_]+]] = OpTypeStruct %v4float
+// CHECK-DAG: [[SPECIAL:%[a-zA-Z0-9_]+]] = OpTypeStruct %_arr_v4float_uint_3
 
 struct SharedData {
   nointerpolation float4 color : TEXCOORD0;

@@ -66,8 +66,18 @@ bool PervertexInputVisitor::expandNointerpVarAndParam(
   bool isExpanded = false;
   auto typePtr = type.getTypePtr();
   if (typePtr->isStructureType()) {
-    /// Structure
-    isExpanded = expandNointerpStructure(type, spvInst->isNoninterpolated());
+    /// Keep a shared record's source FieldDecls unchanged. The lowered
+    /// representation of this emitted instruction will contain the expanded
+    /// members, while unrelated exports continue to use the original type.
+    const auto *decl = type->getAs<RecordType>()->getDecl();
+    if (protectedRecords.count(decl) &&
+        needsNointerpStructureExpansion(type, spvInst->isNoninterpolated()) &&
+        canSpecializeSharedRecord(type)) {
+      spvInst->setPerVertexRecordType();
+      isExpanded = true;
+    } else {
+      isExpanded = expandNointerpStructure(type, spvInst->isNoninterpolated());
+    }
   } else if (spvInst->isNoninterpolated()) {
     /// Normal type
     isExpanded = true;
@@ -117,6 +127,23 @@ bool PervertexInputVisitor::needsNointerpStructureExpansion(
     }
   }
   return false;
+}
+
+bool PervertexInputVisitor::canSpecializeSharedRecord(QualType type) const {
+  const auto *record = type->getAs<RecordType>();
+  if (!record)
+    return false;
+  const auto *decl = record->getDecl();
+  if (const auto *cxx = dyn_cast<CXXRecordDecl>(decl))
+    if (cxx->getNumBases() != 0)
+      return false;
+  for (const auto *field : decl->fields()) {
+    if (field->isBitField() ||
+        (!isScalarType(field->getType()) &&
+         !isVectorType(field->getType())))
+      return false;
+  }
+  return true;
 }
 
 bool PervertexInputVisitor::expandNointerpStructure(QualType type,
@@ -292,6 +319,46 @@ bool PervertexInputVisitor::visit(SpirvModule *m, Phase phase) {
   for (auto *var : m->getVariables())
     if (var->getStorageClass() != spv::StorageClass::Input)
       protectRecordTypes(var->getAstResultType());
+
+  // Mark the record-bearing emitted operations owned by Fragment-only code,
+  // not the source declaration. The lowering pass consumes this flag to make
+  // a second StructType. Never specialize a call-private argument passed to
+  // an unknown-stage callable, or a result returned by that callable.
+  llvm::SmallPtrSet<SpirvInstruction *, 16> ordinaryCallArgs;
+  for (auto *function : stageReachability.getEmittedFunctions()) {
+    if (!stageReachability.isFragmentOnly(function))
+      continue;
+    for (auto *call : stageReachability.getCallsFrom(function)) {
+      if (stageReachability.isFragmentOnly(call->getFunction()))
+        continue;
+      for (auto *arg : call->getArgs())
+        ordinaryCallArgs.insert(arg);
+    }
+  }
+  for (auto *function : stageReachability.getEmittedFunctions()) {
+    if (!stageReachability.isFragmentOnly(function))
+      continue;
+    for (auto *instruction : stageReachability.getRecordTypeUses(function)) {
+      if (ordinaryCallArgs.count(instruction))
+        continue;
+      if (const auto *call = dyn_cast<SpirvFunctionCall>(instruction))
+        if (!stageReachability.isFragmentOnly(call->getFunction()))
+          continue;
+      if (const auto *load = dyn_cast<SpirvLoad>(instruction))
+        if (load->getPointer()->getStorageClass() !=
+                spv::StorageClass::Function &&
+            load->getPointer()->getStorageClass() !=
+                spv::StorageClass::Input)
+          continue;
+      QualType type = instruction->getAstResultType();
+      const auto *record = type->getAs<RecordType>();
+      if (record && protectedRecords.count(record->getDecl()) &&
+          canSpecializeSharedRecord(type) &&
+          needsNointerpStructureExpansion(type,
+                                          instruction->isNoninterpolated()))
+        instruction->setPerVertexRecordType();
+    }
+  }
   return true;
 }
 
@@ -425,6 +492,22 @@ bool PervertexInputVisitor::visit(SpirvFunctionCall *inst) {
   // SPIR-V requires a memory-object declaration at this boundary.
   if (!stageReachability.isFragmentOnly(inst->getFunction())) {
     for (auto *arg : inst->getArgs()) {
+      // Converting an expanded record into the ordinary exported ABI
+      // requires field-wise value materialization. Until that conversion is
+      // implemented, do not silently store an expanded struct into the
+      // emitter's ordinary call-private argument variable.
+      if (arg->hasAstResultType()) {
+        QualType type = arg->getAstResultType();
+        if (const auto *record = type->getAs<RecordType>())
+          if (protectedRecords.count(record->getDecl()) &&
+              needsNointerpStructureExpansion(type,
+                                              arg->isNoninterpolated())) {
+            emitError("cannot pass a per-vertex record to a non-pixel or "
+                      "exported function without record conversion",
+                      inst->getSourceLocation());
+            return false;
+          }
+      }
       if (arg->isNoninterpolated()) {
         emitError("cannot pass expanded per-vertex input to a function "
                   "reachable from a non-pixel stage",

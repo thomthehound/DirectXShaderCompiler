@@ -44,6 +44,8 @@ CASES = (
     "CodeGenSPIRV/pervertex.lib.export-call.hlsl",
     "CodeGenSPIRV/pervertex.lib.export-shared-record.hlsl",
     "CodeGenSPIRV/pervertex.lib.export-record-resource-use.hlsl",
+    "CodeGenSPIRV/pervertex.lib.export-nested-shared-record.hlsl",
+    "CodeGenSPIRV/pervertex.lib.export-record-call-boundary.hlsl",
     "CodeGenSPIRV/pervertex.lib.unreachable-record-helper.hlsl",
     "CodeGenSPIRV/intrinsics.get-attribute-at-vertex.s.funcParam.hlsl",
     "CodeGenSPIRV/intrinsics.get-attribute-at-vertex.s.callChain.hlsl",

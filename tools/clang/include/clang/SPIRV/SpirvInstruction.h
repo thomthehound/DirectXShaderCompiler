@@ -244,6 +244,11 @@ public:
   void setNoninterpolated(bool ni = true) { isNoninterpolated_ = ni; }
   bool isNoninterpolated() const { return isNoninterpolated_; }
 
+  // The record's source declaration remains unmodified. Only this emitted
+  // instruction uses the per-vertex SPIR-V representation of its AST record.
+  void setPerVertexRecordType() { perVertexRecordType = true; }
+  bool usesPerVertexRecordType() const { return perVertexRecordType; }
+
   void setBitfieldInfo(const BitfieldInfo &info) { bitfieldInfo = info; }
   llvm::Optional<BitfieldInfo> getBitfieldInfo() const { return bitfieldInfo; }
 
@@ -269,6 +274,7 @@ protected:
 
   spv::Op opcode;
   QualType astResultType;
+  bool perVertexRecordType = false;
   uint32_t resultId;
   SourceLocation srcLoc;
   SourceRange srcRange;
