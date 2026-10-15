@@ -88,23 +88,43 @@ The lowering contract is therefore:
   trigger and the unrelated-export ABI case. Neither can be replaced by a
   pixel-only root test that would pass under the original stage gate.
 
-`pervertex.lib.export-stage-order.hlsl` and
-`pervertex.ps.export-signature.hlsl` characterize currently failing cases
-with explicit XFAIL expectations. `pervertex.lib.export-abi-control.hlsl`
-checks the unaffected baseline. Two separate, ordinary passing LIT
-fixtures (`pervertex.lib.export-stage-order.baseline.test` and
-`pervertex.lib.export-signature.baseline.test`) verify the precise known
-failure mechanisms using FileCheck. The stage-order baseline requires the
-specific SPIR-V validator failure *and* uses `-Vd` to inspect the malformed
-output without running final validation. It checks the emitted Fragment
-entry, linkage export, missing `PerVertexKHR` lowering, and incorrect
-`OpAccessChain`. The unrelated-export ABI baseline compiles successfully
-and verifies the exported parameter's incorrect array type, alongside
-working pixel-input per-vertex lowering. The XFAIL cases assert the desired
-behavior separately; an unrelated diagnostic or FileCheck failure cannot
-satisfy these positive reproducer tests. A corrected implementation requires
-converting the XFAIL tests into passing tests and removing the obsolete
-failing-state checks.
+The entry-order and unrelated-export regression fixtures now assert correct,
+validated SPIR-V output on both declaration orders. The former XFAILs and
+failing-state baseline tests are removed once these cases pass.
+
+The existing `StageReachabilityVisitor` supplies emitted, transitive stage
+ownership to the per-vertex lowering pass: Fragment entry wrappers and their
+private callees can be specialized; exports and functions they transitively
+reach remain stage-unknown. Every emitted function is enumerated independently
+of the reachable-stage mask. In particular, an emitted helper with no live
+call edge has mask zero, and its record types must still be protected from
+Fragment-specific AST mutation even though it is not reachable from a root.
+`pervertex.lib.unreachable-record-helper.hlsl` exercises the disconnected
+basic block created after an early return and checks both the shared-record
+safety diagnostic and the emitted helper control variant.
+
+The per-vertex visitor does not modify non-Fragment callable signatures or
+bodies. For an ordinary pixel-to-export call, the emitter already allocates
+a dedicated Function-scope argument variable and initializes it at the call
+site. When emitted reachability shows that the callee requires its unchanged
+callable ABI, per-vertex lowering suppresses array expansion on that
+call-private variable while rewriting the source value to its ordinary
+provoking-vertex representation. It must not replace the OpFunctionCall
+argument with an OpAccessChain, because SPIR-V requires a memory-object
+declaration for ordinary pointer parameters. Other expanded values without
+a safe call-private representation are diagnosed rather than passed as
+incompatible argument pointers.
+
+For records, this is not yet a complete representation-separation solution.
+`PervertexInputVisitor` still expands record fields by mutating shared
+`FieldDecl` objects. If a non-Fragment or exported function uses such a
+record, the compiler diagnoses the conflict rather than silently changing
+its callable ABI. This protection includes records used by emitted
+temporaries and resource loads, not only function signatures and local
+declarations. `pervertex.lib.export-shared-record.hlsl` and
+`pervertex.lib.export-record-resource-use.hlsl` protect the fail-safe.
+A future lowering should replace global AST record mutation with
+SPIR-V-private types and explicit conversions where necessary.
 
 ## Existing regression coverage
 

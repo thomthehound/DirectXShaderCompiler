@@ -7,6 +7,7 @@
 
 #include "StageReachabilityVisitor.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/Type.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/SPIRV/SpirvFunction.h"
 #include "clang/SPIRV/SpirvInstruction.h"
@@ -14,6 +15,22 @@
 
 namespace clang {
 namespace spirv {
+
+namespace {
+
+bool containsAstRecord(QualType type) {
+  if (type.isNull())
+    return false;
+  if (type->isStructureType())
+    return true;
+  if (type->isPointerType() || type->isReferenceType())
+    return containsAstRecord(type->getPointeeType());
+  if (const auto *array = dyn_cast<clang::ArrayType>(type.getTypePtr()))
+    return containsAstRecord(array->getElementType());
+  return false;
+}
+
+} // namespace
 
 void StageReachabilityVisitor::requireFragmentStage(
     SpirvInstruction *instruction, SourceLocation loc,
@@ -29,6 +46,10 @@ bool StageReachabilityVisitor::visitInstruction(SpirvInstruction *instruction) {
   auto use = liveStageUses.find(instruction);
   if (use != liveStageUses.end())
     use->second = currentFunction;
+  if (collectRecordTypes && currentFunction &&
+      instruction->hasAstResultType() &&
+      containsAstRecord(instruction->getAstResultType()))
+    recordTypeUses[currentFunction].push_back(instruction);
   return true;
 }
 
@@ -53,14 +74,19 @@ bool StageReachabilityVisitor::visit(SpirvDecoration *decor) {
 }
 
 bool StageReachabilityVisitor::visit(SpirvFunction *func, Phase phase) {
-  currentFunction = phase == Phase::Init ? func : nullptr;
+  if (phase == Phase::Init) {
+    emittedFunctions.push_back(func);
+    currentFunction = func;
+  } else {
+    currentFunction = nullptr;
+  }
   return true;
 }
 
 bool StageReachabilityVisitor::visit(SpirvFunctionCall *call) {
   if (currentFunction)
-    callGraph[currentFunction].push_back(call->getFunction());
-  return true;
+    callGraph[currentFunction].push_back(call);
+  return visitInstruction(call);
 }
 
 void StageReachabilityVisitor::recordDiscard(SourceLocation loc) {
@@ -77,19 +103,23 @@ bool StageReachabilityVisitor::visit(SpirvDemoteToHelperInvocation *demote) {
   return true;
 }
 
-bool StageReachabilityVisitor::visit(SpirvModule *, Phase phase) {
+bool StageReachabilityVisitor::visit(SpirvModule *module, Phase phase) {
+  if (phase == Phase::Init) {
+    collectRecordTypes = module->isPerVertexInterpMode();
+    return true;
+  }
   if (phase != Phase::Done)
     return true;
 
   // Fixed-point propagation is necessary for shared helpers and recursion.
   // The call graph is recorded from actual OpFunctionCall instructions,
   // including wrapper-generated calls and the synthetic module initializer.
-  llvm::DenseMap<SpirvFunction *, unsigned> stages;
+  reachableStages.clear();
   llvm::SmallVector<SpirvFunction *, 16> pending;
   auto mark = [&](SpirvFunction *fn, unsigned mask) {
     if (!fn)
       return;
-    unsigned &existing = stages[fn];
+    unsigned &existing = reachableStages[fn];
     if ((existing | mask) != existing) {
       existing |= mask;
       pending.push_back(fn);
@@ -103,8 +133,8 @@ bool StageReachabilityVisitor::visit(SpirvModule *, Phase phase) {
     auto callees = callGraph.find(caller);
     if (callees == callGraph.end())
       continue;
-    for (SpirvFunction *callee : callees->second)
-      mark(callee, stages.lookup(caller));
+    for (SpirvFunctionCall *call : callees->second)
+      mark(call->getFunction(), reachableStages.lookup(caller));
   }
 
   // Reject both OpKill and OpDemoteToHelperInvocation in any function whose
@@ -116,7 +146,7 @@ bool StageReachabilityVisitor::visit(SpirvModule *, Phase phase) {
       "discard statement may only be used in pixel shaders");
   bool valid = true;
   for (const auto &discard : discards) {
-    const unsigned mask = stages.lookup(discard.first);
+    const unsigned mask = reachableStages.lookup(discard.first);
     // A helper may be emitted yet have no execution path from any entry
     // point. Do not classify an unreachable internal function as nonpixel.
     if (mask != 0 && mask != Fragment) {
@@ -128,7 +158,7 @@ bool StageReachabilityVisitor::visit(SpirvModule *, Phase phase) {
     SpirvFunction *owner = liveStageUses.lookup(use.instruction);
     if (!owner)
       continue; // This operation was in a discarded basic block.
-    const unsigned mask = stages.lookup(owner);
+    const unsigned mask = reachableStages.lookup(owner);
     if (mask != 0 && mask != Fragment) {
       const unsigned id = diags.getCustomDiagID(DiagnosticsEngine::Error, "%0");
       diags.Report(use.loc, id) << use.diagnostic;

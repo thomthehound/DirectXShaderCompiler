@@ -653,8 +653,17 @@ public:
   bool hasInitializer() const { return initializer != nullptr; }
   SpirvInstruction *getInitializer() const { return initializer; }
 
+  // Temporary Function storage for an ordinary HLSL function-call argument.
+  // Such variables are private to one call, unlike user-declared locals or
+  // inout arguments whose storage may be shared with other operations.
+  void setFunctionCallArgumentTemporary() { functionCallArgumentTemp = true; }
+  bool isFunctionCallArgumentTemporary() const {
+    return functionCallArgumentTemp;
+  }
+
 private:
   SpirvInstruction *initializer;
+  bool functionCallArgumentTemp = false;
 };
 
 /// \brief OpUntypedVariableKHR instruction

@@ -1,4 +1,3 @@
-// XFAIL: *
 // RUN: %dxc -T lib_6_6 -E main -fcgl -spirv -fspv-target-env=universal1.5 %s | FileCheck %s
 
 // Both functions must be emitted as library roots. The export is queued

@@ -15,17 +15,22 @@
 #include "clang/SPIRV/SpirvContext.h"
 #include "clang/SPIRV/SpirvModule.h"
 #include "clang/SPIRV/SpirvVisitor.h"
+#include "llvm/ADT/SmallPtrSet.h"
 
 namespace clang {
 namespace spirv {
 
+class StageReachabilityVisitor;
+
 class PervertexInputVisitor : public Visitor {
 public:
   PervertexInputVisitor(SpirvBuilder &spvBuilder, ASTContext &astCtx,
-                        SpirvContext &spvCtx, const SpirvCodeGenOptions &opts)
+                        SpirvContext &spvCtx, const SpirvCodeGenOptions &opts,
+                        const StageReachabilityVisitor &stageReachability)
       : Visitor(opts, spvCtx), inEntryFunctionWrapper(false),
-        spirvBuilder(spvBuilder), astContext(astCtx), currentMod(nullptr),
-        currentFunc(nullptr) {}
+        processCurrentFunction(false), spirvBuilder(spvBuilder),
+        astContext(astCtx), stageReachability(stageReachability),
+        currentMod(nullptr), currentFunc(nullptr) {}
 
   ///< Don't add extra index to a simple vector/matrix elem access when base is
   ///< not expanded.
@@ -37,6 +42,12 @@ public:
   bool expandNointerpVarAndParam(SpirvInstruction *spvInst);
 
   bool expandNointerpStructure(QualType qtype, bool isVarDecoratedInterp);
+
+  // Clang record declarations are shared by all functions. Preserve records
+  // used by non-pixel or linkage-exported code until representation-specific
+  // record lowering can replace their in-place AST rewriting.
+  void protectRecordTypes(QualType type);
+  bool needsNointerpStructureExpansion(QualType type, bool decorated) const;
 
   ///< Add temp function variables, for operand replacement. An original usage
   ///< to a nointerpolated variable/parameter should be treated as an access to
@@ -86,6 +97,8 @@ public:
 
 #define REMAP_FUNC_OP(CLASS)                                                   \
   bool visit(Spirv##CLASS *op) override {                                      \
+    if (!processCurrentFunction)                                               \
+      return true;                                                             \
     op->replaceOperand(                                                        \
         [this](SpirvInstruction *inst) {                                       \
           return getMappedReplaceInstr(inst);                                  \
@@ -119,15 +132,19 @@ public:
 private:
   ///< Whether in entry function wrapper, which will influence replace steps.
   bool inEntryFunctionWrapper;
+  bool processCurrentFunction;
   ///< Instruction replacement mapper.
   ///< For AccessChain and CompositeExtract, will only add extra index.
   llvm::DenseMap<SpirvInstruction *, SpirvInstruction *> m_instrReplaceMap;
   ///< Global declared structure type is special,
   ///< we won't redeclare/expand it more than once.
   llvm::SmallSet<const Type *, 4> m_expandedStructureType;
+  llvm::SmallPtrSet<const RecordDecl *, 16> protectedRecords;
+  bool unsupportedSharedRecord = false;
   ///< Context related helpers, will use to modify spv instruction stream.
   SpirvBuilder &spirvBuilder;
   ASTContext &astContext;
+  const StageReachabilityVisitor &stageReachability;
   SpirvModule *currentMod;
   SpirvFunction *currentFunc;
   llvm::DenseMap<SpirvFunctionParameter *, std::vector<SpirvInstruction *>>

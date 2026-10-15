@@ -23,6 +23,7 @@ class ASTContext;
 namespace spirv {
 
 class SpirvFunction;
+class SpirvFunctionCall;
 
 // Validates fragment-only instructions using the lowered module's real call
 // graph. Entry wrappers, implicit module initialization, and exported
@@ -36,6 +37,48 @@ public:
   StageReachabilityVisitor(ASTContext &astCtx, SpirvContext &spvCtx,
                            const SpirvCodeGenOptions &opts)
       : Visitor(opts, spvCtx), astContext(astCtx) {}
+
+  // The same emitted call graph identifies whether a function has only
+  // Fragment entry roots. Linkage exports are unknown-stage roots and therefore
+  // cannot acquire an entry-specific callable representation.
+  bool isFragmentOnly(SpirvFunction *function) const {
+    return reachableStages.lookup(function) == Fragment;
+  }
+
+  // Reuse recorded calls from the existing emitted call graph. Per-vertex
+  // lowering needs actual argument operands to preserve linkage call ABIs.
+  llvm::ArrayRef<SpirvFunctionCall *>
+  getCallsFrom(SpirvFunction *function) const {
+    const auto found = callGraph.find(function);
+    if (found == callGraph.end())
+      return {};
+    return found->second;
+  }
+
+  llvm::ArrayRef<SpirvFunction *> getEmittedFunctions() const {
+    return emittedFunctions;
+  }
+
+  // A missing stage mask means an emitted function has no reachable
+  // shader root, not that its record types are safe to specialize.
+  llvm::SmallVector<SpirvFunction *, 8> getNonFragmentFunctions() const {
+    llvm::SmallVector<SpirvFunction *, 8> result;
+    for (auto *function : emittedFunctions)
+      if (!isFragmentOnly(function))
+        result.push_back(function);
+    return result;
+  }
+
+  // AST record types used by emitted instructions must also be protected:
+  // neither export parameters nor its local variable declarations necessarily
+  // capture the types of temporary composite and resource-load values.
+  llvm::ArrayRef<SpirvInstruction *>
+  getRecordTypeUses(SpirvFunction *function) const {
+    const auto found = recordTypeUses.find(function);
+    if (found == recordTypeUses.end())
+      return {};
+    return found->second;
+  }
 
   // Lowerings that become generic SPIR-V instructions can retain their
   // source-level stage constraint without relying on AST caller inference.
@@ -59,9 +102,14 @@ private:
 
   ASTContext &astContext;
   SpirvFunction *currentFunction = nullptr;
-  llvm::DenseMap<SpirvFunction *, llvm::SmallVector<SpirvFunction *, 4>>
+  bool collectRecordTypes = false;
+  llvm::DenseMap<SpirvFunction *, llvm::SmallVector<SpirvFunctionCall *, 4>>
       callGraph;
   llvm::SmallVector<std::pair<SpirvFunction *, unsigned>, 8> roots;
+  llvm::DenseMap<SpirvFunction *, unsigned> reachableStages;
+  llvm::SmallVector<SpirvFunction *, 16> emittedFunctions;
+  llvm::DenseMap<SpirvFunction *, llvm::SmallVector<SpirvInstruction *, 8>>
+      recordTypeUses;
   llvm::SmallVector<std::pair<SpirvFunction *, SourceLocation>, 8> discards;
   struct FragmentStageUse {
     SpirvInstruction *instruction;

@@ -8,6 +8,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "PervertexInputVisitor.h"
+#include "StageReachabilityVisitor.h"
 #include "clang/SPIRV/AstTypeProbe.h"
 #include "clang/SPIRV/SpirvFunction.h"
 #include "clang/SPIRV/SpirvType.h"
@@ -77,12 +78,61 @@ bool PervertexInputVisitor::expandNointerpVarAndParam(
   return isExpanded;
 }
 
+void PervertexInputVisitor::protectRecordTypes(QualType type) {
+  if (type.isNull())
+    return;
+  if (type->isPointerType() || type->isReferenceType()) {
+    protectRecordTypes(type->getPointeeType());
+    return;
+  }
+  if (const auto *array = dyn_cast<clang::ArrayType>(type.getTypePtr())) {
+    protectRecordTypes(array->getElementType());
+    return;
+  }
+  if (const auto *record = type->getAs<RecordType>()) {
+    const auto *decl = record->getDecl();
+    if (!protectedRecords.insert(decl).second)
+      return;
+    for (const auto *field : decl->fields())
+      protectRecordTypes(field->getType());
+  }
+}
+
+bool PervertexInputVisitor::needsNointerpStructureExpansion(
+    QualType type, bool decorated) const {
+  const auto *record = type->getAs<RecordType>();
+  if (!record)
+    return false;
+  const auto *decl = record->getDecl();
+  const bool recordDecorated =
+      decorated || decl->hasAttr<HLSLNoInterpolationAttr>();
+  for (const auto *field : decl->fields()) {
+    const bool fieldDecorated =
+        recordDecorated || field->hasAttr<HLSLNoInterpolationAttr>();
+    if (field->getType()->isStructureType()) {
+      if (needsNointerpStructureExpansion(field->getType(), fieldDecorated))
+        return true;
+    } else if (fieldDecorated) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool PervertexInputVisitor::expandNointerpStructure(QualType type,
                                                     bool isVarDecoratedInterp) {
   QualType currentType = type;
   auto typePtr = type.getTypePtr();
   if (m_expandedStructureType.count(typePtr) > 0)
     return true;
+  if (protectedRecords.count(type->getAs<RecordType>()->getDecl()) &&
+      needsNointerpStructureExpansion(type, isVarDecoratedInterp)) {
+    if (!unsupportedSharedRecord)
+      emitError("cannot specialize per-vertex interpolation for a record "
+                "shared with a non-pixel or exported function");
+    unsupportedSharedRecord = true;
+    return false;
+  }
   bool hasNoInterp = false;
   if (typePtr->isStructureType()) {
     const auto *structDecl = type->getAs<RecordType>()->getDecl();
@@ -206,22 +256,56 @@ bool PervertexInputVisitor::isNotExpandedVectorAccess(QualType baseType,
 bool PervertexInputVisitor::visit(SpirvModule *m, Phase phase) {
   if (!m->isPerVertexInterpMode())
     return false;
+  if (phase == Phase::Done)
+    return !unsupportedSharedRecord;
   currentMod = m;
+  // HLSL call sites already allocate private Function-scope temporaries
+  // for ordinary by-value arguments and store their values at the actual
+  // call site. A callee with an exported/cross-stage ABI must receive that
+  // memory-object declaration, not an OpAccessChain into a widened array.
+  // Clear interpolation propagation only on those explicitly identified
+  // call-private temporaries before visiting and lowering any variables.
+  for (auto *function : stageReachability.getEmittedFunctions()) {
+    if (!stageReachability.isFragmentOnly(function))
+      continue;
+    for (auto *call : stageReachability.getCallsFrom(function)) {
+      if (stageReachability.isFragmentOnly(call->getFunction()))
+        continue;
+      for (auto *arg : call->getArgs())
+        if (auto *var = dyn_cast<SpirvVariable>(arg))
+          if (var->isFunctionCallArgumentTemporary())
+            var->setNoninterpolated(false);
+    }
+  }
+  // The emitted call graph has already classified linkage-exported and
+  // other non-Fragment functions. A Clang FieldDecl is shared across every
+  // use of its record, so never silently rewrite one of these record types.
+  for (auto *func : stageReachability.getNonFragmentFunctions()) {
+    protectRecordTypes(func->getAstReturnType());
+    for (auto *param : func->getParameters())
+      protectRecordTypes(param->getAstResultType());
+    for (auto *var : func->getVariables())
+      protectRecordTypes(var->getAstResultType());
+    for (auto *instruction : stageReachability.getRecordTypeUses(func))
+      protectRecordTypes(instruction->getAstResultType());
+  }
+  for (auto *var : m->getVariables())
+    if (var->getStorageClass() != spv::StorageClass::Input)
+      protectRecordTypes(var->getAstResultType());
   return true;
 }
 
 bool PervertexInputVisitor::visit(SpirvEntryPoint *ep) {
-  // Add variable mapping here. First function would be main.
+  // Entry interfaces, not the global variable list, own stage inputs.
+  // All local entries were checked to be Fragment before this pass runs.
   currentFunc = ep->getEntryPoint();
-  /// Refine stage in/out variables
-  for (auto *var : currentMod->getVariables()) {
+  for (auto *var : ep->getInterface()) {
     if (!var->isNoninterpolated() ||
         var->getStorageClass() != spv::StorageClass::Input)
       continue;
     auto *stgIOLoadPtr = spirvBuilder.getPerVertexStgInput(var);
-    if (!isa<SpirvBinaryOp>(stgIOLoadPtr)) {
+    if (stgIOLoadPtr && !isa<SpirvBinaryOp>(stgIOLoadPtr))
       stgIOLoadPtr->setAstResultType(var->getAstResultType());
-    }
   }
   return true;
 }
@@ -229,7 +313,12 @@ bool PervertexInputVisitor::visit(SpirvEntryPoint *ep) {
 bool PervertexInputVisitor::visit(SpirvFunction *sf, Phase phase) {
   // Add variable mapping here. First function would be main.
   currentFunc = sf;
+  processCurrentFunction = stageReachability.isFragmentOnly(sf);
   inEntryFunctionWrapper = false;
+  // An exported function may be called by a non-pixel entry after linking.
+  // Its signature and body must not acquire pixel-specific representations.
+  if (!processCurrentFunction)
+    return true;
   if (sf->isEntryFunctionWrapper()) {
     if (phase != Phase::Done) {
       inEntryFunctionWrapper = true;
@@ -263,6 +352,11 @@ bool PervertexInputVisitor::visit(SpirvFunction *sf, Phase phase) {
 
 /// Spirv Instruction check and pointer replacement if needed.
 bool PervertexInputVisitor::visit(SpirvVariable *inst) {
+  // Module input variables are processed for Fragment entries. Function
+  // variables are rewritten only when the function has Fragment-only roots.
+  if (inst->getStorageClass() != spv::StorageClass::Input &&
+      !processCurrentFunction)
+    return true;
   if (expandNointerpVarAndParam(inst) &&
       inst->getStorageClass() == spv::StorageClass::Input)
     spirvBuilder.decoratePerVertexKHR(inst, inst->getSourceLocation());
@@ -270,11 +364,14 @@ bool PervertexInputVisitor::visit(SpirvVariable *inst) {
 }
 
 bool PervertexInputVisitor::visit(SpirvFunctionParameter *inst) {
-  expandNointerpVarAndParam(inst);
+  if (processCurrentFunction)
+    expandNointerpVarAndParam(inst);
   return true;
 }
 
 bool PervertexInputVisitor::visit(SpirvCompositeExtract *inst) {
+  if (!processCurrentFunction)
+    return true;
   if (inst->isNoninterpolated() &&
       !isNotExpandedVectorAccess(inst->getComposite()->getAstResultType(),
                                  inst->getAstResultType())) {
@@ -287,6 +384,8 @@ bool PervertexInputVisitor::visit(SpirvCompositeExtract *inst) {
 }
 
 bool PervertexInputVisitor::visit(SpirvAccessChain *inst) {
+  if (!processCurrentFunction)
+    return true;
   llvm::SmallVector<uint32_t, 4> indexes;
   SpirvInstruction *zero =
       spirvBuilder.getConstantInt(astContext.UnsignedIntTy, llvm::APInt(32, 0));
@@ -313,10 +412,28 @@ bool PervertexInputVisitor::visit(SpirvAccessChain *inst) {
 // If an expanded variable/parameter is passed to a function,
 // recreate a pair of Store/Load instructions.
 bool PervertexInputVisitor::visit(SpirvFunctionCall *inst) {
+  if (!processCurrentFunction)
+    return true;
   /// Replace each use of pervertex inputs with its vertex0 element within
   /// functions. But pass it as an array if meet function call.
   if (inEntryFunctionWrapper)
     return true;
+  // Cross-stage callees require their original pointer ABI. The ordinary
+  // value is copied into a call-private Function variable by the emitter;
+  // its source loads are rewritten by this visitor as usual. Never replace
+  // an OpFunctionCall pointer argument with a provoking-vertex OpAccessChain:
+  // SPIR-V requires a memory-object declaration at this boundary.
+  if (!stageReachability.isFragmentOnly(inst->getFunction())) {
+    for (auto *arg : inst->getArgs()) {
+      if (arg->isNoninterpolated()) {
+        emitError("cannot pass expanded per-vertex input to a function "
+                  "reachable from a non-pixel stage",
+                  inst->getSourceLocation());
+        return false;
+      }
+    }
+    return true;
+  }
   /// Load/Store instructions related to this argument may have been replaced
   /// with other instructions, so we need to get its original mapped variables.
   unsigned argIndex = 0;
