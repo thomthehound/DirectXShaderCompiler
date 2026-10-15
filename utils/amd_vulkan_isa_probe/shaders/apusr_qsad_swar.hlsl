@@ -59,8 +59,10 @@ void main(uint3 dispatch_id : SV_DispatchThreadID) {
   uint a0 = args.source0 ^ perturb;
   uint a1 = args.source1 + perturb;
   uint a2 = args.source2 ^ (perturb << 8);
-  uint p0 = args.reference0 ^ (perturb << 16);
-  uint p1 = args.reference1 + (perturb << 24);
+  // The reference words contain preclamped, nonzero luma bytes, as in
+  // APUSR's optical-flow fast path. Preserve that invariant across rows.
+  uint p0 = args.reference0;
+  uint p1 = args.reference1;
   uint4 sad = uint4(0, 0, 0, 0);
 
   [unroll]
@@ -71,8 +73,8 @@ void main(uint3 dispatch_id : SV_DispatchThreadID) {
     a0 = (a0 >> 1) | (a0 << 31);
     a1 ^= 0x9e3779b9u;
     a2 += 0x7f4a7c15u;
-    p0 ^= 0x01020408u;
-    p1 += 0x10204081u;
+    p0 = (p0 >> 8) | (p0 << 24);
+    p1 = (p1 >> 24) | (p1 << 8);
   }
 
   output_buffer[dispatch_id.x] = sad;
