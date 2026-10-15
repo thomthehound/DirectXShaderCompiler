@@ -51,6 +51,9 @@ jobs:
             utils/amd_matrix_ci.py \
             utils/amd_mixed_dot_ci.py \
             utils/amd_vulkan_isa_probe/native_probe.py \
+            utils/amd_vulkan_isa_probe/apusr_qsad_probe.py \
+            utils/amd_vulkan_isa_probe/sad_semantics.py \
+            utils/amd_vulkan_isa_probe/test_probe_evidence.py \
             utils/amd_vulkan_isa_probe/matrix_probe.py \
             utils/amd_vulkan_isa_probe/math_probe.py \
             utils/amd_vulkan_isa_probe/dot_probe.py \
@@ -75,6 +78,7 @@ jobs:
           python3 utils/amd_lit_smoke.py --self-test
           python3 -m unittest discover -s utils -p 'test_amd_spirv_interface.py'
           python3 -m unittest discover -s utils/amd_vulkan_isa_probe -p 'test_probe_evidence.py'
+          python3 utils/amd_vulkan_isa_probe/sad_semantics.py --samples 10000
           python3 -m unittest discover -s utils/amd_vulkan_isa_probe -p 'test_khr_cooperative_matrix_control.py'
           python3 utils/amd_vulkan_isa_probe/raw_buffer_vector_probe.py --self-test
 
