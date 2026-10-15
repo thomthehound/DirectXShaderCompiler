@@ -4,9 +4,9 @@
 // the exported callable keeps its ordinary float4 field, while the pixel
 // input receives a per-vertex array. No FieldDecl mutation is permitted.
 // CHECK: OpEntryPoint Fragment
+// CHECK: PerVertexKHR
 // CHECK-DAG: [[ORDINARY:%[a-zA-Z0-9_]+]] = OpTypeStruct %v4float
 // CHECK-DAG: [[SPECIAL:%[a-zA-Z0-9_]+]] = OpTypeStruct %_arr_v4float_uint_3
-// CHECK: PerVertexKHR
 
 struct SharedData {
   nointerpolation float4 color : TEXCOORD0;
