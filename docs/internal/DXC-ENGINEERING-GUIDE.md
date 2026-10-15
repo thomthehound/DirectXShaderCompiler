@@ -25,6 +25,12 @@ These labels classify **intent**, not readiness. An A or B label is *not* a clai
 
 C is legitimate long-term scope. No pressure to push probes, homegrown CI, APUSR-specific behavior, hardware qualification ledgers, or this guidance document upstream. Private functionality may still have production users; it still must be correct, tested, and isolated from unrelated DXC behavior.
 
+## Upstream's explicit AI contribution policy
+
+Microsoft DXC's [AI Tool Use Policy](https://github.com/microsoft/DirectXShaderCompiler/blob/main/AIToolPolicy.md) **permits AI-assisted contributions**, but it requires human-in-the-loop ownership. **Before requesting upstream maintainer review**, the human contributor must personally read and review *all* AI-generated source or text, understand and be able to explain its invariants and alternatives, and confirm that requesting review is a good use of maintainer time. Do not merely feed reviewer comments to an agent and post unexamined generated patches. Disclose substantial tool-generated content in the PR description or commit message (e.g., `Assisted-by:` trailer). DXC expects smaller first contributions and recommends agents operate in forks.
+
+Our internal Codex review, compiler tests, and AI-driven drafts supplement this gate but **cannot satisfy the human-review requirement on their own**. An A/B candidate stays private/draft until an accountable human has reviewed it, can explain every change, and approves asking upstream for review. This is an explicit upstream policy, not just our preference.
+
 ## Branch discipline and lifecycle
 
 - `main`: keep a clean fork of Microsoft's DXC, synchronized deliberately. Never merge the entire AMD integration branch into it.
@@ -77,6 +83,7 @@ All must be true:
 - [ ] Minimal reliable tests including failure-before-fix and adversarial scenarios
 - [ ] Upstream-relevant Linux/Windows suites and validator checks green at **exact PR head**
 - [ ] No unresolved material review findings; known limitations explicit and acceptable
+- [ ] Human contributor has personally reviewed all AI-generated code and text, can defend every change, and discloses substantial AI assistance per DXC's policy
 - [ ] No unsupported claims of AMD native ISA or performance
 - [ ] Scope, tests, and licenses are appropriate to upstream DXC conventions
 
