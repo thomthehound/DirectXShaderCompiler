@@ -1296,7 +1296,7 @@ LowerTypeVisitor::lowerPerVertexRecord(QualType type, SpirvLayoutRule rule,
   }
 
   const auto *specialized = spvContext.getStructType(
-      fields, (decl->getName() + ".pervertex").str());
+      fields, decl->getName().str() + ".pervertex");
   spvContext.registerStructDeclForSpirvType(specialized, decl);
   return specialized;
 }
