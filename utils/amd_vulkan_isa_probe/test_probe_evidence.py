@@ -128,6 +128,15 @@ class ProbeEvidenceTest(unittest.TestCase):
 
 
 class QSadEvidenceTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        for name in ("fake_dxc", "fake_driver", "fake_verifier", "fake_spirv_val"):
+            path = self.root / name
+            path.write_text(FAKE, encoding="utf-8")
+            path.chmod(0o755)
+
     def make_case(self, name, status):
         from apusr_qsad_probe import CaseResult
 
