@@ -393,6 +393,16 @@ def main() -> int:
     rga = resolve_tool(args.rga, "rga") or (
         None if args.rga else resolve_tool(None, "rga.exe")
     )
+    for requested, resolved, label in (
+        (args.spirv_dis, spirv_dis, "spirv-dis"),
+        (args.spirv_val, spirv_val, "spirv-val"),
+        (args.driver_probe, driver_probe, "driver probe"),
+        (args.rga, rga, "RGA"),
+    ):
+        if requested and not resolved:
+            parser.error(f"{label} not found: {requested}")
+    if (args.rga_live or args.rga_target) and not rga:
+        parser.error("--rga-live and --rga-target require RGA")
 
     here = Path(__file__).resolve().parent
     shaders = here / "shaders"
