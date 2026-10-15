@@ -492,6 +492,22 @@ bool PervertexInputVisitor::visit(SpirvFunctionCall *inst) {
   // SPIR-V requires a memory-object declaration at this boundary.
   if (!stageReachability.isFragmentOnly(inst->getFunction())) {
     for (auto *arg : inst->getArgs()) {
+      // Converting an expanded record into the ordinary exported ABI
+      // requires field-wise value materialization. Until that conversion is
+      // implemented, do not silently store an expanded struct into the
+      // emitter's ordinary call-private argument variable.
+      if (arg->hasAstResultType()) {
+        QualType type = arg->getAstResultType();
+        if (const auto *record = type->getAs<RecordType>())
+          if (protectedRecords.count(record->getDecl()) &&
+              needsNointerpStructureExpansion(type,
+                                              arg->isNoninterpolated())) {
+            emitError("cannot pass a per-vertex record to a non-pixel or "
+                      "exported function without record conversion",
+                      inst->getSourceLocation());
+            return false;
+          }
+      }
       if (arg->isNoninterpolated()) {
         emitError("cannot pass expanded per-vertex input to a function "
                   "reachable from a non-pixel stage",
